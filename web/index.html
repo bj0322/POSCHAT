@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>POSTECH GenAI Chat</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="sb-top">
+      <div class="brand"><div class="logo">P</div><span>POSTECH GenAI</span></div>
+      <button class="icon-btn" id="btn-collapse" title="사이드바 닫기" data-icon="sidebar"></button>
+    </div>
+    <button class="new-chat" id="btn-new"><span data-icon="edit"></span>새 채팅</button>
+    <nav id="thread-list"></nav>
+    <div class="sb-bottom">
+      <button class="sb-item" id="btn-workspace">
+        <span data-icon="folder"></span>
+        <span class="sb-item-text"><span>작업 폴더</span><small id="ws-name">선택 안 됨</small></span>
+      </button>
+      <button class="sb-item" id="btn-memory"><span data-icon="brain"></span><span>메모리</span></button>
+      <button class="sb-item" id="btn-skills"><span data-icon="puzzle"></span><span>스킬</span></button>
+      <button class="sb-item" id="btn-settings"><span data-icon="gear"></span><span>설정</span></button>
+    </div>
+  </aside>
+
+  <main id="main">
+    <header id="topbar">
+      <button class="icon-btn" id="btn-expand" title="사이드바 열기" data-icon="sidebar" hidden></button>
+      <button class="icon-btn" id="btn-new-top" title="새 채팅" data-icon="edit" hidden></button>
+      <div id="chat-title"></div>
+      <label class="mode-toggle" id="agent-label" title="에이전트 모드: 작업 폴더의 파일을 읽고, 고치고, 명령을 실행하며 작업합니다">
+        <input type="checkbox" id="agent-toggle">
+        <span class="track"><span class="thumb"></span></span>
+        <span>에이전트</span>
+      </label>
+    </header>
+
+    <section id="scroll">
+      <div id="messages" class="column"></div>
+    </section>
+
+    <footer id="composer-wrap">
+      <div class="column">
+        <div id="slash-menu" hidden></div>
+        <div id="composer">
+          <textarea id="input" rows="1" placeholder="무엇이든 물어보세요"></textarea>
+          <div class="composer-bar">
+            <button id="ws-chip" class="chip"></button>
+            <button id="btn-send" class="send" title="보내기" disabled></button>
+          </div>
+        </div>
+        <div class="hint">Enter 보내기 · Shift+Enter 줄바꿈 · <b>/</b> 명령어·스킬 · AI는 실수할 수 있습니다</div>
+      </div>
+    </footer>
+  </main>
+</div>
+<div id="modal-root"></div>
+<div id="toast" hidden></div>
+
+<script src="vendor/marked.min.js"></script>
+<script src="vendor/purify.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
