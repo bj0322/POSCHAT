@@ -2,14 +2,14 @@
 
 버전 1.1.0 — 대화 간 정보 공유(메모리·다른 대화 참고) 추가, 기본 스킬을 범용 스킬로 정리
 
-POSTECH GenAI API를 쓰는 Windows 데스크톱 챗봇입니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
+POSTECH GenAI API를 쓰는 Windows 데스크톱 챗봇입니다. 개인이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 MIT 라이선스는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
 
 ## 설치
 
 이 저장소는 소스 배포용이며 설치 파일을 포함하지 않습니다. 아래 개발 절차로 실행하거나 설치 프로그램을 직접 빌드하세요. 빌드한 설치 프로그램은 다음과 같이 사용할 수 있습니다.
 
-1. `release\PostechChat-Setup.exe`를 **내 PC의 로컬 폴더(예: 다운로드)로 복사**한 뒤 실행합니다. Google Drive 폴더에서 바로 실행하면 시작까지 1분 가까이 걸릴 수 있습니다.
-2. "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**을 누릅니다. 코드 서명이 없는 exe라서 뜨는 경고입니다.
+1. 직접 빌드한 `release\PostechChat-Setup.exe`를 로컬 폴더에서 실행합니다.
+2. 설치 프로그램에는 코드 서명이 없습니다. Windows 또는 보안 제품이 실행을 차단하면 경고 내용과 파일 출처를 확인하고, 필요하면 소스로 실행하세요. 보호 기능을 끄거나 예외를 추가하는 것을 설치 절차로 요구하지 않습니다.
 3. **설치**를 누릅니다. 관리자 권한은 필요 없습니다.
    - 설치 위치: `%LOCALAPPDATA%\Programs\PostechChat`
    - 시작 메뉴와 바탕화면에 바로가기가 생깁니다.
@@ -17,11 +17,10 @@ POSTECH GenAI API를 쓰는 Windows 데스크톱 챗봇입니다. 화면은 Chat
 
 제거는 **설정 → 앱 → 설치된 앱 → POSTECH GenAI Chat → 제거**에서 합니다. 대화 기록과 설정(`%APPDATA%\PostechChat`)은 지우지 않고 남겨 둡니다.
 
-### 백신 프로그램(Avast 등) 관련
+### 설치 문제 해결
 
-코드 서명이 없는 새 exe가 시작 메뉴 바로가기를 만들거나 폴더를 지우면, Avast 같은 백신이 프로세스를 **일시 정지**시키고 알림으로 허용 여부를 물을 수 있습니다.
+설치 중 오류나 지연이 발생하면 보안 제품의 알림과 설치 로그를 확인하세요. 조직에서 관리하는 PC는 관리자 정책을 따르세요.
 
-- 설치나 제거가 멈춘 것처럼 보이면 백신 알림 창을 확인하고 허용하세요.
 - 시작 메뉴에 `POSTECH GenAI Chat (2)`라는 이름으로 바로가기가 생길 수 있습니다. 같은 이름의 이전 바로가기를 탐색기가 아직 붙잡고 있을 때 생기며, 재부팅하면 풀립니다.
 - 바로가기를 만들지 못해도 설치는 끝납니다. 이때는 `%LOCALAPPDATA%\Programs\PostechChat\PostechChat.exe`로 실행하세요.
 - 조용한 설치 로그: `%TEMP%\PostechChat-install.log`
@@ -108,7 +107,7 @@ POSTECH GenAI 서버의 모델은 자체 시스템 프롬프트 때문에 "사�
 - 진단: `PostechChat.exe --selftest`를 실행하면 API 연결 결과가 `%APPDATA%\PostechChat\selftest.txt`에 기록됩니다. 제거 명령은 `PostechChat.exe --uninstall`입니다.
 - 설치 파일 빌드: `build.bat`, 또는 `python build_installer.py`. 결과는 `release\PostechChat-Setup.exe`입니다.
   - **python.org 공식 Python(3.10 이상, tcl/tk 포함)으로 빌드하세요.** Anaconda Python으로 빌드한 exe는 HTTPS 요청 때 `OPENSSL_Uplink: no OPENSSL_Applink` 오류로 꺼집니다. 빌드 스크립트가 이 경우를 미리 막습니다.
-- 이 PC의 네트워크에서는 Python 기본 인증서 묶음으로 HTTPS 검증이 실패합니다. 그래서 앱은 `truststore`로 Windows 인증서 저장소를 씁니다. pip 설치가 SSL 오류로 실패하면 `--use-feature=truststore`를 붙이세요.
+- 앱의 HTTPS 요청은 `truststore`를 통해 운영체제 인증서 저장소를 사용합니다. 인증서 오류가 발생하면 Windows 인증서와 네트워크 설정을 확인하세요. TLS 검증을 비활성화하지 마세요.
 
 
 ## 소스 설치와 개발 환경
@@ -151,3 +150,9 @@ py -3 -m venv .venv
 - 사용자 대화, 메모리, 설정, 로그, 개인 API 키는 소스 저장소에 포함하지 않습니다. `.gitignore`는 이 파일들과 가상환경·캐시·빌드 결과·실행 파일을 제외합니다.
 - 앱 소스, 설치 프로그램 소스, 실행·빌드 스크립트, 기본 스킬 2종, 아이콘, 정적 UI와 번들 JavaScript 라이브러리를 포함합니다. `web/vendor/` 파일은 UI 실행에 필요한 배포 의존성이므로 포함하며, 원본 저작권·라이선스 주석을 유지합니다.
 - 이 저장소는 v1.1.0 소스 스냅샷을 시작점으로 합니다. 이전 버전의 코드·변경 이력은 가져오지 않습니다.
+
+## 라이선스
+
+이 프로젝트의 자체 코드와 문서는 [MIT License](LICENSE)로 배포합니다. 저작권 표시는 Beomjoon Kim (bj0322)이며, 제3자 코드와 자산의 권리는 각 권리자에게 있습니다. POSTECH의 명칭·상표나 API 서비스 이용 권한은 이 라이선스에 포함되지 않습니다.
+
+번들 라이브러리의 버전, 출처, 라이선스는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)에 정리했습니다. 원문은 `licenses/`에 보관하며, 제3자 파일은 각 원본 라이선스를 따릅니다.

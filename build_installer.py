@@ -45,6 +45,9 @@ def main():
         "--windowed", "--onedir", "--name", "PostechChat", "--icon", str(ICON),
         "--add-data", f"{ROOT / 'web'};web",
         "--add-data", f"{ROOT / 'skills'};skills",
+        "--add-data", f"{ROOT / 'LICENSE'};.",
+        "--add-data", f"{ROOT / 'THIRD_PARTY_NOTICES.md'};.",
+        "--add-data", f"{ROOT / 'licenses'};licenses",
         "--distpath", str(WORK / "app"),
         str(ROOT / "main.py"),
     )
