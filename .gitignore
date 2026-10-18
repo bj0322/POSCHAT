@@ -1,0 +1,42 @@
+# Secrets and local application data
+.env
+.env.*
+!.env.example
+config.json
+memory.json
+threads/
+*.pem
+*.key
+credentials*.json
+secrets*.json
+service-account*.json
+
+# Python environments and caches
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.buildenv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Build output and packaged executables
+build/
+dist/
+release/
+_internal/
+*.spec
+*.exe
+*.dll
+*.zip
+
+# Logs and machine-specific files
+*.log
+selftest.txt
+*.tmp
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

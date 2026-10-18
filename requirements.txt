@@ -1,0 +1,4 @@
+requests>=2.28
+truststore>=0.9
+pywebview>=5.0
+comtypes>=1.2      # 설치 프로그램의 바로가기 생성(빌드할 때만 필요)
