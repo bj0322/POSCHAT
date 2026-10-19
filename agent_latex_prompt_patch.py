@@ -1,0 +1,559 @@
+"""INIT.md / SKILL.md 로딩과 Claude Code 방식의 단계 반복 에이전트.
+
+POSTECH GenAI 서버 모델은 자체 시스템 프롬프트 때문에 "사용자 PC에 접근하라"는 형태의
+도구 호출 지시는 거부한다. 대신 "진행 기록을 보고 다음 단계를 JSON으로 고르는 분류 작업"으로
+제시하면 잘 따른다. 단, 진행 기록이 비어 있으면 거부하므로 첫 단계(폴더 목록)는 앱이 직접 수행해 둔다.
+
+루프: 다음 단계 JSON 선택 → 앱이 실행(수정·명령은 사용자 승인) → 결과를 기록에 추가 → 반복 → done
+"""
+import difflib
+import fnmatch
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+import storage
+from api import ask
+
+# POSTECH 서버가 답변 끝에 붙이는 <!-- tools: none --> 같은 주석
+SERVER_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+# 서버 모델이 가끔 답변 앞에 붙이는 빈 코드 블록이나 "placeholder" 코드 블록
+JUNK_CODE_RE = re.compile(r"```[a-zA-Z]*[ \t]*\n?(?:\s*|[^`]*?(?:placeholder|user-visible)[^`]*?)```[ \t]*\n?", re.IGNORECASE)
+MEMORY_INTENT_RE = re.compile(r"기억\s*해|기억\s*하고\s*있어|잊지\s*마|remember", re.IGNORECASE)
+
+SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", ".idea", ".vscode"}
+MAX_TREE_ENTRIES = 300
+MAX_READ_CHARS = 12000
+MAX_OBS_CHARS = 6000
+OLD_OBS_CHARS = 500
+RECENT_FULL_STEPS = 6
+MAX_HISTORY_CHARS = 10000
+MAX_FILE_BYTES = 2 * 1024 * 1024
+COMMAND_TIMEOUT = 180
+
+INIT_TASK = (
+    "이 작업 폴더를 살펴보고(list, read, search) 폴더의 목적, 구조, 주요 파일, 작업할 때 지켜야 할 "
+    "규칙과 관례를 정리한 INIT.md를 write로 작업 폴더 최상위에 작성하세요. INIT.md는 앞으로 모든 "
+    "대화에서 AI에게 주어지는 지침이므로 간결하고 구체적으로 쓰세요. 이미 있다면 읽고 개선하세요."
+)
+
+ACTION_DOCS = """{"action": "list", "path": "."}  폴더 목록 보기
+{"action": "read", "path": "파일 경로"}  파일 내용 보기
+{"action": "search", "pattern": "정규식", "glob": "**/*"}  파일 내용 검색
+{"action": "write", "path": "파일 경로", "content": "파일 전체 내용"}  새 파일 작성 또는 전체 덮어쓰기
+{"action": "edit", "path": "파일 경로", "old": "바꿀 부분(파일에 정확히 한 번 나오는 문자열)", "new": "새 내용"}  부분 수정
+{"action": "run", "command": "명령"}  명령 실행 (Windows cmd, 작업 폴더에서)
+{"action": "skill", "name": "스킬 이름"}  스킬 지침 불러오기
+{"action": "recall", "query": "검색어"}  사용자의 다른 대화에서 관련 내용 찾기
+{"action": "done", "answer": "사용자에게 보낼 최종 답변(마크다운)"}  작업 완료, 또는 사용자에게 질문"""
+
+RULES = """- 파일을 고치기 전에 먼저 read로 내용을 확인하세요.
+- 작은 수정은 edit, 새 파일이나 전면 수정은 write를 쓰세요. 경로는 작업 폴더 기준 상대 경로입니다.
+- write의 content와 edit의 new에는 파일에 실제로 들어갈 내용만 쓰세요. 사용자에게 하는 말·인사·안내 문구는 넣지 마세요.
+- 파일을 저장한 뒤 같은 파일을 이유 없이 다시 쓰지 마세요.
+- 코드를 고쳤다면 가능하면 run으로 실행하거나 테스트해서 확인하세요.
+- 요청이 사용 가능한 스킬과 관련되면 먼저 skill로 지침을 불러와 따르세요.
+- 사용자가 예전 대화나 다른 대화의 내용을 언급하면 recall로 찾아보세요.
+- 단순한 질문이나 대화라면 바로 done으로 답하세요.
+- 같은 단계를 반복하지 마세요. 오류가 나면 결과를 보고 다른 방법을 시도하세요.
+- 사용자가 거부한 단계는 다시 시도하지 말고 done으로 상황을 설명하세요.
+- 목표를 이루면 done의 answer에 한 일을 간단히 정리하세요."""
+
+
+@dataclass
+class Skill:
+    name: str
+    description: str
+    body: str
+    path: Path
+    source: str
+
+
+def resource_dir():
+    # PyInstaller로 묶었을 때는 _MEIPASS 아래에 번들 리소스가 풀린다.
+    return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+
+
+def parse_skill(path, source):
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    meta, body = {}, text
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end != -1:
+            for line in text[3:end].splitlines():
+                if ":" in line:
+                    key, value = line.split(":", 1)
+                    meta[key.strip()] = value.strip().strip("\"'")
+            body = text[end + 4:].lstrip("\n")
+    name = meta.get("name") or path.parent.name
+    return Skill(name=name, description=meta.get("description", ""), body=body, path=path, source=source)
+
+
+def discover_skills(workspace):
+    """앱 내장 → 사용자 → 작업 폴더 순으로 읽고, 같은 이름이면 뒤의 것이 이긴다."""
+    dirs = [(resource_dir() / "skills", "내장"), (storage.USER_SKILLS_DIR, "사용자")]
+    if workspace:
+        dirs.append((Path(workspace) / "skills", "작업 폴더"))
+    skills = {}
+    for d, source in dirs:
+        if not d.is_dir():
+            continue
+        for p in sorted(d.glob("*/SKILL.md")):
+            skill = parse_skill(p, source)
+            if skill:
+                skills[skill.name.lower()] = skill
+    return skills
+
+
+def load_init(workspace):
+    if not workspace:
+        return None
+    try:
+        return (Path(workspace) / "INIT.md").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+def _truncate(text, limit):
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"\n... (생략됨, 전체 {len(text):,}자)"
+
+
+def _decode(raw):
+    """(텍스트, 다시 저장할 때 쓸 인코딩). BOM은 원래 있던 파일에만 유지한다."""
+    if raw.startswith(b"\xef\xbb\xbf"):
+        return raw[3:].decode("utf-8", errors="replace"), "utf-8-sig"
+    for enc in ("utf-8", "cp949"):
+        try:
+            return raw.decode(enc), enc
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace"), "utf-8"
+
+
+def parse_action(reply):
+    start = reply.find("{")
+    if start == -1:
+        return None
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(reply[start:])
+    except json.JSONDecodeError:
+        return None
+    if isinstance(obj, dict) and isinstance(obj.get("action"), str):
+        return obj
+    return None
+
+
+def _compact_action(action):
+    """진행 기록용: write/edit의 긴 내용은 줄여서 보여 준다."""
+    short = dict(action)
+    for key in ("content", "old", "new"):
+        if isinstance(short.get(key), str) and len(short[key]) > 200:
+            short[key] = short[key][:200] + f"...({len(action[key]):,}자)"
+    return json.dumps(short, ensure_ascii=False)
+
+
+class ToolError(Exception):
+    pass
+
+
+class Agent:
+    def __init__(self, api_key, workspace, agent_mode, max_steps, history_messages,
+                 on_status, on_tool, confirm, cancelled, thread_id=None, share_threads=True):
+        self.api_key = api_key
+        self.workspace = Path(workspace).resolve() if workspace else None
+        self.agent_mode = agent_mode
+        self.max_steps = max_steps
+        self.history_messages = history_messages
+        self.on_status = on_status    # (text)
+        self.on_tool = on_tool        # (summary, detail)
+        self.confirm = confirm        # (kind "edit"|"run", title, detail) -> bool
+        self.cancelled = cancelled    # () -> bool
+        self.skills = discover_skills(workspace)
+        self.thread_id = thread_id
+        self.share_threads = share_threads
+        self.context_blocks = []  # 메모리·다른 대화 참고 — run()에서 채운다
+
+    def _ask(self, prompt):
+        reply = SERVER_COMMENT_RE.sub("", ask(self.api_key, prompt))
+        return JUNK_CODE_RE.sub("", reply).strip()
+
+    def _format_history(self, history):
+        labels = {"user": "사용자", "assistant": "어시스턴트", "tool": "(수행한 단계)"}
+        msgs = [m for m in history if m["role"] in labels]
+        if self.history_messages:
+            msgs = msgs[-self.history_messages:]
+        else:
+            msgs = []
+        lines = [f"{labels[m['role']]}: {m['content']}" for m in msgs]
+        while lines and sum(len(line) for line in lines) > MAX_HISTORY_CHARS:
+            lines.pop(0)
+        return "\n\n".join(lines)
+
+    # ---- 메모리 · 다른 대화 ----
+
+    def _extract_memory(self, task):
+        """'기억해 줘' 같은 요청이면 저장할 내용을 한 문장으로 뽑아 메모리에 넣는다."""
+        if not MEMORY_INTENT_RE.search(task):
+            return
+        self.on_status("기억할 내용을 정리하는 중...")
+        prompt = "\n\n".join([
+            "다음은 정보 추출 작업입니다. [사용자 메시지]에서 사용자가 앞으로 계속 기억해 달라고 요청한 정보나 선호를 뽑으세요.",
+            '결과는 JSON 객체 하나로만 답하세요. 형식: {"memory": "기억할 내용 한 문장"}',
+            "기억할 내용은 나중에 다른 대화에서 읽어도 이해되도록 구체적으로 쓰세요. 예: \"답변 마지막 줄에 '— 끝'을 붙인다\"",
+            '기억해 달라는 요청이 아니라 "기억해?"처럼 묻는 말이면 {"memory": null} 로 답하세요.',
+            "[사용자 메시지]\n" + task,
+        ])
+        reply = self._ask(prompt)
+        start = reply.find("{")
+        try:
+            data, _ = json.JSONDecoder().raw_decode(reply[start:]) if start != -1 else ({}, 0)
+        except json.JSONDecodeError:
+            return
+        text = data.get("memory") if isinstance(data, dict) else None
+        if isinstance(text, str) and text.strip():
+            item = storage.add_memory(text)
+            if item:
+                self.on_tool(f"🧠 기억: {item['text'][:80]}", item["text"] + "\n\n(왼쪽 아래 '메모리'에서 보거나 지울 수 있습니다)")
+
+    def _prepare_context(self, task):
+        self._extract_memory(task)
+        blocks = []
+        memory = storage.load_memory()
+        if memory:
+            blocks.append("[기억 — 사용자가 모든 대화에서 쓰도록 저장한 정보]\n"
+                          + "\n".join(f"- {m['text']}" for m in memory))
+        if self.share_threads:
+            related = storage.search_threads(task, exclude_id=self.thread_id)
+            if related:
+                lines = []
+                for r in related:
+                    day = time.strftime("%Y-%m-%d", time.localtime(r["ts"])) if r["ts"] else ""
+                    who = "사용자" if r["role"] == "user" else "어시스턴트"
+                    lines.append(f"(대화 '{r['title']}', {day}) {who}: {_truncate(r['content'], 700)}")
+                blocks.append("[다른 대화에서 찾은 관련 내용 — 도움이 될 때만 참고하세요]\n" + "\n\n".join(lines))
+                titles = ", ".join(f"'{r['title']}'" for r in related)
+                self.on_tool(f"📎 다른 대화 참고: {titles}", "\n\n".join(lines))
+        self.context_blocks = blocks
+
+    # ---- 일반 대화 ----
+
+    def _chat(self, history, task, forced_skill):
+        parts = ["[지침]\n당신은 친절하고 정확한 AI 어시스턴트입니다. 한국어로 답하세요.\n수식 출력 규칙: 수학 수식은 Markdown에서 렌더링 가능한 LaTeX로 작성하세요. 문장 안 수식은 \\( ... \\), 독립 수식은 \\[ ... \\]로 감싸세요. 수식을 코드 블록으로 감싸지 말고, LaTeX 명령의 백슬래시를 보존하세요. 예: \\(f'(x)=2x\\), 독립 수식은 \\[\\int_0^1 x^2\\,dx=\\frac13\\]. 단, 실제 수식 렌더링은 앱의 출력 UI가 KaTeX/MathJax 등 LaTeX 렌더러를 지원해야 합니다."]
+        init = load_init(self.workspace)
+        if init:
+            parts.append("[프로젝트 지침 (INIT.md) — 항상 따르세요]\n" + init)
+        if forced_skill:
+            parts.append(f"[적용할 스킬: {forced_skill.name}]\n{forced_skill.body}")
+        parts += self.context_blocks
+        history_text = self._format_history(history)
+        if history_text:
+            parts.append("[이전 대화]\n" + history_text)
+        parts.append("[현재 요청]\n" + task)
+        self.on_status("답변을 작성하는 중...")
+        return self._ask("\n\n".join(parts))
+
+    # ---- 에이전트 루프 ----
+
+    def run(self, history, task, forced_skill=None):
+        self._prepare_context(task)
+        if not (self.agent_mode and self.workspace):
+            return self._chat(history, task, forced_skill)
+
+        static = self._static_prompt(history, task, forced_skill)
+        log = []
+        read_paths = set()
+        # 진행 기록이 비어 있으면 모델이 거부하므로, 첫 단계는 앱이 직접 수행해 둔다.
+        first = {"action": "list", "path": "."}
+        log.append((_compact_action(first), self._tool_list(".")))
+
+        for step in range(self.max_steps):
+            if self.cancelled():
+                return "(작업을 중지했습니다.)"
+            self.on_status(f"생각하는 중... ({step + 1}단계)")
+            prompt = static + self._format_log(log) + "\n\n다음 단계 JSON:"
+            reply = self._ask(prompt)
+            action = parse_action(reply)
+            if action is None:
+                # 모델이 형식을 거부하고 "사용자가 할 일" 안내문을 쓰는 경우가 있다.
+                # 그 안내문의 첫 단계를 JSON으로 바꾸는 변환 작업은 잘 따르므로 그렇게 이어 간다.
+                self.on_status("다음 단계를 정리하는 중...")
+                action = self._convert(task, reply)
+                if action is None or action["action"] == "done":
+                    # "파일 내용을 붙여 달라"는 거부라면, 언급된 파일을 앱이 읽어 기록에 넣고 계속한다.
+                    unread = [f for f in self._mentioned_files(reply + "\n" + task) if f not in read_paths]
+                    if not unread:
+                        return reply  # 수행할 단계가 없는 일반 답변
+                    for rel in unread[:3]:
+                        read_action = {"action": "read", "path": rel}
+                        log.append((_compact_action(read_action), self._execute(read_action)))
+                        read_paths.add(rel)
+                    continue
+            if action["action"] == "read":
+                read_paths.add(str(action.get("path", "")).replace("\\", "/").lstrip("./"))
+            if action["action"] == "done":
+                return str(action.get("answer") or "작업을 마쳤습니다.")
+            if self.cancelled():
+                return "(작업을 중지했습니다.)"
+
+            observation = self._execute(action)
+            compact = _compact_action(action)
+            if len(log) >= 2 and log[-1][0] == compact and log[-2][0] == compact:
+                observation += "\n(주의: 같은 단계를 반복하고 있습니다. 다른 방법을 쓰거나 done으로 마무리하세요.)"
+            log.append((compact, observation))
+
+        self.on_status("결과를 정리하는 중...")
+        prompt = (static + self._format_log(log)
+                  + "\n\n단계 한도에 도달했습니다. done으로 지금까지의 결과와 남은 일을 정리하세요.\n다음 단계 JSON:")
+        reply = self._ask(prompt)
+        action = parse_action(reply)
+        if action and action.get("action") == "done":
+            return str(action.get("answer") or "")
+        return reply
+
+    def _mentioned_files(self, text):
+        """text에 경로나 파일 이름이 나오는, 실제로 있는 작업 폴더 파일(상대 경로)."""
+        found = []
+        for i, f in enumerate(self._iter_files(self.workspace)):
+            if i >= 2000:
+                break
+            rel = self._rel(f)
+            if rel in text or rel.replace("/", "\\") in text or (len(f.name) > 3 and f.name in text):
+                found.append(rel)
+        return found
+
+    def _convert(self, task, guidance):
+        prompt = "\n\n".join([
+            "다음은 텍스트 변환 작업입니다. 아래 [안내문]이 제안하는 '가장 먼저 할 단계' 하나를 [단계 종류] 중 하나의 JSON으로 바꾸세요.",
+            "파일 내용 보기(type, cat, 열어 보기 등)는 read, 명령 실행은 run, 폴더 보기(dir, ls)는 list, "
+            "내용 찾기(findstr, grep)는 search로 바꿉니다. 경로는 작업 폴더 기준 상대 경로로 씁니다.",
+            '안내문이 사용자에게 하는 답변·질문일 뿐이고 수행할 단계가 없다면 {"action": "done"} 으로 답하세요.',
+            "JSON 객체 하나로만 답하세요.",
+            "[단계 종류]\n" + ACTION_DOCS,
+            "[목표]\n" + task,
+            "[안내문]\n" + guidance,
+        ])
+        return parse_action(self._ask(prompt))
+
+    def _static_prompt(self, history, task, forced_skill):
+        parts = [
+            "다음은 작업 진행 기록을 보고 '다음 단계'를 고르는 분류 작업입니다.\n"
+            "자동화 프로그램이 당신이 고른 단계를 수행하고 결과를 진행 기록에 추가합니다.\n"
+            "JSON 객체 하나로만 답하세요. 설명 문장 금지. 최종 답변은 done의 answer에 한국어로 쓰세요.\n수식 출력 규칙: 수학 수식은 Markdown에서 렌더링 가능한 LaTeX로 작성하세요. 문장 안 수식은 \\( ... \\), 독립 수식은 \\[ ... \\]로 감싸세요. 수식을 코드 블록으로 감싸지 말고, LaTeX 명령의 백슬래시를 보존하세요. 예: \\(f'(x)=2x\\), 독립 수식은 \\[\\int_0^1 x^2\\,dx=\\frac13\\]. 단, 실제 수식 렌더링은 앱의 출력 UI가 KaTeX/MathJax 등 LaTeX 렌더러를 지원해야 합니다.",
+            "[단계 종류]\n" + ACTION_DOCS,
+            "[규칙]\n" + RULES,
+            f"[작업 폴더]\n{self.workspace}",
+        ]
+        init = load_init(self.workspace)
+        if init:
+            parts.append("[프로젝트 지침 (INIT.md) — 항상 따르세요]\n" + init)
+        if forced_skill:
+            parts.append(f"[적용 중인 스킬: {forced_skill.name} — 이 지침에 따라 수행하세요]\n{forced_skill.body}")
+        elif self.skills:
+            parts.append("[사용 가능한 스킬]\n" + "\n".join(f"- {s.name}: {s.description}" for s in self.skills.values()))
+        parts += self.context_blocks
+        history_text = self._format_history(history)
+        if history_text:
+            parts.append("[이전 대화]\n" + history_text)
+        parts.append("[목표]\n" + task)
+        return "\n\n".join(parts) + "\n\n[진행 기록]\n"
+
+    @staticmethod
+    def _format_log(log):
+        lines = []
+        cutoff = len(log) - RECENT_FULL_STEPS
+        for i, (action, obs) in enumerate(log):
+            obs = _truncate(obs, OLD_OBS_CHARS if i < cutoff else MAX_OBS_CHARS)
+            lines.append(f"{i + 1}. {action} →\n{obs}")
+        return "\n\n".join(lines)
+
+    def _execute(self, action):
+        name = action.get("action")
+        args = {k: v for k, v in action.items() if k != "action"}
+        fn = getattr(self, f"_tool_{name}", None) if isinstance(name, str) else None
+        if fn is None:
+            obs = f"오류: 알 수 없는 단계 '{name}'"
+            self.on_tool(f"⚠ 알 수 없는 단계: {name}", obs)
+            return obs
+        try:
+            return fn(**args)
+        except ToolError as e:
+            obs = f"오류: {e}"
+        except TypeError as e:
+            obs = f"오류: 잘못된 인자 ({e})"
+        except Exception as e:
+            obs = f"오류: {type(e).__name__}: {e}"
+        self.on_tool(f"⚠ {name} 실패", obs)
+        return obs
+
+    # ---- 단계 구현 ----
+
+    def _resolve(self, path):
+        p = (self.workspace / str(path)).resolve()
+        if p != self.workspace and self.workspace not in p.parents:
+            raise ToolError("작업 폴더 밖의 경로에는 접근할 수 없습니다.")
+        return p
+
+    def _rel(self, p):
+        return p.relative_to(self.workspace).as_posix() or "."
+
+    def _iter_files(self, root):
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
+            for f in sorted(filenames):
+                yield Path(dirpath) / f
+
+    def _tool_list(self, path="."):
+        root = self._resolve(path)
+        if not root.is_dir():
+            raise ToolError(f"폴더가 아닙니다: {path}")
+        lines = []
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
+            base = Path(dirpath)
+            for d in dirnames:
+                lines.append(self._rel(base / d) + "/")
+            for f in sorted(filenames):
+                try:
+                    size = (base / f).stat().st_size
+                except OSError:
+                    continue
+                lines.append(f"{self._rel(base / f)} ({size:,} bytes)")
+            if len(lines) >= MAX_TREE_ENTRIES:
+                lines = lines[:MAX_TREE_ENTRIES] + [f"... (항목이 많아 {MAX_TREE_ENTRIES}개까지만 표시)"]
+                break
+        lines.sort(key=lambda s: s.lower())
+        result = "\n".join(lines) or "(빈 폴더)"
+        self.on_tool(f"📂 list {path}", result)
+        return result
+
+    def _read_file(self, p):
+        if not p.is_file():
+            raise ToolError(f"파일이 없습니다: {self._rel(p)}")
+        if p.stat().st_size > MAX_FILE_BYTES:
+            raise ToolError("파일이 너무 큽니다(2MB 초과).")
+        raw = p.read_bytes()
+        if b"\x00" in raw[:2048]:
+            raise ToolError("텍스트 파일이 아닙니다.")
+        return _decode(raw)
+
+    def _tool_read(self, path):
+        p = self._resolve(path)
+        text, _ = self._read_file(p)
+        lines = text.count("\n") + 1
+        self.on_tool(f"📄 read {self._rel(p)} ({lines}줄)", _truncate(text, 3000))
+        return _truncate(text, MAX_READ_CHARS)
+
+    def _tool_search(self, pattern, glob="**/*"):
+        try:
+            rx = re.compile(pattern)
+        except re.error:
+            rx = re.compile(re.escape(pattern))
+        matches = []
+        for f in self._iter_files(self.workspace):
+            rel = self._rel(f)
+            if glob not in ("**/*", "*") and not fnmatch.fnmatch(rel, glob) and not fnmatch.fnmatch(f.name, glob):
+                continue
+            try:
+                if f.stat().st_size > MAX_FILE_BYTES:
+                    continue
+                raw = f.read_bytes()
+            except OSError:
+                continue
+            if b"\x00" in raw[:2048]:
+                continue
+            text, _ = _decode(raw)
+            for no, line in enumerate(text.splitlines(), 1):
+                if rx.search(line):
+                    matches.append(f"{rel}:{no}: {line.strip()[:200]}")
+                    if len(matches) >= 100:
+                        break
+            if len(matches) >= 100:
+                matches.append("... (100개에서 중단)")
+                break
+        result = "\n".join(matches) or "(일치 항목 없음)"
+        self.on_tool(f"🔍 search {pattern}" + (f" ({glob})" if glob not in ("**/*", "*") else ""), result)
+        return result
+
+    def _diff(self, rel, old, new):
+        diff = difflib.unified_diff(old.splitlines(), new.splitlines(), f"a/{rel}", f"b/{rel}", lineterm="")
+        return "\n".join(diff)
+
+    def _save(self, p, old_text, new_text, enc, title):
+        rel = self._rel(p)
+        diff = self._diff(rel, old_text or "", new_text)
+        added = sum(1 for l in diff.splitlines() if l.startswith("+") and not l.startswith("+++"))
+        removed = sum(1 for l in diff.splitlines() if l.startswith("-") and not l.startswith("---"))
+        if not self.confirm("edit", f"{title}: {rel}", diff or "(변경 없음)"):
+            self.on_tool(f"⛔ {title} 거부됨: {rel}", diff)
+            return "사용자가 이 변경을 거부했습니다."
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(new_text.encode(enc))
+        self.on_tool(f"✏️ {title} {rel} (+{added} −{removed})", diff)
+        return f"저장 완료: {rel} (+{added}줄 −{removed}줄)"
+
+    def _tool_write(self, path, content):
+        p = self._resolve(path)
+        old, enc = (self._read_file(p) if p.exists() else (None, "utf-8"))
+        return self._save(p, old, str(content), enc, "파일 덮어쓰기" if p.exists() else "새 파일")
+
+    def _tool_edit(self, path, old, new):
+        p = self._resolve(path)
+        text, enc = self._read_file(p)
+        old, new = str(old), str(new)
+        count = text.count(old)
+        if count == 0 and "\r\n" in text:  # 모델은 보통 \n으로 쓴다
+            old, new = old.replace("\n", "\r\n"), new.replace("\n", "\r\n")
+            count = text.count(old)
+        if count == 0:
+            raise ToolError("old 문자열을 파일에서 찾지 못했습니다. read로 정확한 내용을 다시 확인하세요.")
+        if count > 1:
+            raise ToolError(f"old 문자열이 {count}번 나옵니다. 앞뒤 줄을 더 포함해 한 번만 나오게 하세요.")
+        return self._save(p, text, text.replace(old, new, 1), enc, "파일 수정")
+
+    def _tool_run(self, command):
+        command = str(command)
+        if not self.confirm("run", "명령 실행", f"{self.workspace}>\n{command}"):
+            self.on_tool(f"⛔ run 거부됨: {command}", "")
+            return "사용자가 명령 실행을 거부했습니다."
+        self.on_status(f"명령 실행 중: {command[:60]}")
+        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+        try:
+            r = subprocess.run(command, shell=True, cwd=self.workspace, capture_output=True,
+                               stdin=subprocess.DEVNULL, timeout=COMMAND_TIMEOUT, creationflags=flags, env=env)
+        except subprocess.TimeoutExpired:
+            obs = f"오류: {COMMAND_TIMEOUT}초 안에 끝나지 않아 중단했습니다."
+            self.on_tool(f"▶ run {command} (시간 초과)", obs)
+            return obs
+        out = _decode(r.stdout)[0] + (("\n[stderr]\n" + _decode(r.stderr)[0]) if r.stderr else "")
+        obs = f"종료 코드 {r.returncode}\n{_truncate(out.strip(), MAX_OBS_CHARS) or '(출력 없음)'}"
+        self.on_tool(f"▶ run {command} (종료 코드 {r.returncode})", _truncate(out.strip(), 4000))
+        return obs
+
+    def _tool_skill(self, name):
+        skill = self.skills.get(str(name).lower())
+        if not skill:
+            raise ToolError(f"스킬 '{name}'을 찾을 수 없습니다. 사용 가능: {', '.join(self.skills) or '없음'}")
+        self.on_tool(f"🧩 skill {skill.name}", skill.body)
+        return skill.body
+
+    def _tool_recall(self, query):
+        results = storage.search_threads(str(query), exclude_id=self.thread_id, limit=5, min_score=0.2, min_shared=3)
+        if not results:
+            obs = "(다른 대화에서 관련 내용을 찾지 못했습니다)"
+        else:
+            obs = "\n\n".join(
+                f"(대화 '{r['title']}') {'사용자' if r['role'] == 'user' else '어시스턴트'}: {_truncate(r['content'], 1500)}"
+                for r in results)
+        self.on_tool(f"🔎 recall {query} ({len(results)}건)", obs)
+        return obs
