@@ -91,11 +91,6 @@ def selftest(files_dir, res_dir):
                 text, is_error = manager.get("word").call("create_document", {"path": "t.docx", "markdown": "# 제목\n- 항목"})
                 report["word_create"] = "FAIL " + text if is_error else "OK"
                 report["word_read"] = documents.extract_text(Path(ws) / "t.docx")
-            if "hyperframes" in report["mcp"]:
-                # 렌더링은 PC 전용이지만 프로젝트 만들기와 기본 검사는 휴대폰에서도 된다
-                text, is_error = manager.get("hyperframes").call("create_project", {"path": "v", "duration": 2})
-                lint, _ = manager.get("hyperframes").call("lint", {"path": "v"}) if not is_error else ("", True)
-                report["video_create"] = "FAIL " + text if is_error else "OK " + lint
         finally:
             manager.shutdown()
     return json.dumps(report, ensure_ascii=False)

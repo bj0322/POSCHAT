@@ -59,7 +59,6 @@ MCP_RULE = ("- Word(.docx)·PowerPoint(.pptx)·Excel(.xlsx) 파일을 만들거�
             "고치기 전에 read로 내용을 확인하세요.\n"
             "- 논문을 읽어 달라고 하면 paper 도구로 info → read(목차·앞부분) → 필요한 section 순서로 나눠 읽고, "
             "용어를 풀어 쉽게 설명하세요(paper-reading 스킬이 있으면 먼저 부르세요).\n"
-            "- 영상을 만들 때는 hyperframes.guide를 먼저 읽고 create_project → index.html 고치기 → lint → render 순서로 하세요.\n"
             "- 웹페이지 내용을 읽거나 웹을 검색할 때는 firecrawl 도구를, 로그인·클릭·입력처럼 페이지를 직접 조작해야 할 때는 "
             "playwright 도구를 쓰세요(켜져 있을 때).")
 COMMAND_TIMEOUT = 180

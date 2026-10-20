@@ -49,7 +49,7 @@ jobs:
           Get-Content $report
           $text = Get-Content $report -Raw
           $version = python -c "from version import APP_VERSION; print(APP_VERSION)"
-          foreach ($want in "version: $version", "web: True", "documents: OK", "word OK", "powerpoint OK", "excel OK", "paper OK", "notion OK", "hyperframes OK", "firecrawl OK") {
+          foreach ($want in "version: $version", "web: True", "documents: OK", "word OK", "powerpoint OK", "excel OK", "paper OK", "notion OK", "firecrawl OK") {
             if (-not $text.Contains($want)) { Write-Error "selftest에 '$want'이(가) 없습니다."; exit 1 }
           }
 

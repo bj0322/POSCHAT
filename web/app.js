@@ -829,14 +829,14 @@ function showMcp() {
   const body = h("div", {},
     h("p", { style: "margin:0 0 8px;color:var(--text-2)" },
       "MCP 서버는 에이전트가 쓸 수 있는 도구를 더해 줍니다. 내장 서버로 Word·PowerPoint·Excel 문서를 만들고 고치고, ",
-      "논문을 찾아 읽고(paper), Notion 페이지를 다루고(notion, 설정에 토큰 필요), HTML로 영상을 만들고(hyperframes), ",
+      "논문을 찾아 읽고(paper), Notion 페이지를 다루고(notion, 설정에 토큰 필요), ",
       "웹페이지를 읽고 검색할 수 있습니다(firecrawl, 설정에 키 필요). 파일은 작업 폴더 안의 것만 다룹니다. ",
       "추천 서버(playwright: 브라우저 자동화)는 PC에 Node.js가 있으면 켜서 씁니다. ",
       "다른 MCP 서버는 설정 파일(mcp.json)에 Claude Desktop과 같은 형식으로 추가합니다."),
     list, note,
     h("small", { style: "display:block;margin-top:10px;color:var(--text-3)" },
       "서버는 에이전트 모드에서 처음 필요할 때 연결됩니다. 작업 폴더의 파일을 고치는 도구는 파일 수정처럼, ",
-      "외부 서버의 도구와 Notion에 쓰기·영상 렌더링처럼 바깥에 영향을 주는 도구는 명령 실행처럼 승인을 받습니다."),
+      "외부 서버의 도구와 Notion에 쓰기·브라우저 조작처럼 바깥에 영향을 주는 도구는 명령 실행처럼 승인을 받습니다."),
   );
   const m = modal({
     title: "MCP",

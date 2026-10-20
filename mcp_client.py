@@ -1,6 +1,6 @@
 """MCP(Model Context Protocol) 클라이언트: 표준 입출력 MCP 서버를 띄우고 도구를 부른다.
 
-내장 서버(word·powerpoint·excel·paper·notion·hyperframes·firecrawl)는 앱 exe 자신을
+내장 서버(word·powerpoint·excel·paper·notion·firecrawl)는 앱 exe 자신을
 `--mcp-server <이름>`으로, 소스 실행 때는 office_mcp.py를 실행한다. 추천 서버(playwright)는 앱이
 실행 방법을 아는 외부 서버로, 기본은 꺼져 있고 MCP 창에서 켠다. 그 밖의 외부 서버는
 %APPDATA%\\PostechChat\\mcp.json에 Claude Desktop과 같은 형식으로 적는다.
@@ -37,7 +37,6 @@ BUILTIN_SERVERS = {
     "excel": "Excel(.xlsx) 만들기·셀 쓰기",
     "paper": "논문 찾기(arXiv·Semantic Scholar)·정보·한 줄 요약·섹션별로 읽기·참고/인용 논문",
     "notion": "Notion 페이지·데이터베이스 찾기·읽기·만들기·덧붙이기(설정에 Notion 통합 토큰 필요)",
-    "hyperframes": "HTML로 영상 만들기(HyperFrames). 렌더링·미리보기는 PC에 Node.js 22+·FFmpeg 필요",
     "firecrawl": "웹페이지를 마크다운으로 읽기·웹 검색·사이트 지도·여러 쪽 크롤링(설정에 Firecrawl API 키 필요)",
 }
 PLAYWRIGHT_VERSION = "0.0.83"  # 같은 동작이 유지되도록 버전을 고정한다

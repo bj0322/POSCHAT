@@ -4,7 +4,7 @@
 표준 입출력으로 MCP(JSON-RPC 2.0, 줄 단위 JSON)를 주고받는다. 작업 폴더를 현재 폴더(cwd)로 받아
 그 밖의 경로는 거부한다. 문서 읽기는 에이전트의 read 단계(documents.py)가 맡는다.
 
-다른 내장 서버(paper_mcp·notion_mcp·hyperframes_mcp·firecrawl_mcp)도 이 모듈의 serve()로 돌고,
+다른 내장 서버(paper_mcp·notion_mcp·firecrawl_mcp)도 이 모듈의 serve()로 돌고,
 여기의 ToolFailure·경로 검사·HTTP 도우미를 함께 쓴다.
 """
 import json
@@ -558,12 +558,10 @@ SERVERS = {
 def all_servers():
     """내장 서버 이름 -> 도구 정의. 다른 서버 모듈은 이 모듈을 가져다 쓰므로 여기서 늦게 가져온다."""
     import firecrawl_mcp
-    import hyperframes_mcp
     import notion_mcp
     import paper_mcp
 
-    return {**SERVERS, "paper": paper_mcp.TOOLS, "notion": notion_mcp.TOOLS, "hyperframes": hyperframes_mcp.TOOLS,
-            "firecrawl": firecrawl_mcp.TOOLS}
+    return {**SERVERS, "paper": paper_mcp.TOOLS, "notion": notion_mcp.TOOLS, "firecrawl": firecrawl_mcp.TOOLS}
 
 
 # ---- MCP 표준 입출력 서버 ----
