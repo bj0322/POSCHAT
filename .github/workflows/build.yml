@@ -47,9 +47,22 @@ jobs:
           $report = Join-Path $env:APPDATA "PostechChat\selftest.txt"
           Get-Content $report
           $text = Get-Content $report -Raw
-          foreach ($want in "web: True", "documents: OK", "word OK", "powerpoint OK", "excel OK") {
+          $version = python -c "from version import APP_VERSION; print(APP_VERSION)"
+          foreach ($want in "version: $version", "web: True", "documents: OK", "word OK", "powerpoint OK", "excel OK") {
             if (-not $text.Contains($want)) { Write-Error "selftest에 '$want'이(가) 없습니다."; exit 1 }
           }
+
+      - name: Install silently and check the registered version
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "PostechChat-install"
+          Start-Process -FilePath "release\PostechChat-Setup.exe" -ArgumentList "--silent", "--dir=$dir", "--no-desktop" -Wait
+          Get-Content (Join-Path $env:TEMP "PostechChat-install.log")
+          if (-not (Test-Path (Join-Path $dir "PostechChat.exe"))) { Write-Error "설치 폴더에 PostechChat.exe가 없습니다."; exit 1 }
+          $version = python -c "from version import APP_VERSION; print(APP_VERSION)"
+          $registered = (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\PostechChat").DisplayVersion
+          Write-Output "version.py: $version / 설치 프로그램 등록 버전: $registered"
+          if ($registered -ne $version) { Write-Error "설치 프로그램 버전($registered)이 앱 버전($version)과 다릅니다."; exit 1 }
 
       - uses: actions/upload-artifact@v4
         with:

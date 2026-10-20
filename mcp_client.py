@@ -20,6 +20,7 @@ import threading
 from pathlib import Path
 
 import storage
+from version import APP_VERSION
 
 PROTOCOL_VERSION = "2025-06-18"
 START_TIMEOUT = 30
@@ -113,7 +114,7 @@ class Server:
         self.request("initialize", {
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {},
-            "clientInfo": {"name": "postech-genai-chat", "version": "1.3.0"},
+            "clientInfo": {"name": "postech-genai-chat", "version": APP_VERSION},
         }, timeout=START_TIMEOUT)
         self.notify("notifications/initialized")
         tools, cursor = [], None

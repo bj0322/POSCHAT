@@ -68,6 +68,7 @@ def main():
         "--add-data", f"{payload};.",
         "--add-data", f"{ICON};.",
         "--add-data", f"{ICON_PNG};.",
+        "--paths", str(ROOT),  # installer.py가 저장소 최상위의 version.py를 가져온다
         "--distpath", str(WORK / "setup"),
         str(ROOT / "installer" / "installer.py"),
     )

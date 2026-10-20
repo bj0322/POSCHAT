@@ -19,10 +19,14 @@ import zipfile
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+# 소스에서 실행할 때는 저장소 최상위의 version.py를 찾는다(빌드한 exe에는 함께 묶인다).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from version import APP_VERSION  # noqa: E402
+
 APP_NAME = "POSTECH GenAI Chat"
 APP_ID = "PostechChat"
 APP_EXE = "PostechChat.exe"
-VERSION = "1.1.0"
+VERSION = APP_VERSION
 PUBLISHER = "POSTECH GenAI Chat"
 UNINSTALL_KEY = rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{APP_ID}"
 CSIDL_PROGRAMS = 0x02
