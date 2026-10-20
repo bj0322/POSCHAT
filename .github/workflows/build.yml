@@ -1,8 +1,9 @@
 name: Build installer
 
-# PR과 수동 실행: Windows에서 설치 파일을 빌드하고 앱 자가 진단까지 확인한 뒤 결과물(artifact)로 올린다.
+# PR과 수동 실행: Windows 설치 파일과 Android APK를 빌드하고, 각각 자가 진단(Windows)과
+# 에뮬레이터 계측 테스트(Android)까지 확인한 뒤 결과물(artifact)로 올린다.
 # v로 시작하는 태그(예: v1.2.0)를 push하거나, 수동 실행 때 release에 태그 이름을 넣으면
-# 같은 빌드를 그 태그의 GitHub Release에 첨부한다(수동 실행은 실행한 커밋에 태그를 만든다).
+# 두 결과물을 그 태그의 GitHub Release에 첨부한다(수동 실행은 실행한 커밋에 태그를 만든다).
 on:
   pull_request:
   workflow_dispatch:
@@ -18,7 +19,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -69,10 +70,71 @@ jobs:
           name: PostechChat-Setup
           path: release/PostechChat-Setup.exe
 
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Chaquopy는 앱에 넣는 것과 같은 버전의 Python(3.11)으로 빌드한다.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Instrumented tests on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: cd android && ./gradlew --no-daemon connectedDebugAndroidTest
+
+      - name: Collect APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk PostechChat.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PostechChat-Android
+          path: PostechChat.apk
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: android-test-reports
+          path: android/app/build/reports/androidTests/
+
+  publish:
+    needs: [windows, android]
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release != '')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release != '')
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release || github.ref_name }}
-        shell: pwsh
-        run: gh release create $env:TAG release/PostechChat-Setup.exe --title "POSTECH GenAI Chat $env:TAG" --target $env:GITHUB_SHA --generate-notes
+        run: >
+          gh release create "$TAG" dist/PostechChat-Setup.exe dist/PostechChat.apk
+          --repo "$GITHUB_REPOSITORY" --title "POSTECH GenAI Chat $TAG" --target "$GITHUB_SHA" --generate-notes

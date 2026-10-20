@@ -1,0 +1,10 @@
+# 안드로이드 앱에 묶는 Python 패키지(Chaquopy가 설치). 데스크톱 requirements.txt에서
+# pywebview(화면은 Android WebView가 대신), truststore(certs.py가 중간 인증서를 받아 옴), comtypes(Windows 전용)를 뺐다.
+# lxml·Pillow(python-docx·python-pptx 의존성)는 Chaquopy 패키지 저장소의 안드로이드용 빌드를 받는다.
+requests>=2.28
+certifi
+pypdf>=4.0
+olefile>=0.46
+openpyxl>=3.1
+python-docx>=1.1
+python-pptx>=1.0

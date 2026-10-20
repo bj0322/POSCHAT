@@ -14,14 +14,22 @@ PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 SERVER_VERSION = "1.0.0"
 
 
+# 앱 프로세스 안의 스레드로 돌릴 때(안드로이드) 작업 폴더. None이면 현재 폴더(하위 프로세스로 실행할 때의 cwd).
+ROOT = None
+
+
 class ToolFailure(Exception):
     pass
+
+
+def _root():
+    return Path(ROOT or Path.cwd()).resolve()
 
 
 # ---- 경로 ----
 
 def _path(path, suffixes):
-    root = Path.cwd().resolve()
+    root = _root()
     p = (root / str(path)).resolve()
     if p != root and root not in p.parents:
         raise ToolFailure("작업 폴더 밖의 경로에는 쓸 수 없습니다.")
@@ -31,7 +39,7 @@ def _path(path, suffixes):
 
 
 def _rel(p):
-    return p.relative_to(Path.cwd().resolve()).as_posix()
+    return p.relative_to(_root()).as_posix()
 
 
 def _new_file(path, suffixes, overwrite):
@@ -561,11 +569,13 @@ def _handle(name, tools, msg):
     raise NotImplementedError(method)
 
 
-def serve(name):
+def serve(name, fin=None, fout=None):
+    """MCP 서버를 돌린다. fin/fout을 주지 않으면 표준 입출력을 쓴다."""
     tools = SERVERS.get(name)
     if tools is None:
         sys.exit(f"알 수 없는 MCP 서버: {name} (사용 가능: {', '.join(SERVERS)})")
-    fin, fout = _std_streams()
+    if fin is None:
+        fin, fout = _std_streams()
     for line in fin:
         line = line.strip()
         if not line:

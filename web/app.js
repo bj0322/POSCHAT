@@ -236,7 +236,8 @@ async function openThread(id) {
   $("#chat-title").textContent = thread.title;
   renderSidebar();
   renderMessages();
-  $("#input").focus();
+  if (isNarrow()) setCollapsed(true);
+  else $("#input").focus();  // 휴대폰에서는 키보드가 화면을 가리지 않게 자동으로 띄우지 않는다
 }
 
 async function newThread() {
@@ -854,6 +855,9 @@ async function chooseWorkspace() {
   if (S.thread && !S.thread.messages.length) renderMessages();
 }
 
+const isNarrow = () => window.matchMedia("(max-width: 720px)").matches;
+const isTouch = () => window.matchMedia("(pointer: coarse)").matches;
+
 function setCollapsed(collapsed) {
   $("#app").classList.toggle("collapsed", collapsed);
   $("#btn-expand").hidden = !collapsed;
@@ -881,8 +885,9 @@ function bindUI() {
       return;
     }
     if (menuOpen && e.key === "Escape") return hideSlash();
-    // 한글 조합 중 Enter는 무시해야 마지막 글자가 중복 전송되지 않는다
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+    // 한글 조합 중 Enter는 무시해야 마지막 글자가 중복 전송되지 않는다.
+    // 터치 화면(휴대폰)의 Enter는 줄바꿈으로 두고 보내기 버튼으로 보낸다.
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229 && !isTouch()) {
       e.preventDefault();
       if (!S.busy) send();
     }
@@ -893,6 +898,9 @@ function bindUI() {
   $("#btn-new-top").addEventListener("click", newThread);
   $("#btn-collapse").addEventListener("click", () => setCollapsed(true));
   $("#btn-expand").addEventListener("click", () => setCollapsed(false));
+  // 좁은 화면에서 사이드바는 화면 위에 겹치는 서랍이다. 바깥(어두운 부분)을 누르면 닫는다.
+  $("#app").addEventListener("click", (e) => { if (e.target === $("#app") && isNarrow()) setCollapsed(true); });
+  if (isNarrow()) setCollapsed(true);
   $("#btn-workspace").addEventListener("click", chooseWorkspace);
   $("#ws-chip").addEventListener("click", chooseWorkspace);
   $("#btn-skills").addEventListener("click", showSkills);

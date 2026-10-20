@@ -279,6 +279,7 @@ svg { width: 18px; height: 18px; flex: none; }
 .send:disabled { opacity: .25; cursor: default; }
 .send svg { width: 18px; height: 18px; }
 .hint { text-align: center; font-size: 12px; color: var(--text-3); padding: 8px 0 0; }
+@media (pointer: coarse) { .hint { display: none; } }
 .hint b { font-family: var(--mono); }
 
 #slash-menu {
@@ -357,3 +358,20 @@ svg { width: 18px; height: 18px; flex: none; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: transparent; border-radius: 10px; border: 3px solid transparent; background-clip: padding-box; }
 :hover::-webkit-scrollbar-thumb { background-color: var(--border); }
+
+/* ---------- 좁은 화면(휴대폰 앱) ---------- */
+@media (max-width: 720px) {
+  #app { height: 100vh; height: 100dvh; }
+  #sidebar {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 40; width: min(300px, 85vw);
+    transition: transform .2s ease; box-shadow: var(--shadow);
+  }
+  #app.collapsed #sidebar { margin-left: 0; transform: translateX(-100%); box-shadow: none; }
+  #app:not(.collapsed)::after { content: ""; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 30; }
+  #topbar { height: 52px; padding: 0 6px; }
+  .column { padding: 0 12px; }
+  .suggestions { grid-template-columns: 1fr; }
+  .msg.user .bubble { max-width: 88%; }
+  .modal, .modal.wide { width: calc(100vw - 20px); max-height: calc(100dvh - 24px); border-radius: 16px; }
+  .modal .row { flex-wrap: wrap; }
+}

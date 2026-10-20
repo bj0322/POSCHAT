@@ -10,17 +10,49 @@ a1은 문서에 형식이 없어서 SSE·JSON Lines·일반 텍스트를 모두 
 """
 import codecs
 import json
+import ssl
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
+
+import certs
 
 try:
     # genai.postech.ac.kr은 중간 인증서를 보내지 않아 certifi로는 검증에 실패한다.
     # OS 인증서 저장소(Windows는 중간 인증서를 자동으로 받아 옴)로 검증하도록 한다.
     import truststore
     truststore.inject_into_ssl()
+    TRUSTSTORE = True
 except ImportError:
-    pass
+    TRUSTSTORE = False  # 안드로이드 등: 검증 실패 때 중간 인증서를 직접 받아 온다(certs.py)
+
+# 중간 인증서를 보내지 않는 것을 확인한 서버. 이 서버에만 AIA로 중간 인증서를 받아 온다.
+AIA_HOSTS = {"genai.postech.ac.kr"}
+_aia_sessions = {}  # 호스트 -> 중간 인증서를 더한 CA 묶음으로 검증하는 세션
+
+
+class _StrictCAAdapter(requests.adapters.HTTPAdapter):
+    """받아 온 중간 인증서를 신뢰 기준점으로 삼지 않도록 VERIFY_X509_PARTIAL_CHAIN을 끈 연결.
+
+    Python 3.13+와 urllib3는 이 옵션을 켜므로, 그대로 두면 CA 묶음에 넣은 중간 인증서만으로 검증이
+    끝나 버린다. 끄면 중간 인증서는 체인을 잇는 데만 쓰이고 certifi의 루트까지 서명이 이어져야 통과한다.
+    """
+
+    def __init__(self, ca_file):
+        self._ca_file = ca_file
+        super().__init__()
+
+    def init_poolmanager(self, *args, **kwargs):
+        from urllib3.util.ssl_ import create_urllib3_context
+
+        ctx = create_urllib3_context(verify_flags=0)
+        ctx.verify_flags &= ~ssl.VERIFY_X509_PARTIAL_CHAIN
+        ctx.load_verify_locations(self._ca_file)
+        kwargs["ssl_context"] = ctx
+        return super().init_poolmanager(*args, **kwargs)
 
 URL = "https://genai.postech.ac.kr/agent/api/a1/gpt"
 
@@ -140,13 +172,36 @@ RAW = object()  # _events가 SSE도 JSON도 아닌 텍스트 조각에 붙이는
 
 
 def _post(url, headers, data, timeout, stream):
+    host = urlparse(url).hostname
+    kwargs = dict(headers=headers, json=data, timeout=(15, timeout), stream=stream)
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=(15, timeout), stream=stream)
+        if host in _aia_sessions:
+            response = _aia_sessions[host].post(url, **kwargs)
+        else:
+            try:
+                response = requests.post(url, **kwargs)
+            except requests.exceptions.SSLError:
+                if TRUSTSTORE or host not in AIA_HOSTS:
+                    raise
+                session = requests.Session()
+                session.mount(f"https://{host}", _StrictCAAdapter(_aia_bundle(url, host)))
+                response = session.post(url, **kwargs)
+                _aia_sessions[host] = session
     except requests.RequestException as e:
         raise ApiError(f"네트워크 오류: {e}") from e
     if response.status_code != 200:
         raise ApiError(f"API 오류 {response.status_code}: {response.text[:300]}")
     return response
+
+
+def _aia_bundle(url, host):
+    import certifi
+
+    out = Path(tempfile.gettempdir()) / f"postech-chat-ca-{host}.pem"
+    try:
+        return certs.build_bundle(url, certifi.where(), out, lambda u: requests.get(u, timeout=15).content)
+    except (certs.CertError, OSError, requests.RequestException) as e:
+        raise ApiError(f"서버 인증서를 검증하지 못했습니다(중간 인증서 받기 실패): {e}") from e
 
 
 def _is_json(response):

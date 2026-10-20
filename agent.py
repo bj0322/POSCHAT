@@ -58,6 +58,7 @@ MCP_ACTION_DOC = '{"action": "mcp", "tool": "서버.도구", "args": {"인자": 
 MCP_RULE = ("- Word(.docx)·PowerPoint(.pptx)·Excel(.xlsx) 파일을 만들거나 고칠 때는 write/edit 대신 mcp 도구를 쓰세요. "
             "고치기 전에 read로 내용을 확인하세요.")
 COMMAND_TIMEOUT = 180
+SHELL = None  # run 단계의 셸. None이면 운영체제 기본(Windows cmd, /bin/sh). 안드로이드는 /system/bin/sh
 
 INIT_TASK = (
     "이 작업 폴더를 살펴보고(list, read, search) 폴더의 목적, 구조, 주요 파일, 작업할 때 지켜야 할 "
@@ -627,7 +628,7 @@ class Agent:
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
         try:
-            r = subprocess.run(command, shell=True, cwd=self.workspace, capture_output=True,
+            r = subprocess.run(command, shell=True, executable=SHELL, cwd=self.workspace, capture_output=True,
                                stdin=subprocess.DEVNULL, timeout=COMMAND_TIMEOUT, creationflags=flags, env=env)
         except subprocess.TimeoutExpired:
             obs = f"오류: {COMMAND_TIMEOUT}초 안에 끝나지 않아 중단했습니다."

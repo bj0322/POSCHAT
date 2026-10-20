@@ -10,6 +10,7 @@ office_mcp.py를 실행한다. 외부 서버는
 작업 폴더나 설정이 바뀌면 다시 띄운다.
 """
 import collections
+import io
 import json
 import os
 import queue
@@ -25,6 +26,9 @@ from version import APP_VERSION
 PROTOCOL_VERSION = "2025-06-18"
 START_TIMEOUT = 30
 CALL_TIMEOUT = 180
+# 하위 프로세스를 띄울 수 없는 환경(안드로이드)에서는 내장 서버를 앱 프로세스 안의 스레드로 돌린다.
+INPROCESS_BUILTIN = False
+INPROCESS = "(앱 내장)"
 
 BUILTIN_SERVERS = {
     "word": "Word 문서(.docx) 만들기·내용 추가·글자 바꾸기",
@@ -77,6 +81,43 @@ def ensure_config_file():
     return path
 
 
+class _InProcessServer:
+    """subprocess.Popen 대신 쓰는 객체: 내장 서버를 같은 프로세스의 스레드에서 돌리고 os.pipe로 MCP를 주고받는다."""
+
+    def __init__(self, name, cwd):
+        import office_mcp
+
+        client_read, server_write = os.pipe()
+        server_read, client_write = os.pipe()
+        self.stdin = os.fdopen(client_write, "wb")
+        self.stdout = os.fdopen(client_read, "rb")
+        self.stderr = io.BytesIO()
+        server_in, server_out = os.fdopen(server_read, "rb"), os.fdopen(server_write, "wb")
+        office_mcp.ROOT = cwd  # 내장 서버는 모두 같은 작업 폴더를 쓴다
+
+        def run():
+            try:
+                office_mcp.serve(name, server_in, server_out)
+            finally:
+                server_in.close()
+                server_out.close()  # 클라이언트 쪽 stdout이 끝나 읽기 스레드가 멈춘다
+
+        self._thread = threading.Thread(target=run, daemon=True, name=f"mcp-{name}")
+        self._thread.start()
+
+    def poll(self):
+        return None if self._thread.is_alive() else 0
+
+    def wait(self, timeout=None):
+        self._thread.join(timeout)
+        if self._thread.is_alive():
+            raise subprocess.TimeoutExpired(INPROCESS, timeout)
+        return 0
+
+    def kill(self):
+        pass  # stdin을 닫으면 서버 루프가 끝난다
+
+
 class Server:
     """표준 입출력으로 연결된 MCP 서버 하나."""
 
@@ -97,6 +138,10 @@ class Server:
         return self.proc is not None and self.proc.poll() is None
 
     def start(self):
+        if self.command == INPROCESS:
+            self.proc = _InProcessServer(self.args[0], self.cwd)
+            self._initialize()
+            return
         exe = shutil.which(self.command) or self.command
         env = dict(os.environ, **{k: str(v) for k, v in self.env.items()})
         env.setdefault("PYTHONIOENCODING", "utf-8")
@@ -109,6 +154,9 @@ class Server:
                                          cwd=self.cwd or None, env=env, creationflags=flags)
         except OSError as e:
             raise MCPError(f"서버를 실행하지 못했습니다({self.command}): {e}")
+        self._initialize()
+
+    def _initialize(self):
         threading.Thread(target=self._read_stdout, daemon=True).start()
         threading.Thread(target=self._read_stderr, daemon=True).start()
         self.request("initialize", {
@@ -229,7 +277,7 @@ class Manager:
         disabled = set(config.get("mcp_disabled", []))
         specs = {}
         for name in BUILTIN_SERVERS:
-            cmd = builtin_command(name)
+            cmd = [INPROCESS, name] if INPROCESS_BUILTIN else builtin_command(name)
             specs[name] = {"command": cmd[0], "args": cmd[1:], "env": {}, "builtin": True,
                            "enabled": name not in disabled, "description": BUILTIN_SERVERS[name]}
         external, _ = load_external()

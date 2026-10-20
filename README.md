@@ -1,12 +1,14 @@
 # POSTECH GenAI Chat
 
-버전 1.3.1 — 설치 프로그램과 Windows 앱 목록에 표시되는 버전을 앱 버전과 맞춤
+버전 1.4.0 — 안드로이드 앱(같은 화면·에이전트·문서 읽기·MCP를 휴대폰에서)
+
+1.3.1 — 설치 프로그램과 Windows 앱 목록에 표시되는 버전을 앱 버전과 맞춤
 
 1.3.0 — 답변 스트리밍 표시, GPT 모델 선택(OpenAI Responses API, 기본 권장 GPT-5.1)
 
 1.2.0 — PDF·Word·PowerPoint·Excel·한글 문서 읽기, MCP 지원과 내장 오피스 MCP 서버(Word·PowerPoint·Excel 만들기·고치기), 답변의 LaTeX 수식 표시
 
-POSTECH GenAI API를 쓰는 Windows 데스크톱 챗봇입니다. 개인이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 MIT 라이선스는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
+POSTECH GenAI API를 쓰는 Windows 데스크톱·안드로이드 챗봇입니다. 개인이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 MIT 라이선스는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
 
 ## 설치
 
@@ -28,6 +30,18 @@ POSTECH GenAI API를 쓰는 Windows 데스크톱 챗봇입니다. 개인이 개�
 - 시작 메뉴에 `POSTECH GenAI Chat (2)`라는 이름으로 바로가기가 생길 수 있습니다. 같은 이름의 이전 바로가기를 탐색기가 아직 붙잡고 있을 때 생기며, 재부팅하면 풀립니다.
 - 바로가기를 만들지 못해도 설치는 끝납니다. 이때는 `%LOCALAPPDATA%\Programs\PostechChat\PostechChat.exe`로 실행하세요.
 - 조용한 설치 로그: `%TEMP%\PostechChat-install.log`
+
+### 안드로이드
+
+Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 7.0 이상, 64비트 ARM). 스토어 앱이 아니므로 처음 설치할 때 "출처를 알 수 없는 앱 설치"를 허용해야 합니다. 새 버전도 APK를 그대로 설치하면 대화·설정을 유지한 채 업데이트됩니다.
+
+데스크톱과 같은 화면과 Python 코드(에이전트, 문서 읽기, 내장 MCP 서버, 스트리밍, 수식)를 앱 안에서 그대로 실행합니다. 다른 점은 다음과 같습니다.
+
+- 사이드바는 왼쪽 위 버튼으로 여는 서랍이고, 뒤로 가기로 창·사이드바를 닫습니다. 입력창의 Enter는 줄바꿈이며 보내기 버튼으로 보냅니다.
+- 작업 폴더를 고르면 "모든 파일 접근" 권한을 요청합니다. 에이전트가 휴대폰 저장소의 일반 폴더(예: `Documents/보고서`)를 읽고 고치려면 필요합니다. 작업 폴더 없이 대화만 할 때는 필요 없습니다.
+- `run` 단계는 안드로이드 셸(`/system/bin/sh`)로 실행됩니다. Python·Node 같은 개발 도구는 없습니다.
+- 내장 Word·PowerPoint·Excel MCP 서버는 앱 안에서 바로 동작합니다. `npx`·`uvx`가 필요한 외부 MCP 서버는 휴대폰에서 실행할 수 없습니다.
+- 대화 기록과 설정은 앱 전용 저장소에 따로 있으며 PC와 동기화되지 않습니다.
 
 ## 사용법
 
@@ -170,6 +184,8 @@ POSTECH GenAI 서버의 모델은 자체 시스템 프롬프트 때문에 "사�
 | `storage.py` | 대화·설정·메모리 저장(`%APPDATA%\PostechChat`), 다른 대화 검색 |
 | `web/` | 화면(HTML/CSS/JS, marked·DOMPurify·KaTeX 포함) |
 | `.github/workflows/build.yml` | Windows에서 설치 파일 빌드·자가 진단, 태그 push 때 Release에 첨부 |
+| `android/` | 안드로이드 앱(Kotlin WebView + Chaquopy). 빌드할 때 저장소 최상위의 Python 모듈·`web/`·`skills/`를 복사해 넣고, `android_main.py`가 pywebview 대신 화면과 Python을 연결합니다. |
+| `certs.py` | 중간 인증서를 보내지 않는 서버를 위해 AIA로 중간 인증서를 받아 검증(Windows는 운영체제가 처리) |
 | `installer/installer.py` | 설치 프로그램(`--silent --dir=<경로> --no-desktop` 지원) |
 | `assets/` | 앱 아이콘 |
 | `build_installer.py` | 앱과 설치 프로그램 빌드 |
@@ -205,6 +221,8 @@ py -3 -m venv .venv
 빌드는 `%TEMP%\PostechChat-build`를 사용하며 결과는 `release\PostechChat-Setup.exe`입니다. 빌드 결과는 Git에 포함하지 않습니다.
 
 ## 배포
+
+안드로이드 APK는 `android/`에서 `./gradlew assembleRelease`(JDK 17, Android SDK, Python 3.11 필요)로 빌드합니다. 결과는 `android/app/build/outputs/apk/release/app-release.apk`입니다. 모든 빌드는 저장소의 공용 키(`android/app/poschat-shared.keystore`)로 서명해 덮어 설치가 되게 합니다. 공개 스토어에 올릴 때는 따로 보관한 키로 바꾸세요.
 
 설치 파일은 GitHub Releases에 올립니다. `.github/workflows/build.yml`이 Windows에서 빌드와 자가 진단(`--selftest`)을 자동으로 합니다.
 
