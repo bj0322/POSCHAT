@@ -12,6 +12,7 @@ import uuid
 
 import webview
 
+import attachments
 import mcp_client
 import storage
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
@@ -50,6 +51,7 @@ class Bridge:
         self._pending = {}            # confirm id -> [Event, decision]
         self._session_allow = set()   # "edit" / "run" — 이번 실행 동안 항상 허용
         self._mcp = mcp_client.Manager()
+        storage.cleanup_staged()
 
     # ---- 내부 도우미 ----
 
@@ -116,6 +118,7 @@ class Bridge:
             "version": APP_VERSION,
             "models": [{"id": m, "label": label} for m, label in MODELS],
             "memory": storage.load_memory(),
+            "attach_limits": {"max_bytes": attachments.MAX_BYTES, "max_files": attachments.MAX_FILES},
         }
 
     # ---- 스레드 ----
@@ -229,6 +232,61 @@ class Bridge:
     def get_skills(self):
         return self._skills()
 
+    # ---- Markdown 노트: memory.md(메모리), USER.md(사용자 정보) ----
+
+    def _note(self, kind):
+        if kind == "memory":
+            return storage.MEMORY_PATH, storage.read_memory_md, storage.save_memory_md
+        if kind == "profile":
+            return storage.PROFILE_PATH, storage.read_profile, storage.save_profile
+        raise ValueError(f"알 수 없는 노트: {kind}")
+
+    def read_note(self, kind):
+        path, read, _ = self._note(kind)
+        return {"path": str(path), "text": read(), "exists": path.exists()}
+
+    def save_note(self, kind, text):
+        _, _, save = self._note(kind)
+        with self._lock:
+            save(text)
+        return {"ok": True, "memory": storage.load_memory()}
+
+    def open_note(self, kind):
+        path, read, save = self._note(kind)
+        with self._lock:
+            if not path.exists():
+                save(read())
+        os.startfile(path)
+
+    # ---- 첨부 파일 ----
+
+    def upload_attachment(self, attach_id, name, offset, data_b64, last):
+        """화면이 파일을 조각으로 나눠 보낸다. 마지막 조각이면 첨부 정보를 돌려준다."""
+        try:
+            item = attachments.upload_chunk(attach_id, name, int(offset), data_b64, bool(last))
+        except (attachments.AttachmentError, ValueError, OSError) as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, "attachment": item}
+
+    def discard_attachment(self, attach_id):
+        """보내기 전에 뺀 첨부 파일을 지운다(이미 메시지에 붙은 파일은 지우지 않는다)."""
+        try:
+            if (storage.attachment_dir(attach_id) / storage.STAGED_MARK).exists():
+                storage.delete_attachment(attach_id)
+        except ValueError:
+            pass
+
+    def attachment_preview(self, attach_id):
+        try:
+            return attachments.preview(attach_id)
+        except (ValueError, OSError):
+            return None
+
+    def open_attachment(self, attach_id):
+        path = storage.attachment_file(attach_id)
+        if path:
+            os.startfile(path)
+
     # ---- MCP ----
 
     def get_mcp(self):
@@ -252,19 +310,22 @@ class Bridge:
 
     # ---- 대화 실행 ----
 
-    def send(self, thread_id, text, agent_mode):
+    def send(self, thread_id, text, agent_mode, attachment_ids=None):
         text = (text or "").strip()
-        if not text:
+        attachment_ids = [str(a) for a in attachment_ids or []]
+        if not text and not attachment_ids:
             return {"ok": False, "error": "메시지가 비어 있습니다."}
         if self._busy:
             return {"ok": False, "error": "이전 응답을 기다리는 중입니다."}
         workspace = self._workspace()
-        task, forced = text, None
+        task, forced, command = text or "첨부한 파일을 살펴보고 내용을 알려 주세요.", None, None
 
         if text.startswith("/"):
             cmd, _, rest = text[1:].partition(" ")
             cmd, rest = cmd.lower(), rest.strip()
-            if cmd == "init":
+            if cmd == "user":
+                command, task = "profile", rest
+            elif cmd == "init":
                 if not workspace:
                     return {"ok": False, "error": "/init 을 쓰려면 먼저 작업 폴더를 선택하세요."}
                 agent_mode = True
@@ -284,10 +345,14 @@ class Bridge:
             thread = storage.load_thread(thread_id)
             if thread is None:
                 return {"ok": False, "error": "대화를 찾을 수 없습니다."}
+            try:
+                attached = attachments.commit(attachment_ids)
+            except (attachments.AttachmentError, ValueError) as e:
+                return {"ok": False, "error": str(e)}
             history = list(thread["messages"])
             if not history and thread["title"] == "새 대화":
-                thread["title"] = text.splitlines()[0][:40]
-            msg = storage.make_message("user", text)
+                thread["title"] = (text.splitlines()[0] if text else attached[0]["name"])[:40]
+            msg = storage.make_message("user", text, **({"attachments": attached} if attached else {}))
             thread["messages"].append(msg)
             storage.save_thread(thread)
             self._busy = True
@@ -296,10 +361,11 @@ class Bridge:
             self._cancel.clear()
 
         threading.Thread(target=self._work, daemon=True,
-                         args=(run_id, thread_id, history, task, bool(agent_mode), forced, api_key, workspace)).start()
+                         args=(run_id, thread_id, history, task, bool(agent_mode), forced, api_key, workspace,
+                               attached, command)).start()
         return {"ok": True, "message": msg, "title": thread["title"]}
 
-    def _work(self, run_id, thread_id, history, task, agent_mode, forced, api_key, workspace):
+    def _work(self, run_id, thread_id, history, task, agent_mode, forced, api_key, workspace, attached=(), command=None):
         def alive():
             return run_id == self._run_id and not self._cancel.is_set()
 
@@ -337,7 +403,10 @@ class Bridge:
             on_delta=on_delta,
         )
         try:
-            answer = agent.run(history, task, forced)
+            if command == "profile":
+                answer = agent.update_profile(task, attached)
+            else:
+                answer = agent.run(history, task, forced, attached)
             if alive():
                 self._add(thread_id, "assistant", answer)
         except ApiError as e:

@@ -17,6 +17,9 @@ const ICONS = {
   chev: '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   plug: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v5"/><path d="M15 2v5"/><path d="M6 7h12v4a6 6 0 0 1-12 0Z"/><path d="M12 17v5"/></svg>',
+  clip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m21 11-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6L15 6.6"/></svg>',
+  file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>',
+  user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
   retry: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
 };
 
@@ -35,6 +38,8 @@ const S = {
   version: "",
   memory: [],
   slash: { items: [], index: 0 },
+  attach: [],  // 입력창에 고른 첨부 파일 { id, name, size, kind, status: "uploading"|"ready"|"error", progress, url }
+  attachLimits: { max_bytes: 20 * 1024 * 1024, max_files: 10 },
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -259,7 +264,10 @@ async function newThread() {
 
 function messageNode(msg) {
   if (msg.role === "user") {
-    return h("div", { class: "msg user" }, h("div", { class: "bubble" }, msg.content));
+    const files = msg.attachments && msg.attachments.length ? attachmentList(msg.attachments) : null;
+    return h("div", { class: "msg user" + (files ? " has-files" : "") },
+      files,
+      msg.content ? h("div", { class: "bubble" }, msg.content) : null);
   }
   if (msg.role === "assistant") {
     return h("div", { class: "msg assistant" },
@@ -282,6 +290,130 @@ function messageNode(msg) {
     return h("div", { class: "msg error" }, "⚠ " + msg.content);
   }
   return h("div");
+}
+
+/* ---------- 첨부 파일 ---------- */
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
+const previewCache = new Map();
+
+function fmtSize(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + " KB";
+  return (n / 1024 / 1024).toFixed(1) + " MB";
+}
+
+/* 보낸 메시지의 첨부 파일: 이미지는 미리보기, 나머지는 이름 칩. 누르면 알맞은 앱으로 연다. */
+function attachmentList(items) {
+  return h("div", { class: "msg-files" }, items.map((a) => {
+    if (a.kind === "image") {
+      const img = h("img", { alt: a.name });
+      const node = h("button", { class: "file-img", title: a.name, onclick: () => api().open_attachment(a.id) }, img);
+      const show = (url) => (url ? (img.src = url) : node.replaceWith(fileChip(a)));
+      if (previewCache.has(a.id)) show(previewCache.get(a.id));
+      else api().attachment_preview(a.id).then((url) => { previewCache.set(a.id, url); show(url); });
+      return node;
+    }
+    return fileChip(a);
+  }));
+}
+
+function fileChip(a) {
+  return h("button", { class: "file-chip", title: a.name, onclick: () => api().open_attachment(a.id) },
+    h("span", { class: "f-icon", html: ICONS.file }),
+    h("span", { class: "f-text" }, h("span", { class: "f-name" }, a.name), h("small", {}, fmtSize(a.size))));
+}
+
+function newAttachId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function readBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).slice(String(r.result).indexOf(",") + 1));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
+/* 파일을 512KB 조각으로 나눠 Python으로 보낸다(큰 문자열 하나를 넘기면 브리지가 느려지거나 멈춘다). */
+async function uploadAttachment(file, entry) {
+  const CHUNK = 512 * 1024;
+  let offset = 0;
+  for (;;) {
+    const blob = file.slice(offset, offset + CHUNK);
+    const last = offset + blob.size >= file.size;
+    const res = await api().upload_attachment(entry.id, file.name, offset, await readBase64(blob), last);
+    if (!S.attach.includes(entry)) return;  // 올리는 중에 뺐다
+    if (!res.ok) throw new Error(res.error);
+    offset += blob.size;
+    entry.progress = file.size ? offset / file.size : 1;
+    renderTray();
+    if (last) return res.attachment;
+  }
+}
+
+function addFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  const room = S.attachLimits.max_files - S.attach.length;
+  if (files.length > room) toast(`파일은 한 번에 ${S.attachLimits.max_files}개까지 첨부할 수 있습니다`);
+  for (const file of files.slice(0, Math.max(room, 0))) {
+    if (file.size > S.attachLimits.max_bytes) {
+      toast(`'${file.name}'이(가) 너무 큽니다 (${fmtSize(S.attachLimits.max_bytes)} 초과)`);
+      continue;
+    }
+    const entry = {
+      id: newAttachId(), name: file.name || "붙여넣은 이미지.png", size: file.size, status: "uploading", progress: 0,
+      kind: IMAGE_EXT.test(file.name || ".png") ? "image" : "file",
+    };
+    if (entry.kind === "image") entry.url = URL.createObjectURL(file);
+    S.attach.push(entry);
+    uploadAttachment(file.name ? file : new File([file], entry.name, { type: file.type }), entry)
+      .then((info) => {
+        if (!info) return;
+        entry.status = "ready";
+        entry.kind = info.kind;
+        entry.name = info.name;
+      })
+      .catch((e) => {
+        entry.status = "error";
+        entry.error = e.message || String(e);
+        toast(entry.error);
+      })
+      .finally(() => { renderTray(); updateSend(); });
+  }
+  renderTray();
+  updateSend();
+}
+
+function removeAttachment(entry) {
+  S.attach = S.attach.filter((a) => a !== entry);
+  if (entry.url) URL.revokeObjectURL(entry.url);
+  api().discard_attachment(entry.id);
+  renderTray();
+  updateSend();
+}
+
+function clearTray() {
+  for (const a of S.attach) if (a.url) URL.revokeObjectURL(a.url);
+  S.attach = [];
+  renderTray();
+}
+
+function renderTray() {
+  const tray = $("#attach-tray");
+  tray.hidden = !S.attach.length;
+  tray.replaceChildren(...S.attach.map((a) => {
+    const remove = h("button", { class: "t-remove", title: "빼기", html: ICONS.close, onclick: () => removeAttachment(a) });
+    const label = a.status === "uploading" ? `올리는 중 ${Math.round(a.progress * 100)}%`
+      : a.status === "error" ? "오류 — " + a.error : fmtSize(a.size);
+    return h("div", { class: "tray-item " + a.status, title: a.status === "error" ? a.error : a.name },
+      a.url ? h("img", { src: a.url, alt: "" }) : h("span", { class: "f-icon", html: ICONS.file }),
+      h("span", { class: "f-text" }, h("span", { class: "f-name" }, a.name), h("small", {}, label)),
+      remove);
+  }));
 }
 
 function diffOrPre(text) {
@@ -310,6 +442,7 @@ const SUGGESTIONS = [
   ["/init", "폴더를 분석해 INIT.md 만들기"],
   ["/summarize", "문서를 핵심 위주로 요약"],
   ["/remember", "모든 대화에서 기억할 내용 저장"],
+  ["/user", "대화를 바탕으로 내 정보(USER.md) 정리"],
 ];
 
 function renderMessages() {
@@ -403,8 +536,9 @@ function updateSend() {
     btn.disabled = false;
   } else {
     btn.innerHTML = ICONS.up;
-    btn.title = "보내기";
-    btn.disabled = !$("#input").value.trim();
+    const uploading = S.attach.some((a) => a.status === "uploading");
+    btn.title = uploading ? "파일을 올리는 중입니다" : "보내기";
+    btn.disabled = uploading || !($("#input").value.trim() || S.attach.some((a) => a.status === "ready"));
   }
 }
 
@@ -433,7 +567,9 @@ async function send() {
   }
   const input = $("#input");
   const text = input.value.trim();
-  if (!text) return;
+  const ready = S.attach.filter((a) => a.status === "ready");
+  if (S.attach.some((a) => a.status === "uploading")) return toast("파일을 올리는 중입니다");
+  if (!text && !ready.length) return;
   if (/^\/help\b/i.test(text)) {
     input.value = "";
     autoresize();
@@ -456,12 +592,15 @@ async function send() {
     return toast(res.ok ? "기억했습니다. 모든 대화에서 참고합니다" : "이미 기억하고 있는 내용입니다");
   }
   hideSlash();
-  const res = await api().send(S.currentId, text, $("#agent-toggle").checked);
+  const res = await api().send(S.currentId, text, $("#agent-toggle").checked, ready.map((a) => a.id));
   if (!res.ok) {
     toast(res.error);
     if (res.need_key) showSettings();
     return;
   }
+  for (const a of ready) if (a.url && a.kind === "image") previewCache.delete(a.id);
+  S.attach = S.attach.filter((a) => !ready.includes(a));  // 오류 난 파일은 남겨 두어 사용자가 보고 뺀다
+  renderTray();
   input.value = "";
   autoresize();
   S.thread.messages.push(res.message);
@@ -481,6 +620,7 @@ async function send() {
 function slashItems(query) {
   const base = [
     { name: "init", description: "작업 폴더를 분석해 INIT.md 만들기" },
+    { name: "user", description: "지금까지의 대화로 내 정보(USER.md) 작성·업데이트" },
     { name: "remember", description: "모든 대화에서 기억할 내용 저장 (/remember 내용)" },
     { name: "memory", description: "기억 목록 보기·지우기" },
     { name: "help", description: "도움말" },
@@ -554,6 +694,7 @@ window.onBackendEvent = (ev) => {
 
 /* ---------- 모달 ---------- */
 function modal({ title, body, buttons = [], wide = false, onClose }) {
+  if (isNarrow()) setCollapsed(true);  // 휴대폰: 사이드바 서랍에서 연 창이면 서랍을 닫는다
   const root = $("#modal-root");
   const close = (value) => {
     backdrop.remove();
@@ -718,8 +859,65 @@ function showMemory() {
       h("small", {}, "새 질문과 관련된 내용이 다른 대화에 있으면 찾아서 함께 참고합니다. 참고한 대화는 답변 위에 📎로 표시됩니다. ",
         "에이전트 모드에서는 \"지난번에 얘기한 ...\"처럼 말하면 다른 대화를 직접 검색합니다.")),
   );
-  modal({ title: "메모리", body, buttons: [{ label: "닫기", class: "primary" }] });
+  const m = modal({
+    title: "메모리",
+    body,
+    buttons: [
+      { label: "memory.md 편집", action: () => { m.close(); showNoteEditor("memory"); } },
+      { label: "닫기", class: "primary" },
+    ],
+  });
   setTimeout(() => input.focus(), 50);
+}
+
+/* memory.md·USER.md를 앱 안에서 고친다. 휴대폰에서도 같은 방법으로 고칠 수 있다. */
+const NOTES = {
+  memory: {
+    title: "메모리 (memory.md)",
+    desc: "\"- \"로 시작하는 줄 하나가 기억 하나입니다. 제목이나 설명을 더 써도 모두 대화에 전달되고, <!-- --> 안의 안내문만 빠집니다.",
+  },
+  profile: {
+    title: "내 정보 (USER.md)",
+    desc: "나에 대한 정보입니다. 모든 대화에 함께 전달되어 답변을 나에게 맞추는 데 쓰입니다. " +
+      "직접 쓰거나, 아래 'AI로 작성·업데이트'를 누르면 지금까지의 대화를 바탕으로 AI가 정리합니다(/user).",
+  },
+};
+
+async function showNoteEditor(kind) {
+  const note = await api().read_note(kind);
+  const info = NOTES[kind];
+  const area = h("textarea", { class: "note-editor", spellcheck: "false" });
+  area.value = note.text;
+  const body = h("div", {},
+    h("p", { style: "margin:0 0 8px;color:var(--text-2)" }, info.desc),
+    area,
+    h("small", { style: "display:block;margin-top:6px;color:var(--text-3);word-break:break-all" }, note.path));
+  const save = async () => {
+    const res = await api().save_note(kind, area.value);
+    S.memory = res.memory;
+    toast("저장했습니다");
+  };
+  const buttons = [{ label: "파일 열기", action: async () => { await save(); api().open_note(kind); } }];
+  if (kind === "profile") {
+    buttons.push({
+      label: "AI로 작성·업데이트", action: async (close) => {
+        if (area.value !== note.text) await save();
+        close();
+        if (S.busy) return toast("이전 응답을 기다리는 중입니다");
+        const input = $("#input");
+        const draft = input.value;  // 쓰던 글은 /user를 보낸 뒤 되돌려 놓는다
+        input.value = "/user";
+        await send();
+        input.value = draft;
+        autoresize();
+        updateSend();
+      },
+    });
+  }
+  buttons.push({ label: "취소", value: null });
+  buttons.push({ label: "저장", class: "primary", action: async (close) => { await save(); close(); } });
+  modal({ title: info.title, body, wide: true, buttons });
+  setTimeout(() => { area.focus(); area.setSelectionRange(0, 0); area.scrollTop = 0; }, 50);
 }
 
 function showSkills() {
@@ -817,7 +1015,8 @@ function showMcp() {
 function showHelp() {
   const rows = [
     ["/init", "작업 폴더를 분석해 INIT.md를 만듭니다"],
-    ["/remember 내용", "모든 대화에서 기억할 내용을 저장합니다"],
+    ["/user 요청", "지금까지의 대화로 내 정보(USER.md)를 작성·업데이트합니다"],
+    ["/remember 내용", "모든 대화에서 기억할 내용(memory.md)을 저장합니다"],
     ["/memory", "기억 목록을 보고 지웁니다"],
     ["/스킬이름 요청", "해당 스킬 지침을 적용해 요청을 수행합니다"],
     ["/help", "이 도움말"],
@@ -829,6 +1028,13 @@ function showHelp() {
     h("p", { style: "margin:0;color:var(--text-2)" },
       "작업 폴더를 고르고 에이전트를 켜면, AI가 파일을 읽고 검색하고 고치고 명령을 실행하면서 목표를 이룰 때까지 단계적으로 일합니다. ",
       "파일 수정과 명령 실행은 설정에 따라 실행 전에 승인을 받습니다."),
+    h("h3", { style: "margin:18px 0 6px;font-size:15px" }, "파일 첨부"),
+    h("p", { style: "margin:0;color:var(--text-2)" },
+      "입력창의 클립 버튼을 누르거나 파일을 끌어다 놓거나 이미지를 붙여 넣으면 첨부됩니다. ",
+      "문서(PDF·Word·PowerPoint·Excel·한글)와 텍스트 파일은 내용을 읽어 함께 보내고, 이미지는 '모델 선택(Responses API)' 방식에서 모델이 직접 봅니다."),
+    h("h3", { style: "margin:18px 0 6px;font-size:15px" }, "내 정보(USER.md)와 메모리(memory.md)"),
+    h("p", { style: "margin:0;color:var(--text-2)" },
+      "두 파일은 Markdown이며 모든 대화에 함께 전달됩니다. 왼쪽 아래 '내 정보'와 '메모리'에서 직접 고칠 수 있습니다."),
     h("h3", { style: "margin:18px 0 6px;font-size:15px" }, "INIT.md와 스킬"),
     h("p", { style: "margin:0;color:var(--text-2)" },
       "작업 폴더 최상위의 INIT.md는 모든 대화에 프로젝트 지침으로 들어갑니다. ",
@@ -847,6 +1053,7 @@ function applyState(state) {
   S.version = state.version || "";
   S.models = state.models || [];
   S.memory = state.memory || [];
+  if (state.attach_limits) S.attachLimits = state.attach_limits;
   $("#agent-toggle").checked = !!state.config.agent_mode;
   renderSidebar();
   renderWorkspaceChip();
@@ -900,6 +1107,29 @@ function bindUI() {
   });
   input.addEventListener("blur", () => setTimeout(hideSlash, 100));
   $("#btn-send").addEventListener("click", send);
+  const picker = $("#file-input");
+  $("#btn-attach").addEventListener("click", () => picker.click());
+  picker.addEventListener("change", () => { addFiles(picker.files); picker.value = ""; });
+  // 파일 끌어다 놓기, 이미지 붙여 넣기
+  const main = $("#main");
+  main.addEventListener("dragover", (e) => {
+    if (!Array.from(e.dataTransfer?.types || []).includes("Files")) return;
+    e.preventDefault();
+    main.classList.add("dropping");
+  });
+  main.addEventListener("dragleave", (e) => { if (e.target === main || !main.contains(e.relatedTarget)) main.classList.remove("dropping"); });
+  main.addEventListener("drop", (e) => {
+    main.classList.remove("dropping");
+    if (!e.dataTransfer?.files?.length) return;
+    e.preventDefault();
+    addFiles(e.dataTransfer.files);
+  });
+  input.addEventListener("paste", (e) => {
+    const files = Array.from(e.clipboardData?.items || []).filter((it) => it.kind === "file").map((it) => it.getAsFile()).filter(Boolean);
+    if (!files.length) return;
+    e.preventDefault();
+    addFiles(files);
+  });
   $("#btn-new").addEventListener("click", newThread);
   $("#btn-new-top").addEventListener("click", newThread);
   $("#btn-collapse").addEventListener("click", () => setCollapsed(true));
@@ -912,6 +1142,7 @@ function bindUI() {
   $("#btn-skills").addEventListener("click", showSkills);
   $("#btn-mcp").addEventListener("click", showMcp);
   $("#btn-memory").addEventListener("click", async () => { S.memory = await api().list_memory(); showMemory(); });
+  $("#btn-profile").addEventListener("click", () => showNoteEditor("profile"));
   $("#btn-settings").addEventListener("click", showSettings);
   $("#agent-toggle").addEventListener("change", (e) => {
     S.config.agent_mode = e.target.checked;

@@ -278,6 +278,41 @@ svg { width: 18px; height: 18px; flex: none; }
 }
 .send:disabled { opacity: .25; cursor: default; }
 .send svg { width: 18px; height: 18px; }
+.composer-left { display: flex; align-items: center; gap: 4px; min-width: 0; flex: 1; }
+.composer-left .chip { max-width: calc(100% - 44px); }
+.icon-btn.attach { width: 34px; height: 34px; margin-left: -8px; color: var(--text-2); }
+.icon-btn.attach svg { width: 19px; height: 19px; }
+#main.dropping #composer { outline: 2px dashed var(--text-3); outline-offset: 4px; }
+
+/* 첨부 파일: 입력창 위의 목록과 보낸 메시지의 파일 */
+#attach-tray { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 0 8px; margin-left: -8px; }
+.tray-item, .file-chip {
+  display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 12px;
+  padding: 6px 8px; max-width: 240px; background: var(--bg); font-size: 13px; text-align: left;
+}
+.tray-item img { width: 36px; height: 36px; object-fit: cover; border-radius: 8px; flex: none; }
+.tray-item.uploading { opacity: .7; }
+.tray-item.error { border-color: var(--danger); }
+.tray-item.error small { color: var(--danger); }
+.f-icon { width: 36px; height: 36px; border-radius: 8px; background: var(--hover); display: grid; place-items: center; flex: none; color: var(--text-2); }
+.f-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.f-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.f-text small { color: var(--text-3); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.t-remove { border: 0; background: transparent; color: var(--text-3); padding: 2px; border-radius: 6px; display: grid; place-items: center; flex: none; }
+.t-remove:hover { color: var(--text); background: var(--hover); }
+.t-remove svg { width: 15px; height: 15px; }
+.msg.user.has-files { flex-direction: column; align-items: flex-end; gap: 6px; }
+.msg-files { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: flex-end; max-width: 75%; }
+.file-chip:hover { background: var(--hover); }
+.file-img { border: 1px solid var(--border); padding: 0; border-radius: 14px; overflow: hidden; background: var(--bubble); line-height: 0; }
+.file-img img { max-width: 240px; max-height: 240px; display: block; }
+.file-img:not(:has(img[src])) { width: 120px; height: 90px; }
+.note-editor {
+  width: 100%; min-height: 46vh; border: 1px solid var(--border); background: var(--code-bg); color: var(--text);
+  border-radius: 12px; padding: 12px 14px; font: 13px/1.6 var(--mono); outline: none; resize: vertical;
+}
+.note-editor:focus { border-color: var(--text-3); }
+
 .hint { text-align: center; font-size: 12px; color: var(--text-3); padding: 8px 0 0; }
 @media (pointer: coarse) { .hint { display: none; } }
 .hint b { font-family: var(--mono); }
@@ -371,7 +406,9 @@ svg { width: 18px; height: 18px; flex: none; }
   #topbar { height: 52px; padding: 0 6px; }
   .column { padding: 0 12px; }
   .suggestions { grid-template-columns: 1fr; }
-  .msg.user .bubble { max-width: 88%; }
+  .msg.user .bubble, .msg-files { max-width: 88%; }
+  .file-img img { max-width: 180px; max-height: 180px; }
+  .note-editor { min-height: 50dvh; }
   .modal, .modal.wide { width: calc(100vw - 20px); max-height: calc(100dvh - 24px); border-radius: 16px; }
   .modal .row { flex-wrap: wrap; }
 }
