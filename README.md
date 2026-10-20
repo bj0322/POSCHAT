@@ -1,14 +1,14 @@
 # POSTECH GenAI Chat
 
-버전 1.1.0 — 대화 간 정보 공유(메모리·다른 대화 참고) 추가, 기본 스킬을 범용 스킬로 정리
+버전 1.2.0 — PDF·Word·PowerPoint·Excel·한글 문서 읽기, MCP 지원과 내장 오피스 MCP 서버(Word·PowerPoint·Excel 만들기·고치기), 답변의 LaTeX 수식 표시
 
 POSTECH GenAI API를 쓰는 Windows 데스크톱 챗봇입니다. 개인이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 MIT 라이선스는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
 
 ## 설치
 
-이 저장소는 소스 배포용이며 설치 파일을 포함하지 않습니다. 아래 개발 절차로 실행하거나 설치 프로그램을 직접 빌드하세요. 빌드한 설치 프로그램은 다음과 같이 사용할 수 있습니다.
+설치 파일(`PostechChat-Setup.exe`)은 저장소의 [Releases](https://github.com/bj0322/POSCHAT/releases)에서 받습니다. 저장소 자체에는 exe를 넣지 않습니다. 설치 파일 하나에 Python, 화면 라이브러리(marked·DOMPurify·KaTeX), 문서 라이브러리, 내장 MCP 서버가 모두 들어 있으므로 npm·curl·Python을 따로 설치할 필요가 없습니다. 직접 빌드하려면 아래 [개발](#개발)을 보세요.
 
-1. 직접 빌드한 `release\PostechChat-Setup.exe`를 로컬 폴더에서 실행합니다.
+1. Releases에서 받은 `PostechChat-Setup.exe`(또는 직접 빌드한 `release\PostechChat-Setup.exe`)를 실행합니다.
 2. 설치 프로그램에는 코드 서명이 없습니다. Windows 또는 보안 제품이 실행을 차단하면 경고 내용과 파일 출처를 확인하고, 필요하면 소스로 실행하세요. 보호 기능을 끄거나 예외를 추가하는 것을 설치 절차로 요구하지 않습니다.
 3. **설치**를 누릅니다. 관리자 권한은 필요 없습니다.
    - 설치 위치: `%LOCALAPPDATA%\Programs\PostechChat`
@@ -35,6 +35,7 @@ POSTECH GenAI API를 쓰는 Windows 데스크톱 챗봇입니다. 개인이 개�
 | 에이전트 켜기·끄기 | 오른쪽 위 **에이전트** 스위치 |
 | 명령어·스킬 | 입력창에 `/`를 입력하면 목록이 뜹니다 |
 | 메모리 | 왼쪽 아래 **메모리**, `/remember 내용`, `/memory` |
+| MCP 서버 켜기·끄기, 외부 서버 추가 | 왼쪽 아래 **MCP** |
 
 ### 대화 간 정보 공유 (메모리 · 다른 대화 참고)
 
@@ -52,10 +53,49 @@ POSTECH GenAI API를 쓰는 Windows 데스크톱 챗봇입니다. 개인이 개�
 - `list` 폴더 보기 · `read` 파일 읽기 · `search` 내용 검색
 - `write` 파일 작성 · `edit` 부분 수정 · `run` 명령 실행(Windows cmd)
 - `skill` 스킬 불러오기 · `recall` 다른 대화 검색 · `done` 최종 답변
+- `mcp` MCP 도구 실행(아래 [MCP](#mcp))
 
 각 단계는 대화에 한 줄씩 표시되고, 누르면 자세한 내용(파일 내용, 변경 diff, 명령 출력)이 펼쳐집니다. **파일 수정과 명령 실행은 실행 전에 diff나 명령을 보여 주고 승인을 받습니다.** 설정에서 "파일 수정은 자동 허용" 등으로 바꿀 수 있습니다. 파일 도구는 경로를 검사해 작업 폴더 밖의 접근을 차단합니다. 다만 `run`은 작업 폴더를 시작 위치로 하는 일반 셸 명령이며, 운영체제 수준의 샌드박스가 아닙니다. 승인한 명령은 현재 사용자 권한으로 다른 위치나 네트워크에 접근할 수 있습니다.
 
 작업 폴더가 없거나 에이전트를 끄면 일반 챗봇으로 동작합니다.
+
+### 문서 읽기
+
+`read`와 `search`는 텍스트 파일뿐 아니라 다음 문서도 읽습니다. 문서에서 글자만 뽑아 AI에게 전달하며, 이미지·도형 안의 그림은 읽지 못합니다.
+
+| 형식 | 읽는 내용 |
+|---|---|
+| PDF (`.pdf`) | 페이지별 텍스트. 스캔한 이미지 PDF와 암호 걸린 PDF는 읽지 못합니다. |
+| Word (`.docx`) | 문단, 제목 단계, 글머리 기호, 표 |
+| PowerPoint (`.pptx`) | 슬라이드별 텍스트, 표, 발표자 노트 |
+| Excel (`.xlsx`, `.xlsm`) | 시트별 셀 값과 셀 주소(예: `B3=90`). 계산 값이 없는 수식은 수식으로 표시 |
+| 한글 (`.hwp`, `.hwpx`) | 본문·표·글상자 텍스트. 암호·배포용 문서와 HWP 3.x 이하는 읽지 못합니다. |
+
+예전 Office 형식(`.doc`, `.ppt`, `.xls`)은 읽지 못하므로 Office에서 새 형식으로 저장한 뒤 사용하세요. 문서는 50MB까지 읽고, `search`는 20MB 이하 문서만 검색합니다.
+
+### MCP
+
+MCP(Model Context Protocol)는 AI 도구를 연결하는 표준입니다. 에이전트 모드에서 켜진 MCP 서버의 도구가 `mcp` 단계로 제공됩니다. 서버는 처음 필요할 때 작업 폴더를 현재 폴더로 해서 실행되고, 작업 폴더나 설정이 바뀌면 다시 실행됩니다. 앱을 닫으면 함께 종료됩니다.
+
+**내장 서버**는 앱에 들어 있어 따로 설치할 것이 없고, 작업 폴더 안의 파일만 다룹니다.
+
+| 서버 | 도구 |
+|---|---|
+| `word` | `create_document`(마크다운으로 새 .docx), `append_content`(끝에 덧붙이기), `replace_text`(글자 바꾸기, 서식 유지) |
+| `powerpoint` | `create_presentation`(슬라이드 목록으로 새 .pptx, 16:9), `add_slides`, `replace_text` |
+| `excel` | `create_workbook`(시트·행으로 새 .xlsx, `=`로 시작하면 수식), `write_cells`(셀 주소부터 값 쓰기) |
+
+**외부 서버**는 **MCP → 설정 파일 열기**로 `%APPDATA%\PostechChat\mcp.json`을 열어 Claude Desktop과 같은 형식으로 추가합니다. `npx`·`uvx` 같은 실행 도구가 필요한 서버는 그 도구가 PC에 설치되어 있어야 합니다. 내장 서버 이름(`word`, `powerpoint`, `excel`)은 쓸 수 없습니다.
+
+```json
+{
+  "mcpServers": {
+    "filesystem": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] }
+  }
+}
+```
+
+내장 서버의 도구는 파일 수정처럼, 외부 서버의 도구는 명령 실행처럼 실행 전에 승인을 받습니다(서버가 읽기 전용이라고 밝힌 도구는 제외). 텍스트 파일용 `write`·`edit`로는 Office·PDF·한글 문서를 쓸 수 없습니다.
 
 ### INIT.md
 
@@ -96,15 +136,19 @@ POSTECH GenAI 서버의 모델은 자체 시스템 프롬프트 때문에 "사�
 |---|---|
 | `main.py` | pywebview 창과 JS↔Python 브리지 |
 | `agent.py` | INIT.md·스킬 로딩, 에이전트 단계 루프와 도구 |
+| `documents.py` | PDF·Word·PowerPoint·Excel·한글 문서의 텍스트 추출 |
+| `mcp_client.py` | MCP 클라이언트: 서버 실행·연결·도구 호출, `mcp.json` 읽기 |
+| `office_mcp.py` | 내장 MCP 서버(word·powerpoint·excel). 앱 exe를 `--mcp-server <이름>`으로 실행하면 이 서버가 됩니다. |
 | `api.py` | POSTECH GenAI API 호출 |
 | `storage.py` | 대화·설정·메모리 저장(`%APPDATA%\PostechChat`), 다른 대화 검색 |
-| `web/` | 화면(HTML/CSS/JS, marked·DOMPurify 포함) |
+| `web/` | 화면(HTML/CSS/JS, marked·DOMPurify·KaTeX 포함) |
+| `.github/workflows/build.yml` | Windows에서 설치 파일 빌드·자가 진단, 태그 push 때 Release에 첨부 |
 | `installer/installer.py` | 설치 프로그램(`--silent --dir=<경로> --no-desktop` 지원) |
 | `assets/` | 앱 아이콘 |
 | `build_installer.py` | 앱과 설치 프로그램 빌드 |
 
 - 소스로 실행: `run.bat`
-- 진단: `PostechChat.exe --selftest`를 실행하면 API 연결 결과가 `%APPDATA%\PostechChat\selftest.txt`에 기록됩니다. 제거 명령은 `PostechChat.exe --uninstall`입니다.
+- 진단: `PostechChat.exe --selftest`를 실행하면 API 연결, 문서 라이브러리, 내장 MCP 서버 연결 결과가 `%APPDATA%\PostechChat\selftest.txt`에 기록됩니다. 제거 명령은 `PostechChat.exe --uninstall`입니다.
 - 설치 파일 빌드: `build.bat`, 또는 `python build_installer.py`. 결과는 `release\PostechChat-Setup.exe`입니다.
   - **python.org 공식 Python(3.10 이상, tcl/tk 포함)으로 빌드하세요.** Anaconda Python으로 빌드한 exe는 HTTPS 요청 때 `OPENSSL_Uplink: no OPENSSL_Applink` 오류로 꺼집니다. 빌드 스크립트가 이 경우를 미리 막습니다.
 - 앱의 HTTPS 요청은 `truststore`를 통해 운영체제 인증서 저장소를 사용합니다. 인증서 오류가 발생하면 Windows 인증서와 네트워크 설정을 확인하세요. TLS 검증을 비활성화하지 마세요.
@@ -132,6 +176,20 @@ py -3 -m venv .venv
 ```
 
 빌드는 `%TEMP%\PostechChat-build`를 사용하며 결과는 `release\PostechChat-Setup.exe`입니다. 빌드 결과는 Git에 포함하지 않습니다.
+
+## 배포
+
+설치 파일은 GitHub Releases에 올립니다. `.github/workflows/build.yml`이 Windows에서 빌드와 자가 진단(`--selftest`)을 자동으로 합니다.
+
+- PR을 올리거나 Actions에서 **Build installer**를 수동 실행하면, 빌드한 `PostechChat-Setup.exe`를 실행 결과의 Artifacts에서 받을 수 있습니다.
+- 버전 태그를 push하면 같은 빌드가 그 태그의 Release에 첨부됩니다.
+
+  ```powershell
+  git tag v1.2.0
+  git push origin v1.2.0
+  ```
+
+- 설치 파일에는 코드 서명이 없어서 처음 실행할 때 Windows SmartScreen 경고가 뜰 수 있습니다. 경고를 없애려면 코드 서명 인증서로 서명해야 합니다.
 
 ## v1.1.0 아키텍처
 

@@ -17,6 +17,7 @@ THREADS_DIR = APP_DIR / "threads"
 USER_SKILLS_DIR = APP_DIR / "skills"
 CONFIG_PATH = APP_DIR / "config.json"
 MEMORY_PATH = APP_DIR / "memory.json"
+MCP_PATH = APP_DIR / "mcp.json"  # 외부 MCP 서버 설정(Claude Desktop과 같은 형식)
 
 DEFAULT_CONFIG = {
     "api_key": "",

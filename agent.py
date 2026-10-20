@@ -17,8 +17,11 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import documents
 import storage
 from api import ask
+from documents import DocumentError
+from mcp_client import MCPError
 
 # POSTECH 서버가 답변 끝에 붙이는 <!-- tools: none --> 같은 주석
 SERVER_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -50,6 +53,10 @@ OLD_OBS_CHARS = 500
 RECENT_FULL_STEPS = 6
 MAX_HISTORY_CHARS = 10000
 MAX_FILE_BYTES = 2 * 1024 * 1024
+MAX_SEARCH_DOC_BYTES = 20 * 1024 * 1024
+MCP_ACTION_DOC = '{"action": "mcp", "tool": "서버.도구", "args": {"인자": "값"}}  MCP 도구 실행 (아래 [MCP 도구] 목록)'
+MCP_RULE = ("- Word(.docx)·PowerPoint(.pptx)·Excel(.xlsx) 파일을 만들거나 고칠 때는 write/edit 대신 mcp 도구를 쓰세요. "
+            "고치기 전에 read로 내용을 확인하세요.")
 COMMAND_TIMEOUT = 180
 
 INIT_TASK = (
@@ -70,6 +77,7 @@ ACTION_DOCS = """{"action": "list", "path": "."}  폴더 목록 보기
 
 RULES = """- 파일을 고치기 전에 먼저 read로 내용을 확인하세요.
 - 작은 수정은 edit, 새 파일이나 전면 수정은 write를 쓰세요. 경로는 작업 폴더 기준 상대 경로입니다.
+- PDF·Word·PowerPoint·Excel·한글(hwp, hwpx) 문서도 read로 읽고 search로 검색할 수 있습니다.
 - write의 content와 edit의 new에는 파일에 실제로 들어갈 내용만 쓰세요. 사용자에게 하는 말·인사·안내 문구는 넣지 마세요.
 - 파일을 저장한 뒤 같은 파일을 이유 없이 다시 쓰지 마세요.
 - 코드를 고쳤다면 가능하면 run으로 실행하거나 테스트해서 확인하세요.
@@ -183,11 +191,19 @@ def parse_action(reply):
 
 
 def _compact_action(action):
-    """진행 기록용: write/edit의 긴 내용은 줄여서 보여 준다."""
+    """진행 기록용: write/edit와 mcp 인자의 긴 내용은 줄여서 보여 준다."""
+    def shorten(value):
+        if isinstance(value, str) and len(value) > 200:
+            return value[:200] + f"...({len(value):,}자)"
+        if isinstance(value, (dict, list)):
+            text = json.dumps(value, ensure_ascii=False)
+            return value if len(text) <= 400 else text[:400] + f"...({len(text):,}자)"
+        return value
+
     short = dict(action)
-    for key in ("content", "old", "new"):
-        if isinstance(short.get(key), str) and len(short[key]) > 200:
-            short[key] = short[key][:200] + f"...({len(action[key]):,}자)"
+    for key in ("content", "old", "new", "args"):
+        if key in short:
+            short[key] = shorten(short[key])
     return json.dumps(short, ensure_ascii=False)
 
 
@@ -197,7 +213,7 @@ class ToolError(Exception):
 
 class Agent:
     def __init__(self, api_key, workspace, agent_mode, max_steps, history_messages,
-                 on_status, on_tool, confirm, cancelled, thread_id=None, share_threads=True):
+                 on_status, on_tool, confirm, cancelled, thread_id=None, share_threads=True, mcp=None):
         self.api_key = api_key
         self.workspace = Path(workspace).resolve() if workspace else None
         self.agent_mode = agent_mode
@@ -211,6 +227,9 @@ class Agent:
         self.thread_id = thread_id
         self.share_threads = share_threads
         self.context_blocks = []  # 메모리·다른 대화 참고 — run()에서 채운다
+        self.mcp = mcp                # () -> 연결된 mcp_client.Server 목록. 에이전트 모드에서만 부른다
+        self.mcp_servers = {}
+        self._doc_cache = {}          # 경로 -> ((크기, 수정 시각), 문서 텍스트)
 
     def _ask(self, prompt):
         reply = SERVER_COMMENT_RE.sub("", ask(self.api_key, prompt))
@@ -298,6 +317,11 @@ class Agent:
         if not (self.agent_mode and self.workspace):
             return self._chat(history, task, forced_skill)
 
+        if self.mcp:
+            try:
+                self.mcp_servers = {s.name: s for s in self.mcp()}
+            except Exception as e:
+                self.on_tool("⚠ MCP 서버 연결 실패", f"{type(e).__name__}: {e}")
         static = self._static_prompt(history, task, forced_skill)
         log = []
         read_paths = set()
@@ -379,10 +403,12 @@ class Agent:
             "자동화 프로그램이 당신이 고른 단계를 수행하고 결과를 진행 기록에 추가합니다.\n"
             "JSON 객체 하나로만 답하세요. 설명 문장 금지. 최종 답변은 done의 answer에 한국어로 쓰세요.\n"
             + MATH_RULE + "\nanswer는 JSON 문자열이므로 LaTeX의 백슬래시는 두 번 쓰세요. 예: \"\\\\(x^2\\\\)\"",
-            "[단계 종류]\n" + ACTION_DOCS,
-            "[규칙]\n" + RULES,
+            "[단계 종류]\n" + ACTION_DOCS + ("\n" + MCP_ACTION_DOC if self.mcp_servers else ""),
+            "[규칙]\n" + RULES + ("\n" + MCP_RULE if self.mcp_servers else ""),
             f"[작업 폴더]\n{self.workspace}",
         ]
+        if self.mcp_servers:
+            parts.append("[MCP 도구] (* 표시는 필수 인자, 경로는 작업 폴더 기준)\n" + self._mcp_tool_docs())
         init = load_init(self.workspace)
         if init:
             parts.append("[프로젝트 지침 (INIT.md) — 항상 따르세요]\n" + init)
@@ -476,8 +502,28 @@ class Agent:
             raise ToolError("텍스트 파일이 아닙니다.")
         return _decode(raw)
 
+    def _read_document(self, p):
+        """문서 파일의 텍스트. 같은 파일을 다시 읽으면 바뀌지 않은 동안 캐시를 쓴다."""
+        st = p.stat()
+        stamp = (st.st_size, st.st_mtime)
+        cached = self._doc_cache.get(p)
+        if cached and cached[0] == stamp:
+            return cached[1]
+        text = documents.extract_text(p)
+        self._doc_cache[p] = (stamp, text)
+        return text
+
     def _tool_read(self, path):
         p = self._resolve(path)
+        if documents.is_document(p):
+            if not p.is_file():
+                raise ToolError(f"파일이 없습니다: {self._rel(p)}")
+            try:
+                text = self._read_document(p)
+            except DocumentError as e:
+                raise ToolError(str(e))
+            self.on_tool(f"📄 read {self._rel(p)} (문서, {len(text):,}자)", _truncate(text, 3000))
+            return _truncate(text, MAX_READ_CHARS)
         text, _ = self._read_file(p)
         lines = text.count("\n") + 1
         self.on_tool(f"📄 read {self._rel(p)} ({lines}줄)", _truncate(text, 3000))
@@ -493,15 +539,23 @@ class Agent:
             rel = self._rel(f)
             if glob not in ("**/*", "*") and not fnmatch.fnmatch(rel, glob) and not fnmatch.fnmatch(f.name, glob):
                 continue
-            try:
-                if f.stat().st_size > MAX_FILE_BYTES:
+            if documents.is_document(f):
+                try:
+                    if f.stat().st_size > MAX_SEARCH_DOC_BYTES:
+                        continue
+                    text = self._read_document(f)
+                except (OSError, DocumentError):
                     continue
-                raw = f.read_bytes()
-            except OSError:
-                continue
-            if b"\x00" in raw[:2048]:
-                continue
-            text, _ = _decode(raw)
+            else:
+                try:
+                    if f.stat().st_size > MAX_FILE_BYTES:
+                        continue
+                    raw = f.read_bytes()
+                except OSError:
+                    continue
+                if b"\x00" in raw[:2048]:
+                    continue
+                text, _ = _decode(raw)
             for no, line in enumerate(text.splitlines(), 1):
                 if rx.search(line):
                     matches.append(f"{rel}:{no}: {line.strip()[:200]}")
@@ -531,13 +585,23 @@ class Agent:
         self.on_tool(f"✏️ {title} {rel} (+{added} −{removed})", diff)
         return f"저장 완료: {rel} (+{added}줄 −{removed}줄)"
 
+    def _check_text_target(self, p):
+        if documents.is_document(p):
+            hint = ("mcp 도구(word·powerpoint·excel)를 쓰세요." if self.mcp_servers
+                    else "설정의 MCP에서 내장 오피스 서버를 켜면 만들거나 고칠 수 있습니다.")
+            if p.suffix.lower() in (".pdf", ".hwp", ".hwpx", ".doc", ".ppt", ".xls"):
+                hint = "이 형식은 읽기만 지원합니다."
+            raise ToolError(f"{p.suffix} 문서는 write/edit로 쓸 수 없습니다. {hint}")
+
     def _tool_write(self, path, content):
         p = self._resolve(path)
+        self._check_text_target(p)
         old, enc = (self._read_file(p) if p.exists() else (None, "utf-8"))
         return self._save(p, old, str(content), enc, "파일 덮어쓰기" if p.exists() else "새 파일")
 
     def _tool_edit(self, path, old, new):
         p = self._resolve(path)
+        self._check_text_target(p)
         text, enc = self._read_file(p)
         old, new = str(old), str(new)
         count = text.count(old)
@@ -569,6 +633,45 @@ class Agent:
         obs = f"종료 코드 {r.returncode}\n{_truncate(out.strip(), MAX_OBS_CHARS) or '(출력 없음)'}"
         self.on_tool(f"▶ run {command} (종료 코드 {r.returncode})", _truncate(out.strip(), 4000))
         return obs
+
+    def _mcp_tool_docs(self):
+        lines = []
+        for server in self.mcp_servers.values():
+            for tool in server.tools:
+                schema = tool.get("inputSchema") or {}
+                required = set(schema.get("required") or [])
+                params = ", ".join(k + ("*" if k in required else "") for k in (schema.get("properties") or {}))
+                desc = " ".join(str(tool.get("description") or "").split())
+                lines.append(f"- {server.name}.{tool['name']}({params}): {_truncate(desc, 400)}")
+        return "\n".join(lines)
+
+    def _tool_mcp(self, tool, args=None, **extra):
+        """MCP 도구 실행. 모델이 인자를 args 밖에 쓴 경우도 받아 준다."""
+        server_name, _, tool_name = str(tool).partition(".")
+        server = self.mcp_servers.get(server_name)
+        spec = next((t for t in server.tools if t["name"] == tool_name), None) if server else None
+        if spec is None:
+            available = ", ".join(f"{s.name}.{t['name']}" for s in self.mcp_servers.values() for t in s.tools)
+            raise ToolError(f"MCP 도구 '{tool}'가 없습니다. 사용 가능: {available or '없음'}")
+        if args is not None and not isinstance(args, dict):
+            raise ToolError("args는 객체여야 합니다.")
+        arguments = {**extra, **(args or {})}
+        detail = json.dumps(arguments, ensure_ascii=False, indent=2)
+        read_only = bool((spec.get("annotations") or {}).get("readOnlyHint"))
+        if not read_only:
+            # 내장 서버는 작업 폴더 안의 문서만 고치므로 파일 수정으로, 외부 서버는 무엇이든 할 수 있으므로 명령 실행으로 묻는다.
+            kind = "edit" if server.builtin else "run"
+            if not self.confirm(kind, f"MCP 도구: {tool}", _truncate(detail, 6000)):
+                self.on_tool(f"⛔ mcp {tool} 거부됨", detail)
+                return "사용자가 이 MCP 도구 실행을 거부했습니다."
+        self.on_status(f"MCP 도구 실행 중: {tool}")
+        try:
+            text, is_error = server.call(tool_name, arguments)
+        except MCPError as e:
+            raise ToolError(str(e))
+        icon = "⚠" if is_error else "🔌"
+        self.on_tool(f"{icon} mcp {tool}", _truncate(text, 4000) + "\n\n[인자]\n" + _truncate(detail, 3000))
+        return _truncate(text, MAX_OBS_CHARS)
 
     def _tool_skill(self, name):
         skill = self.skills.get(str(name).lower())

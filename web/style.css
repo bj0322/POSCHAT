@@ -329,6 +329,10 @@ svg { width: 18px; height: 18px; flex: none; }
 .skill-item b { font-family: var(--mono); }
 .skill-item p { margin: 2px 0 0; color: var(--text-2); font-size: 13px; }
 .badge { font-size: 11px; color: var(--text-3); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; margin-left: 6px; }
+.badge.mcp-connected { color: #1a7f37; border-color: currentColor; }
+.badge.mcp-error, .skill-item p.mcp-error { color: var(--danger); }
+.badge.mcp-error { border-color: currentColor; }
+.skill-item p.mcp-error { white-space: pre-wrap; word-break: break-word; }
 
 .diff {
   font-family: var(--mono); font-size: 12.5px; line-height: 1.5; background: var(--code-bg);
