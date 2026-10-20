@@ -32,6 +32,11 @@ jobs:
         run: python -m pip install -r requirements.txt pyinstaller
 
       - name: Build
+        # 러너 콘솔은 cp1252라서 빌드 스크립트의 한글 출력에서 UnicodeEncodeError가 난다.
+        # 자가 진단은 사용자 PC와 같은 조건이어야 하므로 이 단계에만 UTF-8을 켠다.
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: utf-8
         run: python build_installer.py
 
       - name: Self-test the built app
