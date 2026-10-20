@@ -80,6 +80,54 @@ async function copyText(text) {
 /* ---------- 마크다운 ---------- */
 marked.setOptions({ gfm: true, breaks: true });
 
+// 수식: \( \)와 $ $는 문장 안 수식, \[ \]와 $$ $$는 독립 수식으로 KaTeX가 그린다.
+// marked 확장으로 처리하므로 코드 블록과 `인라인 코드` 안은 수식으로 바뀌지 않는다.
+// $ 한 개는 금액("$5와 $10")과 헷갈리지 않도록 $ 바로 안쪽에 공백이 없고 닫는 $ 뒤에 숫자가 없을 때만 수식으로 본다.
+const MATH_INLINE = [
+  [/^\$\$([\s\S]+?)\$\$/, true],
+  [/^\\\[([\s\S]+?)\\\]/, true],
+  [/^\\\(([\s\S]+?)\\\)/, false],
+  [/^\$(?![\s$])((?:\\[\s\S]|[^\\$\n])+?)(?<!\s)\$(?!\d)/, false],
+];
+const MATH_BLOCK = /^ {0,3}(?:\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\])[ \t]*(?:\n+|$)/;
+
+function renderMath(tex, displayMode) {
+  // throwOnError: false — 문법이 틀린 수식은 오류 대신 원문을 빨간색으로 보여 준다.
+  return katex.renderToString(tex.trim(), { displayMode, throwOnError: false, output: "html", strict: "ignore" });
+}
+
+if (window.katex) {
+  marked.use({
+    extensions: [
+      {
+        name: "mathBlock",
+        level: "block",
+        start: (src) => src.match(/^ {0,3}(?:\$\$|\\\[)/m)?.index,
+        tokenizer(src) {
+          const m = MATH_BLOCK.exec(src);
+          if (m) return { type: "mathBlock", raw: m[0], text: m[1] ?? m[2] };
+        },
+        renderer: (token) => renderMath(token.text, true) + "\n",
+      },
+      {
+        name: "mathInline",
+        level: "inline",
+        start: (src) => {
+          const i = src.search(/\$|\\[([]/);
+          return i < 0 ? undefined : i;
+        },
+        tokenizer(src) {
+          for (const [re, display] of MATH_INLINE) {
+            const m = re.exec(src);
+            if (m) return { type: "mathInline", raw: m[0], text: m[1], display };
+          }
+        },
+        renderer: (token) => renderMath(token.text, token.display),
+      },
+    ],
+  });
+}
+
 // CommonMark는 "**`코드`**로"처럼 닫는 ** 바로 뒤에 한글이 오면 굵게로 인식하지 않는다.
 // 코드 블록 밖의 **...**를 미리 <strong>으로 바꿔 둔다(안쪽 마크다운은 그대로 처리된다).
 function fixKoreanBold(text) {

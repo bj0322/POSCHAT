@@ -25,6 +25,22 @@ SERVER_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 # 서버 모델이 가끔 답변 앞에 붙이는 빈 코드 블록이나 "placeholder" 코드 블록
 JUNK_CODE_RE = re.compile(r"```[a-zA-Z]*[ \t]*\n?(?:\s*|[^`]*?(?:placeholder|user-visible)[^`]*?)```[ \t]*\n?", re.IGNORECASE)
 MEMORY_INTENT_RE = re.compile(r"기억\s*해|기억\s*하고\s*있어|잊지\s*마|remember", re.IGNORECASE)
+# 답변의 수식은 화면(web/app.js)에서 KaTeX로 렌더링한다.
+MATH_RULE = ("수식 출력 규칙: 수학 수식은 LaTeX로 쓰세요. 문장 안 수식은 \\( ... \\), 독립 수식은 \\[ ... \\]로 감싸세요. "
+             "수식을 코드 블록으로 감싸지 말고, LaTeX 명령의 백슬래시를 보존하세요. "
+             "예: \\(f'(x)=2x\\), 독립 수식은 \\[\\int_0^1 x^2\\,dx=\\frac13\\]")
+# 모델이 JSON 문자열 안에 LaTeX를 이스케이프 없이 쓴 경우("\(x\)", "\frac")를 살리기 위한 패턴.
+# 올바른 JSON 이스케이프만 남기고 나머지 백슬래시는 두 번 쓴다. \f·\b 뒤에 글자가 오거나
+# \n·\t·\r 뒤에 흔한 LaTeX 명령 이름이 이어지면 JSON 이스케이프가 아니라 LaTeX 명령으로 본다.
+_LATEX_AFTER = {
+    "n": "abla|eq|e|eg|i|u|ot|otin|mid|leq|geq|ewline|olimits",
+    "t": "heta|au|imes|o|ext|extbf|extit|extrm|an|anh|op|riangle|ilde|frac|herefore",
+    "r": "ho|ight|ightarrow|angle|ceil|floor|brace|m|vert|Vert",
+}
+JSON_ESCAPE_RE = re.compile(
+    r'\\(?:["\\/]|u[0-9a-fA-F]{4}|[bf](?![A-Za-z])|'
+    + "|".join(f"{c}(?!(?:{words})(?![A-Za-z]))" for c, words in _LATEX_AFTER.items())
+    + r")|\\")
 
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", ".idea", ".vscode"}
 MAX_TREE_ENTRIES = 300
@@ -140,14 +156,27 @@ def _decode(raw):
     return raw.decode("utf-8", errors="replace"), "utf-8"
 
 
+def _decode_json(text):
+    try:
+        return json.JSONDecoder().raw_decode(text)[0]
+    except json.JSONDecodeError:
+        return None
+
+
+def fix_latex_escapes(text):
+    """JSON 텍스트에서 JSON 이스케이프가 아닌 백슬래시(LaTeX 명령)를 \\\\로 바꾼다."""
+    return JSON_ESCAPE_RE.sub(lambda m: m[0] if len(m[0]) > 1 else "\\\\", text)
+
+
 def parse_action(reply):
     start = reply.find("{")
     if start == -1:
         return None
-    try:
-        obj, _ = json.JSONDecoder().raw_decode(reply[start:])
-    except json.JSONDecodeError:
-        return None
+    obj = _decode_json(reply[start:])
+    # 디코딩에 실패했거나, answer에 폼 피드·백스페이스(\frac, \beta가 JSON 이스케이프로 읽힌 흔적)가 있으면
+    # LaTeX 백슬래시를 살려서 다시 읽는다.
+    if obj is None or (isinstance(obj, dict) and re.search(r"[\x08\x0c]", str(obj.get("answer", "")))):
+        obj = _decode_json(fix_latex_escapes(reply[start:])) or obj
     if isinstance(obj, dict) and isinstance(obj.get("action"), str):
         return obj
     return None
@@ -248,7 +277,7 @@ class Agent:
     # ---- 일반 대화 ----
 
     def _chat(self, history, task, forced_skill):
-        parts = ["[지침]\n당신은 친절하고 정확한 AI 어시스턴트입니다. 한국어로 답하세요."]
+        parts = ["[지침]\n당신은 친절하고 정확한 AI 어시스턴트입니다. 한국어로 답하세요.\n" + MATH_RULE]
         init = load_init(self.workspace)
         if init:
             parts.append("[프로젝트 지침 (INIT.md) — 항상 따르세요]\n" + init)
@@ -348,7 +377,8 @@ class Agent:
         parts = [
             "다음은 작업 진행 기록을 보고 '다음 단계'를 고르는 분류 작업입니다.\n"
             "자동화 프로그램이 당신이 고른 단계를 수행하고 결과를 진행 기록에 추가합니다.\n"
-            "JSON 객체 하나로만 답하세요. 설명 문장 금지. 최종 답변은 done의 answer에 한국어로 쓰세요.",
+            "JSON 객체 하나로만 답하세요. 설명 문장 금지. 최종 답변은 done의 answer에 한국어로 쓰세요.\n"
+            + MATH_RULE + "\nanswer는 JSON 문자열이므로 LaTeX의 백슬래시는 두 번 쓰세요. 예: \"\\\\(x^2\\\\)\"",
             "[단계 종류]\n" + ACTION_DOCS,
             "[규칙]\n" + RULES,
             f"[작업 폴더]\n{self.workspace}",
