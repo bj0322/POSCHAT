@@ -37,7 +37,7 @@ def _setup(files_dir, res_dir):
     import mcp_client
 
     agent.SHELL = "/system/bin/sh"
-    agent.ACTION_DOCS = agent.ACTION_DOCS.replace("Windows cmd", "Android sh")
+    agent.ACTION_DOCS = agent.ACTION_DOCS.replace(f"({agent.SHELL_NAME},", "(Android sh,")
     agent.resource_dir = lambda: Path(res_dir)  # 내장 스킬(<res>/skills)
     mcp_client.INPROCESS_BUILTIN = True  # 하위 프로세스 대신 앱 안의 스레드로 내장 MCP 서버를 돌린다
 

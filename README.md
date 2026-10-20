@@ -1,6 +1,8 @@
 # POSTECH GenAI Chat
 
-버전 1.7.0 — 다른 AI 코딩 에이전트(Claude Code·Codex 등)와 기억 이어 쓰기(ai-memory 연동: 인계 받기·남기기, 기억 범위 자동 지정), 설정 창의 사용법 가이드
+버전 1.7.1 — macOS 앱(Apple Silicon, `PostechChat-mac.dmg`). 맥에서 파일·폴더 열기, Finder에서 연 앱이 Homebrew·`~/.local/bin`의 외부 MCP 실행 도구를 찾도록 PATH 보완
+
+1.7.0 — 다른 AI 코딩 에이전트(Claude Code·Codex 등)와 기억 이어 쓰기(ai-memory 연동: 인계 받기·남기기, 기억 범위 자동 지정), 설정 창의 사용법 가이드
 
 1.6.0 — 채팅창 파일 첨부(이미지·문서·텍스트), 메모리를 Markdown 파일(memory.md)로 관리, 사용자 정보 파일(USER.md)과 `/user`, 웹페이지 읽기·웹 검색 내장 MCP 서버(firecrawl), 브라우저 자동화 추천 서버(Playwright, MCP 창에서 켜기), 설정 창에서 모델 API 사용량 보기. 잘 동작하지 않던 HTML 영상 서버(hyperframes) 제거
 
@@ -14,7 +16,7 @@
 
 1.2.0 — PDF·Word·PowerPoint·Excel·한글 문서 읽기, MCP 지원과 내장 오피스 MCP 서버(Word·PowerPoint·Excel 만들기·고치기), 답변의 LaTeX 수식 표시
 
-POSTECH GenAI API를 쓰는 Windows 데스크톱·안드로이드 챗봇입니다. 개인이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 MIT 라이선스는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
+POSTECH GenAI API를 쓰는 Windows·macOS 데스크톱·안드로이드 챗봇입니다. 개인이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 MIT 라이선스는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
 
 ## 설치
 
@@ -28,6 +30,16 @@ POSTECH GenAI API를 쓰는 Windows 데스크톱·안드로이드 챗봇입니�
 4. 처음 실행하면 설정 창이 열립니다. POSTECH GenAI API 키를 입력하세요.
 
 제거는 **설정 → 앱 → 설치된 앱 → POSTECH GenAI Chat → 제거**에서 합니다. 대화 기록과 설정(`%APPDATA%\PostechChat`)은 지우지 않고 남겨 둡니다.
+
+### macOS
+
+Releases의 `PostechChat-mac.dmg`를 받아 엽니다. Apple Silicon(M1 이후) 맥용이며 Intel 맥은 지원하지 않습니다.
+
+1. 열린 창에서 **POSTECH GenAI Chat**을 **Applications(응용 프로그램)** 폴더로 끌어다 놓습니다.
+2. 앱에는 Apple 개발자 서명·공증이 없어서, 처음 실행하면 "확인되지 않은 개발자" 또는 "열 수 없음" 경고가 뜹니다. 응용 프로그램 폴더에서 앱을 **Control 키를 누른 채 클릭 → 열기**를 누르세요. macOS 15 이후에서는 **시스템 설정 → 개인정보 보호 및 보안**의 아래쪽에서 **그래도 열기**를 누릅니다. 한 번 허용하면 이후에는 그대로 실행됩니다.
+3. 처음 실행하면 설정 창이 열립니다. POSTECH GenAI API 키를 입력하세요.
+
+대화 기록과 설정은 `~/Library/Application Support/PostechChat`에 저장됩니다. 에이전트의 `run` 단계는 macOS 셸(`/bin/sh`)로 실행됩니다. 제거는 응용 프로그램 폴더의 앱을 휴지통으로 옮기면 됩니다(대화 기록 폴더는 남습니다).
 
 ### 설치 문제 해결
 

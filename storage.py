@@ -1,9 +1,10 @@
-"""대화 스레드와 설정을 %APPDATA%\\PostechChat 아래에 JSON으로, 메모리와 사용자 정보를 Markdown으로 저장한다."""
+"""대화 스레드와 설정을 %APPDATA%\\PostechChat(맥은 ~/Library/Application Support/PostechChat) 아래에 JSON으로, 메모리와 사용자 정보를 Markdown으로 저장한다."""
 import hashlib
 import json
 import os
 import re
 import shutil
+import sys
 import threading
 import time
 import uuid
@@ -11,7 +12,12 @@ from pathlib import Path
 
 
 def _app_dir():
-    base = os.environ.get("APPDATA") or str(Path.home() / ".config")
+    if os.environ.get("APPDATA"):
+        base = os.environ["APPDATA"]
+    elif sys.platform == "darwin":
+        base = str(Path.home() / "Library" / "Application Support")
+    else:
+        base = str(Path.home() / ".config")
     return Path(base) / "PostechChat"
 
 

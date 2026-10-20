@@ -1,9 +1,9 @@
 name: Build installer
 
-# PR과 수동 실행: Windows 설치 파일과 Android APK를 빌드하고, 각각 자가 진단(Windows)과
+# PR과 수동 실행: Windows 설치 파일, macOS 디스크 이미지, Android APK를 빌드하고, 각각 자가 진단(Windows·macOS)과
 # 에뮬레이터 계측 테스트(Android)까지 확인한 뒤 결과물(artifact)로 올린다.
 # v로 시작하는 태그(예: v1.2.0)를 push하거나, 수동 실행 때 release에 태그 이름을 넣으면
-# 두 결과물을 그 태그의 GitHub Release에 첨부한다(수동 실행은 실행한 커밋에 태그를 만든다).
+# 세 결과물을 그 태그의 GitHub Release에 첨부한다(수동 실행은 실행한 커밋에 태그를 만든다).
 on:
   pull_request:
   workflow_dispatch:
@@ -70,6 +70,50 @@ jobs:
           name: PostechChat-Setup
           path: release/PostechChat-Setup.exe
 
+  macos:
+    # Apple Silicon(M1 이후) 맥용 앱. 서명용 Apple 개발자 인증서가 없어 임시(ad-hoc) 서명만 한다.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        # pillow: PyInstaller가 PNG 아이콘을 맥 아이콘(.icns)으로 바꿀 때 쓴다
+        run: python -m pip install -r requirements.txt pyinstaller pillow
+
+      - name: Build
+        run: python build_installer.py
+
+      - name: Self-test the built app
+        run: |
+          app="$TMPDIR/PostechChat-build/app/PostechChat.app"
+          "$app/Contents/MacOS/PostechChat" --selftest
+          report="$HOME/Library/Application Support/PostechChat/selftest.txt"
+          cat "$report"
+          version=$(python -c "from version import APP_VERSION; print(APP_VERSION)")
+          for want in "version: $version" "web: True" "documents: OK" "attachments: OK" "word OK" "powerpoint OK" "excel OK" "paper OK" "notion OK" "firecrawl OK"; do
+            grep -qF "$want" "$report" || { echo "selftest에 '$want'이(가) 없습니다."; exit 1; }
+          done
+          codesign --verify --deep --strict "$app"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Contents/Info.plist" | grep -qx "$version"
+
+      - name: Check the disk image
+        run: |
+          hdiutil verify release/PostechChat-mac.dmg
+          mnt=$(mktemp -d)
+          hdiutil attach release/PostechChat-mac.dmg -nobrowse -mountpoint "$mnt"
+          test -x "$mnt/PostechChat.app/Contents/MacOS/PostechChat"
+          test -L "$mnt/Applications"
+          hdiutil detach "$mnt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PostechChat-mac
+          path: release/PostechChat-mac.dmg
+
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -132,7 +176,7 @@ jobs:
           path: android/app/build/reports/androidTests/
 
   publish:
-    needs: [windows, android]
+    needs: [windows, macos, android]
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release != '')
     runs-on: ubuntu-latest
     steps:
@@ -146,5 +190,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release || github.ref_name }}
         run: >
-          gh release create "$TAG" dist/PostechChat-Setup.exe dist/PostechChat.apk
+          gh release create "$TAG" dist/PostechChat-Setup.exe dist/PostechChat-mac.dmg dist/PostechChat.apk
           --repo "$GITHUB_REPOSITORY" --title "POSTECH GenAI Chat $TAG" --target "$GITHUB_SHA" --generate-notes

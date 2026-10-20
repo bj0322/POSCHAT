@@ -1065,7 +1065,7 @@ const GUIDE = [
 2. 입력창에 질문을 쓰고 **Enter**로 보냅니다(줄바꿈은 Shift+Enter).
 3. 파일을 다루게 하려면 왼쪽 아래 **작업 폴더**를 고르고 오른쪽 위 **에이전트** 스위치를 켭니다.
 
-새 대화는 왼쪽 위 **새 채팅**(Ctrl+Shift+O)으로 만들고, 대화 목록에 마우스를 올리면 이름 바꾸기·삭제 아이콘이 나옵니다.`],
+새 대화는 왼쪽 위 **새 채팅**(Ctrl+Shift+O, 맥은 ⌘+Shift+O)으로 만들고, 대화 목록에 마우스를 올리면 이름 바꾸기·삭제 아이콘이 나옵니다.`],
   ["모델과 API 방식", `
 **설정 → API 방식**에서 고릅니다.
 
@@ -1074,7 +1074,7 @@ const GUIDE = [
 
 **답변을 받는 대로 표시(스트리밍)**를 켜면 일반 대화의 답변이 글자가 오는 대로 나옵니다. 표시가 이상하면 끄세요. 설정 창 아래쪽에서 이 앱이 보낸 요청의 **모델 API 사용량**을 볼 수 있습니다.`],
   ["파일 첨부", `
-입력창의 **+** 버튼, 파일 끌어다 놓기, 이미지 붙여 넣기(Ctrl+V)로 첨부합니다. 파일은 하나에 20MB, 한 번에 10개까지입니다.
+입력창의 **+** 버튼, 파일 끌어다 놓기, 이미지 붙여 넣기(Ctrl+V, 맥은 ⌘+V)로 첨부합니다. 파일은 하나에 20MB, 한 번에 10개까지입니다.
 
 - PDF·Word·PowerPoint·Excel·한글 문서와 텍스트 파일은 내용을 읽어 질문과 함께 보냅니다.
 - 이미지는 '모델 선택(Responses API)' 방식에서만 모델에게 전달됩니다.`],
@@ -1283,7 +1283,7 @@ function bindUI() {
     if (S.thread && !S.thread.messages.length) renderMessages();
   });
   document.addEventListener("keydown", (e) => {
-    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "o") { e.preventDefault(); newThread(); }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "o") { e.preventDefault(); newThread(); }
   });
 }
 

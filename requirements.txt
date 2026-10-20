@@ -1,7 +1,7 @@
 requests>=2.28
 truststore>=0.9
 pywebview>=5.0
-comtypes>=1.2      # 설치 프로그램의 바로가기 생성(빌드할 때만 필요)
+comtypes>=1.2; sys_platform == "win32"  # 설치 프로그램의 바로가기 생성(빌드할 때만 필요)
 # 문서 읽기(documents.py)와 내장 오피스 MCP 서버(office_mcp.py)
 pypdf>=4.0
 olefile>=0.46

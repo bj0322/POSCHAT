@@ -5,6 +5,7 @@ Python → JS 알림은 window.onBackendEvent(event)로 보낸다.
 """
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -36,6 +37,24 @@ description: 이 스킬을 언제 쓰는지 한 줄로 설명하세요.
 ## 출력 형식
 - ...
 """
+
+
+def open_path(path):
+    """파일이나 폴더를 운영체제의 기본 앱으로 연다(안드로이드는 android_main이 os.startfile을 바꿔 끼운다)."""
+    if hasattr(os, "startfile"):
+        os.startfile(path)
+    else:
+        subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", str(path)])
+
+
+def _extend_mac_path():
+    """Finder에서 연 맥 앱은 PATH가 /usr/bin:/bin 정도뿐이라 npx·ai-memory 같은 외부 MCP 실행 도구를 못 찾는다."""
+    if sys.platform != "darwin":
+        return
+    home = os.path.expanduser("~")
+    extra = ["/opt/homebrew/bin", "/usr/local/bin", f"{home}/.local/bin", f"{home}/.cargo/bin"]
+    current = os.environ.get("PATH", "").split(os.pathsep)
+    os.environ["PATH"] = os.pathsep.join(current + [d for d in extra if d not in current])
 
 
 class Bridge:
@@ -218,7 +237,7 @@ class Bridge:
         }
         target = targets.get(which)
         if target and os.path.isdir(target):
-            os.startfile(target)
+            open_path(target)
 
     def create_skill(self, name):
         name = "-".join((name or "").strip().split())
@@ -228,7 +247,7 @@ class Bridge:
         path.parent.mkdir(parents=True, exist_ok=True)
         if not path.exists():
             path.write_text(SKILL_TEMPLATE.format(name=name), encoding="utf-8")
-        os.startfile(path)
+        open_path(path)
         return {"ok": True, "skills": self._skills()}
 
     # ---- 메모리 ----
@@ -273,7 +292,7 @@ class Bridge:
         with self._lock:
             if not path.exists():
                 save(read())
-        os.startfile(path)
+        open_path(path)
 
     # ---- 첨부 파일 ----
 
@@ -302,7 +321,7 @@ class Bridge:
     def open_attachment(self, attach_id):
         path = storage.attachment_file(attach_id)
         if path:
-            os.startfile(path)
+            open_path(path)
 
     # ---- MCP ----
 
@@ -326,7 +345,7 @@ class Bridge:
         return self.get_mcp()
 
     def open_mcp_config(self):
-        os.startfile(mcp_client.ensure_config_file())
+        open_path(mcp_client.ensure_config_file())
 
     # ---- 대화 실행 ----
 
@@ -573,6 +592,7 @@ def _log_crash():
 
 
 def main():
+    _extend_mac_path()
     try:
         if "--mcp-server" in sys.argv:
             # 앱 자신을 내장 MCP 서버로 실행한다(mcp_client가 띄운다).
