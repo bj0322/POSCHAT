@@ -40,3 +40,9 @@ selftest.txt
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Android build
+android/.gradle/
+android/local.properties
+android/**/build/
+.kotlin/
