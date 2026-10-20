@@ -92,6 +92,12 @@ jobs:
         working-directory: android
         run: ./gradlew --no-daemon assembleRelease
 
+      - name: Free disk space for the emulator
+        # Android 14 에뮬레이터는 데이터 영역에 7GB 넘게 필요하다. 이 작업에서 쓰지 않는 큰 도구를 지운다.
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/local/lib/node_modules
+          df -h /
+
       - name: Enable KVM for the emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -105,6 +111,7 @@ jobs:
           api-level: 34
           target: google_apis
           arch: x86_64
+          disk-size: 4096M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
           # 실패하면 앱·화면·Python 로그를 남긴다
