@@ -1,7 +1,10 @@
-"""대화 스레드와 설정을 %APPDATA%\\PostechChat 아래에 JSON으로 저장한다."""
+"""대화 스레드와 설정을 %APPDATA%\\PostechChat 아래에 JSON으로, 메모리와 사용자 정보를 Markdown으로 저장한다."""
+import hashlib
 import json
 import os
 import re
+import shutil
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -16,8 +19,13 @@ APP_DIR = _app_dir()
 THREADS_DIR = APP_DIR / "threads"
 USER_SKILLS_DIR = APP_DIR / "skills"
 CONFIG_PATH = APP_DIR / "config.json"
-MEMORY_PATH = APP_DIR / "memory.json"
+MEMORY_PATH = APP_DIR / "memory.md"
+OLD_MEMORY_PATH = APP_DIR / "memory.json"  # 1.4 이전 형식. 처음 읽을 때 memory.md로 옮긴다
+PROFILE_PATH = APP_DIR / "USER.md"  # 사용자 정보. INIT.md처럼 모든 대화에 들어간다
+ATTACH_DIR = APP_DIR / "attachments"
 MCP_PATH = APP_DIR / "mcp.json"  # 외부 MCP 서버 설정(Claude Desktop과 같은 형식)
+USAGE_PATH = APP_DIR / "usage.json"  # 날짜별 모델 API 사용량(이 앱에서 보낸 것만)
+USAGE_KEEP_DAYS = 400
 
 DEFAULT_CONFIG = {
     "api_key": "",
@@ -29,7 +37,7 @@ DEFAULT_CONFIG = {
 
 
 def ensure_dirs():
-    for d in (THREADS_DIR, USER_SKILLS_DIR):
+    for d in (THREADS_DIR, USER_SKILLS_DIR, ATTACH_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
 
@@ -88,34 +96,261 @@ def list_threads():
 
 
 def delete_thread(thread_id):
+    thread = load_thread(thread_id)
+    for m in (thread or {}).get("messages", []):
+        for a in m.get("attachments") or []:
+            delete_attachment(a.get("id"))
     (THREADS_DIR / f"{thread_id}.json").unlink(missing_ok=True)
 
 
-# ---- 메모리: 모든 대화에 공통으로 들어가는 기억 ----
+# ---- 메모리: 모든 대화에 공통으로 들어가는 기억 (memory.md) ----
+# "- "로 시작하는 줄 하나가 기억 하나다. 사용자가 파일을 직접 고쳐도 되고, 제목이나 메모를 더 써도
+# 모두 모델에게 전달된다. <!-- --> 안의 안내문만 빠진다.
+
+MEMORY_TEMPLATE = """# 메모리
+
+<!-- 모든 대화에 함께 전달되는 기억입니다. 한 줄에 하나씩 "- "로 시작해 적으세요.
+     제목이나 설명을 자유롭게 더 써도 됩니다. 이 안내문은 모델에게 전달되지 않습니다. -->
+
+"""
+
+PROFILE_TEMPLATE = """# 사용자 정보
+
+<!-- 나에 대한 정보입니다. 모든 대화에 함께 전달되어 답변을 나에게 맞추는 데 쓰입니다.
+     직접 고쳐도 되고, 채팅창에서 /user 를 입력하면 지금까지의 대화를 바탕으로 AI가 작성·업데이트합니다.
+     비밀번호나 API 키 같은 비밀 정보는 적지 마세요. 이 안내문은 모델에게 전달되지 않습니다. -->
+
+## 기본 정보
+- 
+
+## 하는 일·관심 분야
+- 
+
+## 선호하는 답변 방식
+- 
+"""
+
+_BULLET_RE = re.compile(r"^\s*[-*+]\s+(.*\S)\s*$")
+_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+
+
+def _write_text(path, text):
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _memory_id(text):
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
+
+
+def read_memory_md():
+    """memory.md 원문. 없으면 템플릿으로 만든다(예전 memory.json이 있으면 옮겨 온다)."""
+    try:
+        return MEMORY_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        pass
+    text = MEMORY_TEMPLATE
+    try:
+        items = json.loads(OLD_MEMORY_PATH.read_text(encoding="utf-8"))
+        lines = [f"- {' '.join(str(m.get('text', '')).split())}" for m in items if isinstance(m, dict) and m.get("text")]
+        text += "\n".join(lines) + ("\n" if lines else "")
+    except (FileNotFoundError, json.JSONDecodeError, TypeError):
+        pass
+    APP_DIR.mkdir(parents=True, exist_ok=True)
+    _write_text(MEMORY_PATH, text)
+    return text
+
+
+def save_memory_md(text):
+    _write_text(MEMORY_PATH, str(text).replace("\r\n", "\n"))
+
 
 def load_memory():
-    try:
-        items = json.loads(MEMORY_PATH.read_text(encoding="utf-8"))
-        return items if isinstance(items, list) else []
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
+    """memory.md의 "- " 줄 목록. 같은 내용의 줄은 하나로 본다."""
+    items, seen = [], set()
+    for line in _COMMENT_RE.sub("", read_memory_md()).splitlines():
+        m = _BULLET_RE.match(line)
+        if m and m.group(1) not in seen:
+            seen.add(m.group(1))
+            items.append({"id": _memory_id(m.group(1)), "text": m.group(1)})
+    return items
 
 
 def add_memory(text):
-    text = " ".join(str(text).split())
-    if not text:
+    text = " ".join(str(text).split())[:500]
+    if not text or any(m["text"] == text for m in load_memory()):
         return None
-    items = load_memory()
-    if any(m["text"] == text for m in items):
-        return None
-    item = {"id": uuid.uuid4().hex, "text": text[:500], "created": time.time()}
-    items.append(item)
-    _write_json(MEMORY_PATH, items)
-    return item
+    md = read_memory_md()
+    if md and not md.endswith("\n"):
+        md += "\n"
+    save_memory_md(md + f"- {text}\n")
+    return {"id": _memory_id(text), "text": text}
 
 
 def delete_memory(memory_id):
-    _write_json(MEMORY_PATH, [m for m in load_memory() if m["id"] != memory_id])
+    lines = read_memory_md().splitlines(keepends=True)
+    kept = []
+    for line in lines:
+        m = _BULLET_RE.match(line)
+        if m and _memory_id(m.group(1)) == memory_id:
+            continue
+        kept.append(line)
+    save_memory_md("".join(kept))
+
+
+def note_for_prompt(text):
+    """Markdown 원문에서 안내문(<!-- -->)과 내용 없는 빈 항목·제목을 빼고 모델에게 줄 글만 남긴다."""
+    lines = []
+    for line in _COMMENT_RE.sub("", text or "").splitlines():
+        if re.fullmatch(r"\s*[-*+]\s*", line):
+            continue  # 템플릿의 빈 "- " 항목
+        lines.append(line.rstrip())
+    # 아래에 내용이 없는 제목은 뺀다
+    def level(line):
+        return len(line) - len(line.lstrip("#")) if line.startswith("#") else 0
+
+    out = []
+    for i, line in enumerate(lines):
+        if level(line):
+            rest = next((l for l in lines[i + 1:] if l.strip()), "")
+            if not rest or 0 < level(rest) <= level(line):
+                continue
+        out.append(line)
+    text = re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+    return text if any(not l.startswith("#") and l.strip() for l in text.splitlines()) else ""
+
+
+# ---- 사용자 정보 (USER.md) ----
+
+def read_profile():
+    """USER.md 원문. 없으면 빈 템플릿을 돌려준다(파일은 만들지 않는다)."""
+    try:
+        return PROFILE_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return PROFILE_TEMPLATE
+
+
+def profile_exists():
+    return PROFILE_PATH.exists()
+
+
+def save_profile(text):
+    APP_DIR.mkdir(parents=True, exist_ok=True)
+    _write_text(PROFILE_PATH, str(text).replace("\r\n", "\n"))
+
+
+def recent_user_messages(limit_chars=12000, exclude_prefix=("/user",)):
+    """모든 대화의 사용자 메시지를 최근 것부터 모은다(사용자 정보 정리용). [(대화 제목, 시각, 내용)]"""
+    msgs = []
+    for p in THREADS_DIR.glob("*.json"):
+        try:
+            thread = json.loads(p.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        for m in thread.get("messages", []):
+            content = str(m.get("content", "")).strip()
+            if m.get("role") == "user" and content and not content.lower().startswith(exclude_prefix):
+                msgs.append((thread.get("title", ""), m.get("ts", 0), content))
+    msgs.sort(key=lambda m: m[1], reverse=True)
+    out, total = [], 0
+    for title, ts, content in msgs:
+        content = content if len(content) <= 600 else content[:600] + " ..."
+        if total + len(content) > limit_chars:
+            break
+        out.append((title, ts, content))
+        total += len(content)
+    return out
+
+
+# ---- 첨부 파일: attachments/<id>/<파일 이름> ----
+# 보내기 전(화면에서 고른 상태)의 파일에는 .staged 표시가 있다. 메시지에 붙으면 지운다.
+
+STAGED_MARK = ".staged"
+
+
+def attachment_dir(attach_id):
+    if not re.fullmatch(r"[0-9a-f]{32}", str(attach_id)):
+        raise ValueError("잘못된 첨부 파일 id")
+    return ATTACH_DIR / attach_id
+
+
+def attachment_file(attach_id):
+    """첨부 파일의 실제 경로. 없으면 None."""
+    try:
+        d = attachment_dir(attach_id)
+    except ValueError:
+        return None
+    files = [p for p in d.glob("*") if p.is_file() and not p.name.startswith(".")] if d.is_dir() else []
+    return files[0] if files else None
+
+
+def delete_attachment(attach_id):
+    try:
+        shutil.rmtree(attachment_dir(attach_id), ignore_errors=True)
+    except ValueError:
+        pass
+
+
+def cleanup_staged(max_age=24 * 3600):
+    """보내지 않고 남은 첨부 파일(앱이 꺼지는 등)을 지운다."""
+    now = time.time()
+    for mark in ATTACH_DIR.glob(f"*/{STAGED_MARK}"):
+        try:
+            if now - mark.stat().st_mtime > max_age:
+                shutil.rmtree(mark.parent, ignore_errors=True)
+        except OSError:
+            pass
+
+
+# ---- 모델 API 사용량 ----
+# POSTECH GenAI API는 남은 한도를 알려 주지 않으므로, 이 앱이 보낸 호출을 날짜별로 센다.
+# 토큰 수는 서버가 응답에 사용량을 담아 줄 때만 더한다(token_calls는 토큰 수를 받은 호출 수).
+
+_usage_lock = threading.Lock()
+
+
+def _load_usage():
+    try:
+        data = json.loads(USAGE_PATH.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def record_usage(mode, model, usage):
+    day = time.strftime("%Y-%m-%d")
+    with _usage_lock:
+        data = _load_usage()
+        entry = data.setdefault(day, {"calls": 0, "token_calls": 0, "input_tokens": 0, "output_tokens": 0})
+        entry["calls"] += 1
+        if usage:
+            entry["token_calls"] += 1
+            entry["input_tokens"] += int(usage.get("input_tokens") or 0)
+            entry["output_tokens"] += int(usage.get("output_tokens") or 0)
+        cutoff = time.strftime("%Y-%m-%d", time.localtime(time.time() - USAGE_KEEP_DAYS * 86400))
+        data = {k: v for k, v in data.items() if k >= cutoff}
+        APP_DIR.mkdir(parents=True, exist_ok=True)
+        _write_json(USAGE_PATH, data)
+
+
+def usage_summary():
+    """오늘·이번 달·지난 30일 합계."""
+    data = _load_usage()
+    today = time.strftime("%Y-%m-%d")
+    month = today[:7]
+    since30 = time.strftime("%Y-%m-%d", time.localtime(time.time() - 29 * 86400))
+
+    def total(keep):
+        out = {"calls": 0, "token_calls": 0, "input_tokens": 0, "output_tokens": 0}
+        for day, entry in data.items():
+            if keep(day) and isinstance(entry, dict):
+                for k in out:
+                    out[k] += int(entry.get(k) or 0)
+        return out
+
+    return {"today": total(lambda d: d == today), "month": total(lambda d: d.startswith(month)),
+            "last30": total(lambda d: d >= since30), "month_name": month}
 
 
 # ---- 다른 대화 검색 ----

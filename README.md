@@ -1,6 +1,12 @@
 # POSTECH GenAI Chat
 
-버전 1.4.0 — 안드로이드 앱(같은 화면·에이전트·문서 읽기·MCP를 휴대폰에서)
+버전 1.7.0 — 다른 AI 코딩 에이전트(Claude Code·Codex 등)와 기억 이어 쓰기(ai-memory 연동: 인계 받기·남기기, 기억 범위 자동 지정), 설정 창의 사용법 가이드
+
+1.6.0 — 채팅창 파일 첨부(이미지·문서·텍스트), 메모리를 Markdown 파일(memory.md)로 관리, 사용자 정보 파일(USER.md)과 `/user`, 웹페이지 읽기·웹 검색 내장 MCP 서버(firecrawl), 브라우저 자동화 추천 서버(Playwright, MCP 창에서 켜기), 설정 창에서 모델 API 사용량 보기. 잘 동작하지 않던 HTML 영상 서버(hyperframes) 제거
+
+1.5.0 — 내장 MCP 서버 추가: 논문 찾기·섹션별 읽기(paper), Notion 페이지·데이터베이스(notion), HTML로 영상 만들기(hyperframes). 논문을 쉽게 풀어 주는 `paper-reading` 스킬
+
+1.4.0 — 안드로이드 앱(같은 화면·에이전트·문서 읽기·MCP를 휴대폰에서)
 
 1.3.1 — 설치 프로그램과 Windows 앱 목록에 표시되는 버전을 앱 버전과 맞춤
 
@@ -40,20 +46,24 @@ Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 
 - 사이드바는 왼쪽 위 버튼으로 여는 서랍이고, 뒤로 가기로 창·사이드바를 닫습니다. 입력창의 Enter는 줄바꿈이며 보내기 버튼으로 보냅니다.
 - 작업 폴더를 고르면 "모든 파일 접근" 권한을 요청합니다. 에이전트가 휴대폰 저장소의 일반 폴더(예: `Documents/보고서`)를 읽고 고치려면 필요합니다. 작업 폴더 없이 대화만 할 때는 필요 없습니다.
 - `run` 단계는 안드로이드 셸(`/system/bin/sh`)로 실행됩니다. Python·Node 같은 개발 도구는 없습니다.
-- 내장 Word·PowerPoint·Excel MCP 서버는 앱 안에서 바로 동작합니다. `npx`·`uvx`가 필요한 외부 MCP 서버는 휴대폰에서 실행할 수 없습니다.
+- 내장 MCP 서버(Word·PowerPoint·Excel·paper·notion·firecrawl)는 앱 안에서 바로 동작합니다. 추천 서버(Playwright)는 보이지 않습니다. `npx`·`uvx`가 필요한 외부 MCP 서버는 휴대폰에서 실행할 수 없습니다.
 - 대화 기록과 설정은 앱 전용 저장소에 따로 있으며 PC와 동기화되지 않습니다.
 
 ## 사용법
 
 | 기능 | 방법 |
 |---|---|
+| 사용법 가이드 | 왼쪽 아래 **설정** → **사용법 가이드**, 또는 `/help` → **사용법 가이드** |
 | 새 대화 | 왼쪽 위 **새 채팅** (Ctrl+Shift+O) |
 | 대화 이름 변경·삭제 | 대화 목록에 마우스를 올리면 나오는 연필·휴지통 아이콘 |
 | 작업 폴더 지정 | 왼쪽 아래 **작업 폴더**, 또는 입력창의 폴더 칩 |
 | 에이전트 켜기·끄기 | 오른쪽 위 **에이전트** 스위치 |
 | 명령어·스킬 | 입력창에 `/`를 입력하면 목록이 뜹니다 |
-| 메모리 | 왼쪽 아래 **메모리**, `/remember 내용`, `/memory` |
+| 파일 첨부 | 입력창의 + 버튼, 파일 끌어다 놓기, 이미지 붙여 넣기(Ctrl+V) |
+| 내 정보(USER.md) | 왼쪽 아래 **내 정보**, `/user` |
+| 메모리(memory.md) | 왼쪽 아래 **메모리**, `/remember 내용`, `/memory` |
 | MCP 서버 켜기·끄기, 외부 서버 추가 | 왼쪽 아래 **MCP** |
+| 모델 API 사용량 보기 | 왼쪽 아래 **설정** → 모델 API 사용량. 이 앱에서 보낸 요청의 오늘·이번 달·최근 30일 호출 수와(서버가 알려 주면) 토큰 수. POSTECH GenAI API는 남은 한도를 알려 주지 않으므로 잔여량은 GenAI 콘솔에서 확인하세요. |
 
 ### 대화 간 정보 공유 (메모리 · 다른 대화 참고)
 
@@ -62,7 +72,23 @@ Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 
 - **메모리**: 모든 대화에 공통으로 전달되는 기억입니다. 대화 중에 "~를 기억해 줘", "잊지 마"라고 하면 앱이 기억할 내용을 한 문장으로 정리해 저장합니다. 이때 대화에 `🧠 기억: …` 줄이 표시됩니다. `/remember 내용`으로 직접 추가할 수도 있습니다. "기억해?"처럼 묻는 말은 저장하지 않습니다.
 - **다른 대화 참고**: 새 질문과 관련된 내용이 다른 대화에 있으면 자동으로 찾아 함께 참고합니다. 참고한 대화는 `📎 다른 대화 참고: …`로 표시됩니다. 에이전트 모드에서는 "지난번에 얘기한 …"처럼 말하면 `recall` 단계로 다른 대화를 직접 검색합니다. 메모리 창에서 끌 수 있습니다.
 
-메모리는 `%APPDATA%\PostechChat\memory.json`에 저장됩니다. 메모리 창에서 항목을 보거나 지울 수 있습니다.
+메모리는 `%APPDATA%\PostechChat\memory.md`에 Markdown으로 저장됩니다. `- `로 시작하는 줄 하나가 기억 하나이고, 메모리 창에서 항목을 보거나 지울 수 있으며 **memory.md 편집**으로 파일 전체를 직접 고칠 수 있습니다. 제목이나 설명을 더 써도 모두 대화에 전달되고, `<!-- -->` 안의 안내문만 빠집니다. 1.4 이전의 `memory.json`은 처음 실행할 때 memory.md로 옮겨집니다(원래 파일은 그대로 둡니다).
+
+### 내 정보 (USER.md)
+
+`%APPDATA%\PostechChat\USER.md`는 나에 대한 정보(하는 일, 관심 분야, 선호하는 답변 방식 등)이며, 작업 폴더의 INIT.md처럼 모든 대화에 함께 전달되어 답변을 나에게 맞추는 데 쓰입니다.
+
+- **직접 쓰기**: 왼쪽 아래 **내 정보**에서 고치고 저장합니다.
+- **AI로 작성·업데이트**: `/user`를 입력하면(또는 내 정보 창의 **AI로 작성·업데이트**) AI가 모든 대화의 최근 사용자 메시지와 메모리를 살펴보고 USER.md를 새로 쓰거나 고칩니다. 기존 내용은 어긋나지 않는 한 유지하고, 근거 없는 내용은 쓰지 않습니다. `/user 소속은 빼 줘`처럼 요청을 덧붙이거나 이력서 같은 파일을 첨부해 함께 보낼 수 있습니다. 바뀐 내용은 대화에 `📝 USER.md` 줄로 비교해 보여 줍니다.
+- 비밀번호나 API 키 같은 비밀 정보는 적지 마세요. 내용은 질문할 때마다 POSTECH GenAI API로 전달됩니다.
+
+### 파일 첨부
+
+입력창 왼쪽 아래의 + 버튼으로 파일을 고르거나, 파일을 창에 끌어다 놓거나, 이미지를 붙여 넣으면 첨부됩니다. 파일은 하나에 20MB, 한 번에 10개까지입니다.
+
+- **문서·텍스트**: PDF·Word·PowerPoint·Excel·한글 문서와 텍스트 파일(코드, CSV, Markdown 등)은 글자를 뽑아 질문과 함께 보냅니다(파일 하나에 2만 자, 한 번에 4만 자까지). 기억하는 이전 메시지 범위 안이면 다음 질문에서도 그 파일 내용을 다시 참고합니다.
+- **이미지**(PNG·JPEG·GIF·WebP): 설정의 API 방식이 **모델 선택 — OpenAI Responses API**일 때 모델이 이미지를 직접 봅니다. 기본 방식(a1)은 글자만 보낼 수 있어서 이미지는 전달되지 않으며, 대화에 그렇게 안내합니다.
+- 첨부한 파일은 `%APPDATA%\PostechChat\attachments`에 복사해 두고, 대화를 지우면 함께 지웁니다. 보낸 메시지의 파일을 누르면 알맞은 앱으로 엽니다.
 
 ### 에이전트 모드
 
@@ -118,15 +144,40 @@ GPT-5 계열은 추론 강도를 `low`로 보내 추론 토큰을 줄입니다. 
 
 MCP(Model Context Protocol)는 AI 도구를 연결하는 표준입니다. 에이전트 모드에서 켜진 MCP 서버의 도구가 `mcp` 단계로 제공됩니다. 서버는 처음 필요할 때 작업 폴더를 현재 폴더로 해서 실행되고, 작업 폴더나 설정이 바뀌면 다시 실행됩니다. 앱을 닫으면 함께 종료됩니다.
 
-**내장 서버**는 앱에 들어 있어 따로 설치할 것이 없고, 작업 폴더 안의 파일만 다룹니다.
+**내장 서버**는 앱에 들어 있어 따로 설치할 것이 없고, 작업 폴더 안의 파일만 다룹니다. 모두 무료로 쓸 수 있습니다.
 
 | 서버 | 도구 |
 |---|---|
 | `word` | `create_document`(마크다운으로 새 .docx), `append_content`(끝에 덧붙이기), `replace_text`(글자 바꾸기, 서식 유지) |
 | `powerpoint` | `create_presentation`(슬라이드 목록으로 새 .pptx, 16:9), `add_slides`, `replace_text` |
 | `excel` | `create_workbook`(시트·행으로 새 .xlsx, `=`로 시작하면 수식), `write_cells`(셀 주소부터 값 쓰기) |
+| `paper` | `search`(arXiv·Semantic Scholar에서 논문 찾기), `info`(저자·게재처·인용 수·한 줄 요약·초록), `read`(목차를 찾아 섹션·쪽 단위로 본문 읽기), `related`(참고한 논문·인용한 논문), `download`(PDF를 작업 폴더에 저장) |
+| `notion` | `search`, `read_page`(페이지를 마크다운으로), `query_database`(데이터베이스 행 보기·필터), `create_page`(마크다운으로 새 페이지·데이터베이스 행), `append_content`, `update_page`(제목·속성 바꾸기) |
+| `firecrawl` | `scrape`(웹페이지를 마크다운으로), `search`(웹 검색, 본문까지 가져오기 선택), `map`(사이트의 페이지 주소 목록), `crawl`(여러 페이지 따라가며 읽기), `crawl_status` |
 
-**외부 서버**는 **MCP → 설정 파일 열기**로 `%APPDATA%\PostechChat\mcp.json`을 열어 Claude Desktop과 같은 형식으로 추가합니다. `npx`·`uvx` 같은 실행 도구가 필요한 서버는 그 도구가 PC에 설치되어 있어야 합니다. 내장 서버 이름(`word`, `powerpoint`, `excel`)은 쓸 수 없습니다.
+**추천 서버**는 앱이 실행 방법을 아는 외부 서버입니다. 기본으로 꺼져 있고 **MCP** 창에서 켭니다. PC에 [Node.js](https://nodejs.org)가 있어야 하며 휴대폰에서는 쓸 수 없습니다.
+
+| 서버 | 내용 |
+|---|---|
+| `playwright` | [Microsoft Playwright MCP](https://github.com/microsoft/playwright-mcp)(`@playwright/mcp@0.0.83`). 브라우저를 열어 페이지 이동·클릭·입력·스크린샷·폼 채우기. Windows에서는 설치된 Edge를 씁니다. 스냅숏·스크린샷은 작업 폴더의 `.playwright-mcp/`에 저장됩니다. 모든 조작은 명령 실행처럼 승인을 받습니다. |
+
+#### 논문 읽기 (`paper`)
+
+"이 논문 쉽게 설명해 줘: 1706.03762"처럼 arXiv 번호, DOI, 논문 URL, 작업 폴더의 PDF 경로, 또는 제목으로 요청합니다. 에이전트가 `paper-reading` 스킬에 따라 정보 → 목차 → 필요한 섹션 순서로 나눠 읽고 핵심 아이디어·방법·결과·용어 정리를 풀어 줍니다. 논문 검색과 PDF는 arXiv API(키 없음), 인용 수·한 줄 요약(TLDR)·arXiv 밖의 논문은 Semantic Scholar API를 씁니다. Semantic Scholar는 키 없이 쓸 수 있지만 요청이 몰리면 잠시 거절하므로, 자주 쓰면 무료 API 키를 받아 `SEMANTIC_SCHOLAR_API_KEY` 환경 변수로 넣으세요. 구독이 필요한 논문은 학교 도서관 등에서 PDF를 받아 작업 폴더에 넣으면 같은 방법으로 읽습니다. 스캔한 이미지 PDF는 글자를 읽지 못합니다.
+
+#### Notion (`notion`)
+
+1. https://www.notion.so/profile/integrations 에서 **새 통합**(내부)을 만들고 토큰(`ntn_...`)을 복사합니다.
+2. 앱의 **설정 → Notion 통합 토큰**에 넣고 저장합니다(또는 `NOTION_TOKEN` 환경 변수).
+3. Notion에서 다룰 페이지(또는 상위 페이지)의 오른쪽 위 **··· → 연결**에서 만든 통합을 추가합니다. 통합은 연결된 페이지와 그 하위 페이지만 볼 수 있습니다.
+
+Notion에 쓰는 도구는 바깥 서비스를 바꾸므로 명령 실행처럼 승인을 받습니다.
+
+#### 웹페이지 읽기 (`firecrawl`)
+
+[Firecrawl](https://www.firecrawl.dev) API로 자바스크립트로 그리는 페이지까지 깔끔한 마크다운으로 읽습니다. firecrawl.dev에서 무료로 가입해 API 키(`fc-...`)를 받고 **설정 → Firecrawl API 키**에 넣으세요(또는 `FIRECRAWL_API_KEY` 환경 변수). 무료 요금제는 크레딧과 분당 요청 수(약 10회)에 한도가 있고, `crawl`은 쪽마다 크레딧을 씁니다. 직접 띄운 Firecrawl 서버는 `FIRECRAWL_API_URL`에 주소를 넣으면 씁니다.
+
+**외부 서버**는 **MCP → 설정 파일 열기**로 `%APPDATA%\PostechChat\mcp.json`을 열어 Claude Desktop과 같은 형식으로 추가합니다. `npx`·`uvx` 같은 실행 도구가 필요한 서버는 그 도구가 PC에 설치되어 있어야 합니다. 내장 서버 이름(`word`, `powerpoint`, `excel`, `paper`, `notion`, `firecrawl`)은 쓸 수 없습니다. 추천 서버와 같은 이름(`playwright`)으로 적으면 적은 설정이 대신 쓰입니다.
 
 ```json
 {
@@ -136,7 +187,7 @@ MCP(Model Context Protocol)는 AI 도구를 연결하는 표준입니다. 에이
 }
 ```
 
-내장 서버의 도구는 파일 수정처럼, 외부 서버의 도구는 명령 실행처럼 실행 전에 승인을 받습니다(서버가 읽기 전용이라고 밝힌 도구는 제외). 텍스트 파일용 `write`·`edit`로는 Office·PDF·한글 문서를 쓸 수 없습니다.
+작업 폴더의 파일만 고치는 내장 도구는 파일 수정처럼, 외부 서버의 도구와 바깥에 영향을 주는 내장 도구(Notion에 쓰기)는 명령 실행처럼 실행 전에 승인을 받습니다(논문 검색·읽기, Notion 읽기처럼 서버가 읽기 전용이라고 밝힌 도구는 제외). 텍스트 파일용 `write`·`edit`로는 Office·PDF·한글 문서를 쓸 수 없습니다.
 
 #### 다른 AI 에이전트와 기억 이어 쓰기 (ai-memory)
 
@@ -179,7 +230,7 @@ description: 회의 녹취를 회의록 형식으로 정리할 때 사용
 
 스킬을 읽는 위치는 다음과 같습니다. 이름이 같으면 아래쪽이 우선합니다.
 
-1. 앱 내장: `summarize`(문서 요약), `code-review`(코드 검토)
+1. 앱 내장: `summarize`(문서 요약), `code-review`(코드 검토), `paper-reading`(논문을 나눠 읽고 쉽게 설명)
 2. 사용자 공용: `%APPDATA%\PostechChat\skills\`. 앱의 **스킬 → 새 스킬 만들기**로 템플릿을 만들 수 있습니다.
 3. 작업 폴더 전용: `<작업 폴더>\skills\`
 
@@ -200,9 +251,11 @@ POSTECH GenAI 서버의 모델은 자체 시스템 프롬프트 때문에 "사�
 | `documents.py` | PDF·Word·PowerPoint·Excel·한글 문서의 텍스트 추출 |
 | `mcp_client.py` | MCP 클라이언트: 서버 실행·연결·도구 호출, `mcp.json` 읽기 |
 | `ai_memory.py` | ai-memory 연동: 작업 폴더의 workspace·project 결정, 인계 받기·남기기 |
-| `office_mcp.py` | 내장 MCP 서버(word·powerpoint·excel). 앱 exe를 `--mcp-server <이름>`으로 실행하면 이 서버가 됩니다. |
-| `api.py` | POSTECH GenAI API 호출(a1 / OpenAI Responses), 스트리밍 해석 |
-| `storage.py` | 대화·설정·메모리 저장(`%APPDATA%\PostechChat`), 다른 대화 검색 |
+| `office_mcp.py` | 내장 MCP 서버(word·powerpoint·excel)와 모든 내장 서버의 공통 실행 루프. 앱 exe를 `--mcp-server <이름>`으로 실행하면 이 서버가 됩니다. |
+| `paper_mcp.py` · `notion_mcp.py` · `firecrawl_mcp.py` | 내장 MCP 서버 paper(arXiv·Semantic Scholar), notion(Notion API), firecrawl(Firecrawl API) |
+| `api.py` | POSTECH GenAI API 호출(a1 / OpenAI Responses), 스트리밍 해석, 이미지 입력, 사용량 기록 |
+| `attachments.py` | 채팅창 첨부 파일: 조각 업로드, 종류 확인, 문서·텍스트 내용 뽑기, 이미지 |
+| `storage.py` | 대화·설정 저장(`%APPDATA%\PostechChat`), memory.md·USER.md, 첨부 파일 폴더, 모델 API 사용량, 다른 대화 검색 |
 | `web/` | 화면(HTML/CSS/JS, marked·DOMPurify·KaTeX 포함) |
 | `.github/workflows/build.yml` | Windows에서 설치 파일 빌드·자가 진단, 태그 push 때 Release에 첨부 |
 | `android/` | 안드로이드 앱(Kotlin WebView + Chaquopy). 빌드할 때 저장소 최상위의 Python 모듈·`web/`·`skills/`를 복사해 넣고, `android_main.py`가 pywebview 대신 화면과 Python을 연결합니다. |
@@ -273,7 +326,7 @@ py -3 -m venv .venv
 ## 데이터와 저장소 관리
 
 - API 키를 설정 창에 입력하면 `%APPDATA%\PostechChat\config.json`에 평문으로 저장됩니다. 공용 PC에서는 환경 변수를 사용하는 등 보관 방식을 신중히 선택하세요.
-- 대화·공통 메모리·관련 대화 발췌·읽은 파일 및 명령 출력은 답변 생성에 필요할 때 POSTECH GenAI API로 전달됩니다.
+- 대화·공통 메모리·사용자 정보(USER.md)·첨부 파일 내용·관련 대화 발췌·읽은 파일 및 명령 출력은 답변 생성에 필요할 때 POSTECH GenAI API로 전달됩니다.
 - 사용자 대화, 메모리, 설정, 로그, 개인 API 키는 소스 저장소에 포함하지 않습니다. `.gitignore`는 이 파일들과 가상환경·캐시·빌드 결과·실행 파일을 제외합니다.
 - 앱 소스, 설치 프로그램 소스, 실행·빌드 스크립트, 기본 스킬 2종, 아이콘, 정적 UI와 번들 JavaScript 라이브러리를 포함합니다. `web/vendor/` 파일은 UI 실행에 필요한 배포 의존성이므로 포함하며, 원본 저작권·라이선스 주석을 유지합니다.
 - 이 저장소는 v1.1.0 소스 스냅샷을 시작점으로 합니다. 이전 버전의 코드·변경 이력은 가져오지 않습니다.

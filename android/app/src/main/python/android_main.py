@@ -72,11 +72,13 @@ def selftest(files_dir, res_dir):
     """설치된 앱이 제대로 묶였는지 확인한다(계측 테스트에서 부른다). 결과는 JSON 문자열."""
     _setup(files_dir, res_dir)
     import agent
+    import attachments
     import documents
     import mcp_client
     from version import APP_VERSION
 
-    report = {"version": APP_VERSION, "skills": sorted(agent.discover_skills("").keys())}
+    report = {"version": APP_VERSION, "skills": sorted(agent.discover_skills("").keys()),
+              "attachments": attachments.selfcheck()}
     try:
         import docx, olefile, openpyxl, pptx, pypdf  # noqa: F401,E401
         report["documents"] = "OK"
