@@ -235,6 +235,7 @@ svg { width: 18px; height: 18px; flex: none; }
 .md li > p { margin: 0; }
 .md a { color: #2964d9; }
 .md strong { font-weight: 600; }
+.md .katex-display { margin: 12px 0; padding: 2px 0; overflow-x: auto; overflow-y: hidden; }
 .md blockquote { margin: 0 0 12px; padding: 2px 14px; border-left: 3px solid var(--border); color: var(--text-2); }
 .md hr { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
 .md table { border-collapse: collapse; margin: 0 0 12px; font-size: 14px; display: block; overflow-x: auto; }
