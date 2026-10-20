@@ -79,7 +79,8 @@ async function copyText(text) {
 }
 
 /* ---------- 마크다운 ---------- */
-marked.setOptions({ gfm: true, breaks: true });
+// 아주 오래된 WebView(안드로이드)에서는 marked를 불러오지 못할 수 있다. 그때는 서식 없이 글자만 보여 준다.
+if (window.marked) marked.setOptions({ gfm: true, breaks: true });
 
 // 수식: \( \)와 $ $는 문장 안 수식, \[ \]와 $$ $$는 독립 수식으로 KaTeX가 그린다.
 // marked 확장으로 처리하므로 코드 블록과 `인라인 코드` 안은 수식으로 바뀌지 않는다.
@@ -97,7 +98,7 @@ function renderMath(tex, displayMode) {
   return katex.renderToString(tex.trim(), { displayMode, throwOnError: false, output: "html", strict: "ignore" });
 }
 
-if (window.katex) {
+if (window.katex && window.marked) {
   marked.use({
     extensions: [
       {
@@ -138,6 +139,11 @@ function fixKoreanBold(text) {
 
 function renderMarkdown(text) {
   const box = h("div", { class: "md" });
+  if (!window.marked) {
+    box.style.whiteSpace = "pre-wrap";
+    box.textContent = text || "";
+    return box;
+  }
   box.innerHTML = DOMPurify.sanitize(marked.parse(fixKoreanBold(text || "")));
   box.querySelectorAll("a").forEach((a) => a.setAttribute("target", "_blank"));
   box.querySelectorAll("pre").forEach((pre) => {
