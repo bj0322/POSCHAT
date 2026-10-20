@@ -6,6 +6,7 @@
 """
 import base64
 import re
+import tempfile
 from pathlib import Path
 
 import documents
@@ -149,6 +150,29 @@ def preview(attach_id, max_bytes=8 * 1024 * 1024):
         return None
     mime, data = image_data(item)
     return f"data:{mime};base64,{data}"
+
+
+# 1x1 PNG
+_CHECK_PNG = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+
+
+def selfcheck():
+    """설치 진단(--selftest, 안드로이드 계측 테스트)용: 임시 폴더에서 텍스트·이미지 첨부를 올리고 읽어 본다."""
+    saved = storage.ATTACH_DIR
+    with tempfile.TemporaryDirectory() as tmp:
+        storage.ATTACH_DIR = Path(tmp)
+        try:
+            text = upload_chunk("0" * 31 + "1", "확인.txt", 0, base64.b64encode("첨부 확인".encode("cp949")).decode(), True)
+            image = upload_chunk("0" * 31 + "2", "확인.png", 0, _CHECK_PNG, True)
+            if text["kind"] != "text" or "첨부 확인" not in text_of(text):
+                return f"FAIL text {text}"
+            if image["kind"] != "image" or not preview(image["id"]).startswith("data:image/png;base64,"):
+                return f"FAIL image {image}"
+            return "OK"
+        except Exception as e:
+            return f"FAIL {type(e).__name__}: {e}"
+        finally:
+            storage.ATTACH_DIR = saved
 
 
 def prompt_block(title, items, budget):

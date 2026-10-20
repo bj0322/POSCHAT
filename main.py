@@ -466,6 +466,7 @@ def selftest():
         lines.append("documents: OK")
     except ImportError as e:
         lines.append(f"documents: FAIL {e}")
+    lines.append(f"attachments: {attachments.selfcheck()}")
     import tempfile
     manager = mcp_client.Manager()
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
