@@ -138,6 +138,26 @@ MCP(Model Context Protocol)는 AI 도구를 연결하는 표준입니다. 에이
 
 내장 서버의 도구는 파일 수정처럼, 외부 서버의 도구는 명령 실행처럼 실행 전에 승인을 받습니다(서버가 읽기 전용이라고 밝힌 도구는 제외). 텍스트 파일용 `write`·`edit`로는 Office·PDF·한글 문서를 쓸 수 없습니다.
 
+#### 다른 AI 에이전트와 기억 이어 쓰기 (ai-memory)
+
+[ai-memory](https://github.com/akitaonrails/ai-memory)를 PC에 설치하고(`ai-memory setup`) 외부 서버로 등록하면, Claude Code·Codex·Cursor·Gemini CLI 같은 코딩 에이전트와 같은 기억을 씁니다. 그 에이전트들도 같은 ai-memory 서버에 연결되어 있어야 합니다.
+
+```json
+{
+  "mcpServers": {
+    "ai-memory": { "command": "ai-memory", "args": ["mcp-bridge", "--no-session-id"] }
+  }
+}
+```
+
+에이전트 모드에서 작업 폴더가 있으면 앱이 다음을 자동으로 합니다.
+
+- 대화에서 처음 에이전트를 실행할 때 그 작업 폴더에 남은 인계(다른 에이전트가 하던 일·남은 질문·다음 할 일)를 받고 최근 기억 페이지를 불러와, 그 대화 내내 참고 자료로 넣습니다. 인계는 한 번 받으면 사라지는 방식이라 다른 에이전트가 같은 인계를 다시 받지는 않습니다.
+- 파일을 고치거나 명령·도구를 실행한 뒤에는 요청과 결과, 고친 파일 목록으로 인계를 남겨, 다음에 Claude Code 등을 같은 폴더에서 열면 이어받게 합니다. 같은 대화에서 다시 남기면 앞의 인계는 취소되어 대화마다 하나만 열려 있습니다.
+- 모델이 부르는 ai-memory 도구에는 `workspace`·`project`를 앱이 채웁니다. 이름은 ai-memory 규칙대로 정합니다: 가장 가까운 `.ai-memory.toml`의 값 → git 원격(`upstream`, 없으면 `origin`)의 호스트를 뺀 경로(예: `bj0322-poschat`) → 원격이 없으면 폴더 이름.
+
+ChatGPT·claude.ai 같은 웹 채팅 서비스의 기억은 ai-memory가 기록하지 않으므로 이어받을 수 없습니다. `.ai-memory.toml`의 홈 폴더 경로 규칙(`[routes]`)은 아직 지원하지 않으니, 필요하면 작업 폴더의 `.ai-memory.toml`에 `workspace`와 `project`를 적으세요.
+
 ### INIT.md
 
 작업 폴더 최상위의 `INIT.md`는 모든 대화에 프로젝트 지침으로 들어갑니다(Claude Code의 CLAUDE.md와 같은 역할). `/init`을 입력하면 AI가 폴더를 살펴보고 INIT.md를 써 줍니다.
@@ -179,6 +199,7 @@ POSTECH GenAI 서버의 모델은 자체 시스템 프롬프트 때문에 "사�
 | `agent.py` | INIT.md·스킬 로딩, 에이전트 단계 루프와 도구 |
 | `documents.py` | PDF·Word·PowerPoint·Excel·한글 문서의 텍스트 추출 |
 | `mcp_client.py` | MCP 클라이언트: 서버 실행·연결·도구 호출, `mcp.json` 읽기 |
+| `ai_memory.py` | ai-memory 연동: 작업 폴더의 workspace·project 결정, 인계 받기·남기기 |
 | `office_mcp.py` | 내장 MCP 서버(word·powerpoint·excel). 앱 exe를 `--mcp-server <이름>`으로 실행하면 이 서버가 됩니다. |
 | `api.py` | POSTECH GenAI API 호출(a1 / OpenAI Responses), 스트리밍 해석 |
 | `storage.py` | 대화·설정·메모리 저장(`%APPDATA%\PostechChat`), 다른 대화 검색 |

@@ -320,6 +320,14 @@ class Bridge:
                 last_delta[0] = now
                 self._push({"type": "delta", "thread_id": thread_id, "text": text})
 
+        def save_ai_memory_state(state):
+            with self._lock:
+                thread = storage.load_thread(thread_id)
+                if thread is not None:
+                    thread["ai_memory"] = state
+                    storage.save_thread(thread)
+
+        thread = storage.load_thread(thread_id) or {}
         agent = Agent(
             api_key=api_key,
             workspace=workspace,
@@ -335,6 +343,8 @@ class Bridge:
             mcp=(lambda: self._mcp.ensure(self._config, workspace, on_status)) if agent_mode and workspace else None,
             api_settings=ApiSettings.from_config(self._config),
             on_delta=on_delta,
+            ai_memory_state=thread.get("ai_memory"),
+            on_ai_memory_state=save_ai_memory_state,
         )
         try:
             answer = agent.run(history, task, forced)
