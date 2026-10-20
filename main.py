@@ -16,9 +16,9 @@ import mcp_client
 import storage
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
 from api import DEFAULT_MODEL, MODELS, ApiError, ApiSettings
+from version import APP_VERSION
 
 APP_TITLE = "POSTECH GenAI Chat"
-APP_VERSION = "1.3.0"
 
 SKILL_TEMPLATE = """---
 name: {name}
@@ -389,7 +389,8 @@ def selftest():
     storage.ensure_dirs()
     config = storage.load_config()
     key = config.get("api_key") or os.environ.get("POSTECH_GENAI_API_KEY", "")
-    lines = [f"web: {(resource_dir() / 'web' / 'index.html').exists()}",
+    lines = [f"version: {APP_VERSION}",
+             f"web: {(resource_dir() / 'web' / 'index.html').exists()}",
              f"skills: {len(discover_skills(config.get('workspace', '')))}"]
     try:
         import docx, olefile, openpyxl, pptx, pypdf  # noqa: F401,E401  문서 라이브러리가 함께 묶였는지

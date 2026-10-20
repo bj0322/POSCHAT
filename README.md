@@ -1,6 +1,8 @@
 # POSTECH GenAI Chat
 
-버전 1.3.0 — 답변 스트리밍 표시, GPT 모델 선택(OpenAI Responses API, 기본 권장 GPT-5.1)
+버전 1.3.1 — 설치 프로그램과 Windows 앱 목록에 표시되는 버전을 앱 버전과 맞춤
+
+1.3.0 — 답변 스트리밍 표시, GPT 모델 선택(OpenAI Responses API, 기본 권장 GPT-5.1)
 
 1.2.0 — PDF·Word·PowerPoint·Excel·한글 문서 읽기, MCP 지원과 내장 오피스 MCP 서버(Word·PowerPoint·Excel 만들기·고치기), 답변의 LaTeX 수식 표시
 
