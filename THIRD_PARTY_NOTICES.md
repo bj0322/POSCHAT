@@ -38,15 +38,19 @@ document reading and the built-in Office MCP servers:
 HWP reading follows the publicly released Hancom HWP 5.0 file format
 specification; this project is not affiliated with Hancom.
 
-The built-in `paper`, `notion` and `hyperframes` MCP servers bundle no
-third-party code. At run time they call public services under those
-services' own terms: the arXiv API, the Semantic Scholar API (Allen Institute
-for AI) and the Notion API. The `hyperframes` server downloads and runs the
-HyperFrames CLI (https://github.com/heygen-com/hyperframes, Apache-2.0) with
+The built-in `paper`, `notion`, `hyperframes` and `firecrawl` MCP servers
+bundle no third-party code. At run time they call public services under
+those services' own terms: the arXiv API, the Semantic Scholar API (Allen
+Institute for AI), the Notion API and the Firecrawl API. The recommended
+`playwright` server downloads and runs Microsoft Playwright MCP
+(https://github.com/microsoft/playwright-mcp, Apache-2.0) with `npx` on the
+user's PC only when the user turns it on; it is not included in the
+installer. The `hyperframes` server downloads and runs the HyperFrames CLI (https://github.com/heygen-com/hyperframes, Apache-2.0) with
 `npx` on the user's PC; it is not included in the installer. The starter
 composition and authoring guide in `hyperframes_mcp.py` follow the composition
 format described in the HyperFrames documentation. This project is not
-affiliated with arXiv, the Allen Institute for AI, Notion or HeyGen.
+affiliated with arXiv, the Allen Institute for AI, Notion, HeyGen, Firecrawl
+or Microsoft.
 
 POSTECH names and marks belong to their respective owners. This project
 license grants no trademark rights or access rights to the POSTECH GenAI API.

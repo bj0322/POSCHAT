@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -18,6 +19,8 @@ USER_SKILLS_DIR = APP_DIR / "skills"
 CONFIG_PATH = APP_DIR / "config.json"
 MEMORY_PATH = APP_DIR / "memory.json"
 MCP_PATH = APP_DIR / "mcp.json"  # 외부 MCP 서버 설정(Claude Desktop과 같은 형식)
+USAGE_PATH = APP_DIR / "usage.json"  # 날짜별 모델 API 사용량(이 앱에서 보낸 것만)
+USAGE_KEEP_DAYS = 400
 
 DEFAULT_CONFIG = {
     "api_key": "",
@@ -116,6 +119,56 @@ def add_memory(text):
 
 def delete_memory(memory_id):
     _write_json(MEMORY_PATH, [m for m in load_memory() if m["id"] != memory_id])
+
+
+# ---- 모델 API 사용량 ----
+# POSTECH GenAI API는 남은 한도를 알려 주지 않으므로, 이 앱이 보낸 호출을 날짜별로 센다.
+# 토큰 수는 서버가 응답에 사용량을 담아 줄 때만 더한다(token_calls는 토큰 수를 받은 호출 수).
+
+_usage_lock = threading.Lock()
+
+
+def _load_usage():
+    try:
+        data = json.loads(USAGE_PATH.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def record_usage(mode, model, usage):
+    day = time.strftime("%Y-%m-%d")
+    with _usage_lock:
+        data = _load_usage()
+        entry = data.setdefault(day, {"calls": 0, "token_calls": 0, "input_tokens": 0, "output_tokens": 0})
+        entry["calls"] += 1
+        if usage:
+            entry["token_calls"] += 1
+            entry["input_tokens"] += int(usage.get("input_tokens") or 0)
+            entry["output_tokens"] += int(usage.get("output_tokens") or 0)
+        cutoff = time.strftime("%Y-%m-%d", time.localtime(time.time() - USAGE_KEEP_DAYS * 86400))
+        data = {k: v for k, v in data.items() if k >= cutoff}
+        APP_DIR.mkdir(parents=True, exist_ok=True)
+        _write_json(USAGE_PATH, data)
+
+
+def usage_summary():
+    """오늘·이번 달·지난 30일 합계."""
+    data = _load_usage()
+    today = time.strftime("%Y-%m-%d")
+    month = today[:7]
+    since30 = time.strftime("%Y-%m-%d", time.localtime(time.time() - 29 * 86400))
+
+    def total(keep):
+        out = {"calls": 0, "token_calls": 0, "input_tokens": 0, "output_tokens": 0}
+        for day, entry in data.items():
+            if keep(day) and isinstance(entry, dict):
+                for k in out:
+                    out[k] += int(entry.get(k) or 0)
+        return out
+
+    return {"today": total(lambda d: d == today), "month": total(lambda d: d.startswith(month)),
+            "last30": total(lambda d: d >= since30), "month_name": month}
 
 
 # ---- 다른 대화 검색 ----

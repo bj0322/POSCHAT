@@ -72,6 +72,11 @@ class ApiError(Exception):
     pass
 
 
+# 호출이 끝날 때마다 on_usage(mode, model, usage)를 부른다. usage는 서버가 알려 준 토큰 수
+# {"input_tokens", "output_tokens"} 또는 None. 앱(main.py)이 storage.record_usage로 설정한다.
+on_usage = None
+
+
 @dataclass
 class ApiSettings:
     mode: str = "a1"               # "a1" | "responses"
@@ -95,13 +100,36 @@ def ask(api_key, message, timeout=180, settings=None, on_delta=None, cancelled=N
     settings = settings or ApiSettings()
     stream = bool(on_delta) and settings.stream
     if settings.mode == "responses":
-        return _ask_responses(api_key, message, timeout, settings, on_delta if stream else None, cancelled)
-    if stream:
+        text, usage = _ask_responses(api_key, message, timeout, settings, on_delta if stream else None, cancelled)
+    else:
+        text, usage = None, None
+        if stream:
+            try:
+                text, usage = _ask_a1(api_key, message, timeout, on_delta, cancelled)
+            except _StreamFormatError:
+                pass  # 서버가 알 수 없는 형식으로 보냈다: 한 번에 받는 방식으로 다시 요청한다
+        if text is None:
+            text, usage = _ask_a1(api_key, message, timeout, None, cancelled)
+    if on_usage:
         try:
-            return _ask_a1(api_key, message, timeout, on_delta, cancelled)
-        except _StreamFormatError:
-            pass  # 서버가 알 수 없는 형식으로 보냈다: 한 번에 받는 방식으로 다시 요청한다
-    return _ask_a1(api_key, message, timeout, None, cancelled)
+            on_usage(settings.mode, settings.model if settings.mode == "responses" else "a1", usage)
+        except Exception:
+            pass  # 사용량 기록 실패로 답변을 잃지 않는다
+    return text
+
+
+def _usage(data):
+    """응답(또는 게이트웨이가 감싼 응답)의 토큰 사용량. 없으면 None."""
+    if not isinstance(data, dict):
+        return None
+    for obj in (data.get("usage"), (data.get("response") or {}).get("usage") if isinstance(data.get("response"), dict) else None,
+                (data.get("data") or {}).get("usage") if isinstance(data.get("data"), dict) else None):
+        if isinstance(obj, dict):
+            inp = obj.get("input_tokens", obj.get("prompt_tokens"))
+            out = obj.get("output_tokens", obj.get("completion_tokens"))
+            if isinstance(inp, int) or isinstance(out, int):
+                return {"input_tokens": int(inp or 0), "output_tokens": int(out or 0)}
+    return None
 
 
 # ---- a1 단일 호출 ----
@@ -112,7 +140,8 @@ def _ask_a1(api_key, message, timeout, on_delta, cancelled):
     response = _post(URL, headers, data, timeout, stream=bool(on_delta))
     if not on_delta or _is_json(response):
         try:
-            return response.json()["message"]
+            data = response.json()
+            return data["message"], _usage(data)
         except (ValueError, KeyError, TypeError) as e:
             raise ApiError(f"응답 형식 오류: {response.text[:300]}") from e
     return _read_stream(response, on_delta, cancelled)
@@ -140,7 +169,7 @@ def _ask_responses(api_key, message, timeout, settings, on_delta, cancelled):
     text = _response_text(data)
     if text is None:
         raise ApiError(f"응답 형식 오류: {response.text[:300]}")
-    return text
+    return text, _usage(data)
 
 
 def _response_text(data):
@@ -244,7 +273,8 @@ def _events(response):
 
 
 def _read_stream(response, on_delta, cancelled):
-    text, final = "", None
+    """(답변 텍스트, 토큰 사용량 또는 None)."""
+    text, final, usage = "", None, None
     try:
         for event, data in _events(response):
             if cancelled and cancelled():
@@ -258,7 +288,7 @@ def _read_stream(response, on_delta, cancelled):
                 # 형식이 문서에 없는 a1 스트림: 지금까지의 전체 텍스트를 다시 보내는 방식이면 바꾸고, 조각이면 잇는다.
                 text = value if text and value.startswith(text) else text + value
             elif kind == "final":
-                final = value
+                final, usage = value
                 break
             else:
                 continue
@@ -276,7 +306,7 @@ def _read_stream(response, on_delta, cancelled):
             pass
     if not result and not (cancelled and cancelled()):
         raise _StreamFormatError("받은 내용이 없습니다")
-    return result
+    return result, usage
 
 
 def _chunk(event, data):
@@ -297,7 +327,7 @@ def _chunk(event, data):
     if kind == "response.output_text.delta":
         return "delta", str(obj.get("delta", ""))
     if kind == "response.completed":
-        return "final", _response_text(obj.get("response") or {}) or None
+        return "final", (_response_text(obj.get("response") or {}) or None, _usage(obj))
     if kind in ("response.failed", "response.incomplete", "error"):
         err = (obj.get("response") or {}).get("error") or obj.get("error") or obj
         raise ApiError(f"모델 오류: {json.dumps(err, ensure_ascii=False)[:300]}")

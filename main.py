@@ -12,6 +12,7 @@ import uuid
 
 import webview
 
+import api
 import mcp_client
 import storage
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
@@ -50,6 +51,7 @@ class Bridge:
         self._pending = {}            # confirm id -> [Event, decision]
         self._session_allow = set()   # "edit" / "run" — 이번 실행 동안 항상 허용
         self._mcp = mcp_client.Manager()
+        api.on_usage = storage.record_usage
 
     # ---- 내부 도우미 ----
 
@@ -113,6 +115,8 @@ class Bridge:
                 "stream": self._config.get("stream", True),
                 "notion_source": "settings" if self._config.get("notion_token") else (
                     "env" if os.environ.get("NOTION_TOKEN") or os.environ.get("NOTION_API_KEY") else None),
+                "firecrawl_source": "settings" if self._config.get("firecrawl_key") else (
+                    "env" if os.environ.get("FIRECRAWL_API_KEY") else None),
             },
             "data_dir": str(storage.APP_DIR),
             "version": APP_VERSION,
@@ -161,6 +165,10 @@ class Bridge:
                 self._config["notion_token"] = settings["notion_token"].strip()
             if settings.get("clear_notion"):
                 self._config["notion_token"] = ""
+            if settings.get("firecrawl_key"):
+                self._config["firecrawl_key"] = settings["firecrawl_key"].strip()
+            if settings.get("clear_firecrawl"):
+                self._config["firecrawl_key"] = ""
             for key, lo, hi in (("history_messages", 0, 200), ("max_steps", 1, 100)):
                 if key in settings:
                     try:
@@ -181,6 +189,9 @@ class Bridge:
                 self._config["stream"] = bool(settings["stream"])
             storage.save_config(self._config)
         return self.get_state()
+
+    def get_usage(self):
+        return storage.usage_summary()
 
     def set_agent_mode(self, enabled):
         with self._lock:
@@ -246,10 +257,13 @@ class Bridge:
         return self.get_mcp()
 
     def set_mcp_enabled(self, name, enabled):
+        name = str(name)
         with self._lock:
-            disabled = set(self._config.get("mcp_disabled", []))
-            (disabled.discard if enabled else disabled.add)(str(name))
-            self._config["mcp_disabled"] = sorted(disabled)
+            # 추천 서버는 기본이 꺼짐이라 켠 것을, 나머지는 기본이 켜짐이라 끈 것을 기록한다
+            key, on = ("mcp_enabled", enabled) if name in mcp_client.preset_servers() else ("mcp_disabled", not enabled)
+            names = set(self._config.get(key, []))
+            (names.add if on else names.discard)(name)
+            self._config[key] = sorted(names)
             storage.save_config(self._config)
         return self.get_mcp()
 

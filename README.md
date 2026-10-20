@@ -1,6 +1,8 @@
 # POSTECH GenAI Chat
 
-버전 1.5.0 — 내장 MCP 서버 추가: 논문 찾기·섹션별 읽기(paper), Notion 페이지·데이터베이스(notion), HTML로 영상 만들기(hyperframes). 논문을 쉽게 풀어 주는 `paper-reading` 스킬
+버전 1.6.0 — 웹페이지 읽기·웹 검색 내장 MCP 서버(firecrawl), 브라우저 자동화 추천 서버(Playwright, MCP 창에서 켜기), 설정 창에서 모델 API 사용량 보기
+
+1.5.0 — 내장 MCP 서버 추가: 논문 찾기·섹션별 읽기(paper), Notion 페이지·데이터베이스(notion), HTML로 영상 만들기(hyperframes). 논문을 쉽게 풀어 주는 `paper-reading` 스킬
 
 1.4.0 — 안드로이드 앱(같은 화면·에이전트·문서 읽기·MCP를 휴대폰에서)
 
@@ -42,7 +44,7 @@ Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 
 - 사이드바는 왼쪽 위 버튼으로 여는 서랍이고, 뒤로 가기로 창·사이드바를 닫습니다. 입력창의 Enter는 줄바꿈이며 보내기 버튼으로 보냅니다.
 - 작업 폴더를 고르면 "모든 파일 접근" 권한을 요청합니다. 에이전트가 휴대폰 저장소의 일반 폴더(예: `Documents/보고서`)를 읽고 고치려면 필요합니다. 작업 폴더 없이 대화만 할 때는 필요 없습니다.
 - `run` 단계는 안드로이드 셸(`/system/bin/sh`)로 실행됩니다. Python·Node 같은 개발 도구는 없습니다.
-- 내장 MCP 서버(Word·PowerPoint·Excel·paper·notion)는 앱 안에서 바로 동작합니다. hyperframes는 프로젝트 만들기와 기본 검사만 되고, 렌더링·미리보기는 Node.js가 필요해 PC에서만 됩니다. `npx`·`uvx`가 필요한 외부 MCP 서버는 휴대폰에서 실행할 수 없습니다.
+- 내장 MCP 서버(Word·PowerPoint·Excel·paper·notion·firecrawl)는 앱 안에서 바로 동작합니다. 추천 서버(Playwright)는 보이지 않습니다. hyperframes는 프로젝트 만들기와 기본 검사만 되고, 렌더링·미리보기는 Node.js가 필요해 PC에서만 됩니다. `npx`·`uvx`가 필요한 외부 MCP 서버는 휴대폰에서 실행할 수 없습니다.
 - 대화 기록과 설정은 앱 전용 저장소에 따로 있으며 PC와 동기화되지 않습니다.
 
 ## 사용법
@@ -56,6 +58,7 @@ Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 
 | 명령어·스킬 | 입력창에 `/`를 입력하면 목록이 뜹니다 |
 | 메모리 | 왼쪽 아래 **메모리**, `/remember 내용`, `/memory` |
 | MCP 서버 켜기·끄기, 외부 서버 추가 | 왼쪽 아래 **MCP** |
+| 모델 API 사용량 보기 | 왼쪽 아래 **설정** → 모델 API 사용량. 이 앱에서 보낸 요청의 오늘·이번 달·최근 30일 호출 수와(서버가 알려 주면) 토큰 수. POSTECH GenAI API는 남은 한도를 알려 주지 않으므로 잔여량은 GenAI 콘솔에서 확인하세요. |
 
 ### 대화 간 정보 공유 (메모리 · 다른 대화 참고)
 
@@ -130,6 +133,13 @@ MCP(Model Context Protocol)는 AI 도구를 연결하는 표준입니다. 에이
 | `paper` | `search`(arXiv·Semantic Scholar에서 논문 찾기), `info`(저자·게재처·인용 수·한 줄 요약·초록), `read`(목차를 찾아 섹션·쪽 단위로 본문 읽기), `related`(참고한 논문·인용한 논문), `download`(PDF를 작업 폴더에 저장) |
 | `notion` | `search`, `read_page`(페이지를 마크다운으로), `query_database`(데이터베이스 행 보기·필터), `create_page`(마크다운으로 새 페이지·데이터베이스 행), `append_content`, `update_page`(제목·속성 바꾸기) |
 | `hyperframes` | `guide`(영상 HTML 작성 규칙), `create_project`, `lint`(검사), `render`(MP4·WebM·MOV·GIF로 렌더링), `render_status`, `preview`(브라우저 미리보기), `doctor`(필요한 프로그램 확인) |
+| `firecrawl` | `scrape`(웹페이지를 마크다운으로), `search`(웹 검색, 본문까지 가져오기 선택), `map`(사이트의 페이지 주소 목록), `crawl`(여러 페이지 따라가며 읽기), `crawl_status` |
+
+**추천 서버**는 앱이 실행 방법을 아는 외부 서버입니다. 기본으로 꺼져 있고 **MCP** 창에서 켭니다. PC에 [Node.js](https://nodejs.org)가 있어야 하며 휴대폰에서는 쓸 수 없습니다.
+
+| 서버 | 내용 |
+|---|---|
+| `playwright` | [Microsoft Playwright MCP](https://github.com/microsoft/playwright-mcp)(`@playwright/mcp@0.0.83`). 브라우저를 열어 페이지 이동·클릭·입력·스크린샷·폼 채우기. Windows에서는 설치된 Edge를 씁니다. 스냅숏·스크린샷은 작업 폴더의 `.playwright-mcp/`에 저장됩니다. 모든 조작은 명령 실행처럼 승인을 받습니다. |
 
 #### 논문 읽기 (`paper`)
 
@@ -143,6 +153,10 @@ MCP(Model Context Protocol)는 AI 도구를 연결하는 표준입니다. 에이
 
 Notion에 쓰는 도구는 바깥 서비스를 바꾸므로 명령 실행처럼 승인을 받습니다.
 
+#### 웹페이지 읽기 (`firecrawl`)
+
+[Firecrawl](https://www.firecrawl.dev) API로 자바스크립트로 그리는 페이지까지 깔끔한 마크다운으로 읽습니다. firecrawl.dev에서 무료로 가입해 API 키(`fc-...`)를 받고 **설정 → Firecrawl API 키**에 넣으세요(또는 `FIRECRAWL_API_KEY` 환경 변수). 무료 요금제는 크레딧과 분당 요청 수(약 10회)에 한도가 있고, `crawl`은 쪽마다 크레딧을 씁니다. 직접 띄운 Firecrawl 서버는 `FIRECRAWL_API_URL`에 주소를 넣으면 씁니다.
+
 #### 영상 만들기 (`hyperframes`)
 
 [HyperFrames](https://github.com/heygen-com/hyperframes)(HeyGen, Apache-2.0)는 시간을 매긴 HTML과 GSAP 애니메이션을 영상으로 렌더링합니다. "제품 소개 10초 영상 만들어 줘"처럼 요청하면 에이전트가 작업 폴더에 프로젝트를 만들고 `index.html`을 작성해 렌더링합니다. 결과는 `<프로젝트>/renders/`에 생깁니다.
@@ -152,7 +166,7 @@ Notion에 쓰는 도구는 바깥 서비스를 바꾸므로 명령 실행처럼 
 - 렌더링은 길이에 따라 몇 분 걸릴 수 있어 백그라운드에서 진행되며, 에이전트가 `render_status`로 확인합니다.
 - 렌더링·미리보기·정식 검사는 npx로 프로그램을 실행하므로 명령 실행처럼 승인을 받습니다.
 
-**외부 서버**는 **MCP → 설정 파일 열기**로 `%APPDATA%\PostechChat\mcp.json`을 열어 Claude Desktop과 같은 형식으로 추가합니다. `npx`·`uvx` 같은 실행 도구가 필요한 서버는 그 도구가 PC에 설치되어 있어야 합니다. 내장 서버 이름(`word`, `powerpoint`, `excel`, `paper`, `notion`, `hyperframes`)은 쓸 수 없습니다.
+**외부 서버**는 **MCP → 설정 파일 열기**로 `%APPDATA%\PostechChat\mcp.json`을 열어 Claude Desktop과 같은 형식으로 추가합니다. `npx`·`uvx` 같은 실행 도구가 필요한 서버는 그 도구가 PC에 설치되어 있어야 합니다. 내장 서버 이름(`word`, `powerpoint`, `excel`, `paper`, `notion`, `hyperframes`, `firecrawl`)은 쓸 수 없습니다. 추천 서버와 같은 이름(`playwright`)으로 적으면 적은 설정이 대신 쓰입니다.
 
 ```json
 {
@@ -206,7 +220,7 @@ POSTECH GenAI 서버의 모델은 자체 시스템 프롬프트 때문에 "사�
 | `documents.py` | PDF·Word·PowerPoint·Excel·한글 문서의 텍스트 추출 |
 | `mcp_client.py` | MCP 클라이언트: 서버 실행·연결·도구 호출, `mcp.json` 읽기 |
 | `office_mcp.py` | 내장 MCP 서버(word·powerpoint·excel)와 모든 내장 서버의 공통 실행 루프. 앱 exe를 `--mcp-server <이름>`으로 실행하면 이 서버가 됩니다. |
-| `paper_mcp.py` · `notion_mcp.py` · `hyperframes_mcp.py` | 내장 MCP 서버 paper(arXiv·Semantic Scholar), notion(Notion API), hyperframes(HTML 영상, npx로 HyperFrames 실행) |
+| `paper_mcp.py` · `notion_mcp.py` · `hyperframes_mcp.py` · `firecrawl_mcp.py` | 내장 MCP 서버 paper(arXiv·Semantic Scholar), notion(Notion API), hyperframes(HTML 영상, npx로 HyperFrames 실행), firecrawl(Firecrawl API) |
 | `api.py` | POSTECH GenAI API 호출(a1 / OpenAI Responses), 스트리밍 해석 |
 | `storage.py` | 대화·설정·메모리 저장(`%APPDATA%\PostechChat`), 다른 대화 검색 |
 | `web/` | 화면(HTML/CSS/JS, marked·DOMPurify·KaTeX 포함) |

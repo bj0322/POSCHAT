@@ -1,7 +1,8 @@
 """MCP(Model Context Protocol) 클라이언트: 표준 입출력 MCP 서버를 띄우고 도구를 부른다.
 
-내장 서버(word·powerpoint·excel·paper·notion·hyperframes)는 앱 exe 자신을 `--mcp-server <이름>`으로,
-소스 실행 때는 office_mcp.py를 실행한다. 외부 서버는
+내장 서버(word·powerpoint·excel·paper·notion·hyperframes·firecrawl)는 앱 exe 자신을
+`--mcp-server <이름>`으로, 소스 실행 때는 office_mcp.py를 실행한다. 추천 서버(playwright)는 앱이
+실행 방법을 아는 외부 서버로, 기본은 꺼져 있고 MCP 창에서 켠다. 그 밖의 외부 서버는
 %APPDATA%\\PostechChat\\mcp.json에 Claude Desktop과 같은 형식으로 적는다.
 
     {"mcpServers": {"이름": {"command": "npx", "args": ["-y", "패키지"], "env": {"KEY": "값"}}}}
@@ -37,7 +38,22 @@ BUILTIN_SERVERS = {
     "paper": "논문 찾기(arXiv·Semantic Scholar)·정보·한 줄 요약·섹션별로 읽기·참고/인용 논문",
     "notion": "Notion 페이지·데이터베이스 찾기·읽기·만들기·덧붙이기(설정에 Notion 통합 토큰 필요)",
     "hyperframes": "HTML로 영상 만들기(HyperFrames). 렌더링·미리보기는 PC에 Node.js 22+·FFmpeg 필요",
+    "firecrawl": "웹페이지를 마크다운으로 읽기·웹 검색·사이트 지도·여러 쪽 크롤링(설정에 Firecrawl API 키 필요)",
 }
+PLAYWRIGHT_VERSION = "0.0.83"  # 같은 동작이 유지되도록 버전을 고정한다
+
+
+def preset_servers():
+    """추천 외부 서버: 이름 -> mcp.json 형식 설정. mcp.json에 같은 이름이 있으면 그쪽을 쓴다."""
+    if INPROCESS_BUILTIN:
+        return {}  # 안드로이드: 하위 프로세스(npx)를 띄울 수 없다
+    args = ["-y", f"@playwright/mcp@{PLAYWRIGHT_VERSION}", "--output-dir", ".playwright-mcp"]
+    if os.name == "nt":
+        args += ["--browser", "msedge"]  # Windows에 늘 있는 Edge를 써서 브라우저를 따로 받지 않는다
+    return {"playwright": {
+        "command": "npx", "args": args,
+        "description": "브라우저 자동화(Microsoft Playwright): 페이지 열기·클릭·입력·스크린샷. PC에 Node.js 필요",
+    }}
 
 CONFIG_TEMPLATE = {
     "mcpServers": {},
@@ -287,7 +303,13 @@ class Manager:
             cmd = [INPROCESS, name] if INPROCESS_BUILTIN else builtin_command(name)
             specs[name] = {"command": cmd[0], "args": cmd[1:], "env": {}, "builtin": True,
                            "enabled": name not in disabled, "description": BUILTIN_SERVERS[name]}
+        enabled = set(config.get("mcp_enabled", []))
         external, _ = load_external()
+        for name, spec in preset_servers().items():
+            if name not in external:
+                specs[name] = {"command": spec["command"], "args": spec["args"], "env": {}, "builtin": False,
+                               "preset": True, "enabled": name in enabled and name not in disabled,
+                               "description": spec["description"]}
         for name, spec in external.items():
             args = spec.get("args") or []
             specs[name] = {"command": str(spec["command"]), "args": [str(a) for a in args] if isinstance(args, list) else [],
@@ -348,7 +370,7 @@ class Manager:
                 server = self._servers.get(name)
                 connected = server is not None and server.alive()
                 out.append({
-                    "name": name, "builtin": spec["builtin"], "enabled": spec["enabled"],
+                    "name": name, "builtin": spec["builtin"], "preset": spec.get("preset", False), "enabled": spec["enabled"],
                     "description": spec["description"],
                     "command": " ".join([spec["command"], *spec["args"]]) if not spec["builtin"] else "",
                     "state": "connected" if connected else ("error" if name in self._errors and spec["enabled"] else "idle"),

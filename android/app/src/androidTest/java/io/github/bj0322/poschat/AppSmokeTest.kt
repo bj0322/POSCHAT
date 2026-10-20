@@ -38,6 +38,8 @@ class AppSmokeTest {
         assertEquals(5, mcp.getInt("paper"))
         assertEquals(6, mcp.getInt("notion"))
         assertEquals(7, mcp.getInt("hyperframes"))
+        assertEquals(5, mcp.getInt("firecrawl"))
+        assertTrue(!mcp.has("playwright"))  // npx가 필요한 추천 서버는 안드로이드에 없다
         assertTrue(report.getString("video_create").startsWith("OK"))
         assertEquals("OK", report.getString("word_create"))
         assertTrue(report.getString("word_read").contains("제목"))

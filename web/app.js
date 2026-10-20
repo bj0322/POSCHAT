@@ -612,6 +612,22 @@ function showSettings() {
     : "notion MCP 서버를 쓸 때만 필요합니다.";
   const notion = h("input", { type: "password", placeholder: c.notion_source ? "••••••••••••" : "ntn_... (선택)", autocomplete: "off" });
   const clearNotion = h("input", { type: "checkbox", style: "width:auto;margin:0 6px 0 0" });
+  const fcHint = c.firecrawl_source === "settings" ? "저장된 키가 있습니다. 바꾸려면 새 키를 입력하세요."
+    : c.firecrawl_source === "env" ? "환경 변수 FIRECRAWL_API_KEY의 키를 쓰고 있습니다."
+    : "firecrawl MCP 서버를 쓸 때만 필요합니다.";
+  const firecrawl = h("input", { type: "password", placeholder: c.firecrawl_source ? "••••••••••••" : "fc-... (선택)", autocomplete: "off" });
+  const clearFirecrawl = h("input", { type: "checkbox", style: "width:auto;margin:0 6px 0 0" });
+  const fmt = (n) => n >= 10000 ? (n / 10000).toFixed(n >= 100000 ? 0 : 1) + "만" : n.toLocaleString();
+  const usageLine = (label, u) => h("div", { class: "row", style: "justify-content:space-between;font-size:13px;margin:2px 0" },
+    h("span", {}, label),
+    h("span", {}, `${u.calls.toLocaleString()}회` + (u.token_calls
+      ? ` · 토큰 입력 ${fmt(u.input_tokens)} / 출력 ${fmt(u.output_tokens)}` + (u.token_calls < u.calls ? ` (${u.token_calls}회분)` : "")
+      : "")));
+  const usageBox = h("div", {}, h("small", {}, "불러오는 중..."));
+  api().get_usage().then((u) => {
+    usageBox.replaceChildren(usageLine("오늘", u.today), usageLine(`이번 달 (${u.month_name})`, u.month),
+      usageLine("최근 30일", u.last30));
+  }).catch(() => usageBox.replaceChildren(h("small", {}, "사용량을 불러오지 못했습니다.")));
   const hist = h("input", { type: "number", min: 0, max: 200, value: c.history_messages });
   const steps = h("input", { type: "number", min: 1, max: 100, value: c.max_steps });
   const perm = h("select", {},
@@ -653,11 +669,20 @@ function showSettings() {
       c.notion_source === "settings"
         ? h("label", { style: "display:flex;align-items:center;font-size:13px;margin-top:4px;cursor:pointer" }, clearNotion, "저장된 토큰 지우기")
         : null),
+    h("div", { class: "field" }, h("label", {}, "Firecrawl API 키"), firecrawl,
+      h("small", {}, fcHint, " firecrawl.dev에서 무료로 가입하면 키와 무료 크레딧을 받습니다."),
+      c.firecrawl_source === "settings"
+        ? h("label", { style: "display:flex;align-items:center;font-size:13px;margin-top:4px;cursor:pointer" }, clearFirecrawl, "저장된 키 지우기")
+        : null),
     h("div", { class: "field" }, h("label", {}, "에이전트 권한"), perm,
       h("small", {}, "에이전트가 파일을 고치거나 명령을 실행하기 전에 승인을 받을지 정합니다.")),
     h("div", { class: "row" },
       h("div", { class: "field", style: "flex:1" }, h("label", {}, "기억할 이전 메시지 수"), hist),
       h("div", { class: "field", style: "flex:1" }, h("label", {}, "에이전트 최대 단계 수"), steps)),
+    h("div", { class: "field" }, h("label", {}, "모델 API 사용량 (이 앱에서 보낸 요청)"),
+      usageBox,
+      h("small", {}, "POSTECH GenAI API는 남은 한도를 알려 주지 않으므로 정확한 잔여량은 GenAI 콘솔에서 확인하세요. ",
+        "토큰 수는 서버가 응답에 사용량을 담아 준 요청만 셉니다.")),
     h("div", { class: "field" }, h("label", {}, "데이터 폴더"),
       h("div", { class: "row" }, h("small", { style: "flex:1;margin:0;word-break:break-all" }, S.dataDir),
         h("button", { class: "btn", onclick: () => api().open_folder("data") }, "열기"))),
@@ -674,6 +699,7 @@ function showSettings() {
             api_key: key.value.trim(), history_messages: hist.value, max_steps: steps.value, permission: perm.value,
             api_mode: mode.value, responses_url: url.value.trim(), model: model.value, stream: stream.checked,
             notion_token: notion.value.trim(), clear_notion: clearNotion.checked && !notion.value.trim(),
+            firecrawl_key: firecrawl.value.trim(), clear_firecrawl: clearFirecrawl.checked && !firecrawl.value.trim(),
           });
           if (state.ok === false) return toast(state.error);
           applyState(state);
@@ -793,7 +819,7 @@ function showMcp() {
         toggle,
         h("div", { class: "s-main" },
           h("b", {}, sv.name),
-          h("span", { class: "badge" }, sv.builtin ? "내장" : "외부"),
+          h("span", { class: "badge" }, sv.builtin ? "내장" : sv.preset ? "추천" : "외부"),
           sv.enabled ? h("span", { class: "badge mcp-" + sv.state }, STATE[sv.state] || sv.state) : null,
           h("p", {}, sv.description || ""),
           detail && detail !== sv.description ? h("p", { class: sv.error ? "mcp-error" : "" }, detail) : null),
@@ -803,8 +829,10 @@ function showMcp() {
   const body = h("div", {},
     h("p", { style: "margin:0 0 8px;color:var(--text-2)" },
       "MCP 서버는 에이전트가 쓸 수 있는 도구를 더해 줍니다. 내장 서버로 Word·PowerPoint·Excel 문서를 만들고 고치고, ",
-      "논문을 찾아 읽고(paper), Notion 페이지를 다루고(notion, 설정에 토큰 필요), HTML로 영상을 만들 수 있습니다(hyperframes). ",
-      "파일은 작업 폴더 안의 것만 다룹니다. 다른 MCP 서버는 설정 파일(mcp.json)에 Claude Desktop과 같은 형식으로 추가합니다."),
+      "논문을 찾아 읽고(paper), Notion 페이지를 다루고(notion, 설정에 토큰 필요), HTML로 영상을 만들고(hyperframes), ",
+      "웹페이지를 읽고 검색할 수 있습니다(firecrawl, 설정에 키 필요). 파일은 작업 폴더 안의 것만 다룹니다. ",
+      "추천 서버(playwright: 브라우저 자동화)는 PC에 Node.js가 있으면 켜서 씁니다. ",
+      "다른 MCP 서버는 설정 파일(mcp.json)에 Claude Desktop과 같은 형식으로 추가합니다."),
     list, note,
     h("small", { style: "display:block;margin-top:10px;color:var(--text-3)" },
       "서버는 에이전트 모드에서 처음 필요할 때 연결됩니다. 작업 폴더의 파일을 고치는 도구는 파일 수정처럼, ",
