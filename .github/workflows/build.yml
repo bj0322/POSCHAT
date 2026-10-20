@@ -101,7 +101,9 @@ jobs:
       - name: Instrumented tests on an emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 30
+          # Android 14 이미지: 기본 WebView가 앱 화면의 최신 JavaScript를 지원한다(Android 11 이미지의 WebView는 너무 오래됐다).
+          api-level: 34
+          target: google_apis
           arch: x86_64
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot

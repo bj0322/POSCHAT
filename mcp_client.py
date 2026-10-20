@@ -175,7 +175,8 @@ class Server:
         self.tools, self.error = tools, ""
 
     def _read_stdout(self):
-        for line in self.proc.stdout:
+        stream = self.proc.stdout  # close()가 self.proc을 비워도 끝까지 읽고 닫는다
+        for line in stream:
             try:
                 msg = json.loads(line)
             except ValueError:
@@ -185,14 +186,17 @@ class Server:
                     box = self._pending.pop(msg["id"], None)
                 if box:
                     box.put(msg)
+        stream.close()
         with self._lock:  # 서버가 끝났다: 기다리는 요청을 모두 깨운다
             for box in self._pending.values():
                 box.put(None)
             self._pending.clear()
 
     def _read_stderr(self):
-        for line in self.proc.stderr:
+        stream = self.proc.stderr
+        for line in stream:
             self.stderr_tail.append(line.decode("utf-8", errors="replace").rstrip())
+        stream.close()
 
     def _send(self, msg):
         data = (json.dumps(msg, ensure_ascii=False) + "\n").encode("utf-8")
