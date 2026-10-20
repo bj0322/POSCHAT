@@ -46,7 +46,11 @@ class AppSmokeTest {
             // app.js의 init()이 Python Bridge.get_state()를 받아 S.version을 채우면 화면과 Python이 연결된 것이다.
             val probe = """
                 (function () {
-                  if (typeof S === "undefined" || !S.version) return "";
+                  if (typeof S === "undefined" || !S.version) {
+                    return "WAIT " + JSON.stringify({ href: location.href, title: document.title,
+                      bridge: !!window.pywebview, host: typeof PoschatHost, S: typeof S,
+                      error: window.__lastError || null });
+                  }
                   var md = renderMarkdown("\\(x^2\\)");
                   return JSON.stringify({ version: S.version, katex: !!md.querySelector(".katex"),
                                           narrow: isNarrow(), collapsed: document.getElementById("app").classList.contains("collapsed") });
@@ -63,10 +67,11 @@ class AppSmokeTest {
                     }
                 }
                 latch.await(10, TimeUnit.SECONDS)
-                if (result.length > 4) break
+                if (result.length > 4 && !result.startsWith("\"WAIT")) break
                 Thread.sleep(1000)
             }
             println("screen: $result")
+            assertTrue("화면이 Python과 연결되지 않았습니다: $result", result.length > 4 && !result.startsWith("\"WAIT"))
             // evaluateJavascript는 문자열 결과를 JSON 문자열로 한 번 더 감싸서 준다
             val state = JSONObject(JSONObject("{\"v\":$result}").getString("v"))
             assertEquals(BuildConfig.VERSION_NAME, state.getString("version"))
