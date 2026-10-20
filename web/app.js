@@ -607,6 +607,11 @@ function showSettings() {
     : c.key_source === "env" ? "환경 변수 POSTECH_GENAI_API_KEY의 키를 쓰고 있습니다."
     : "API 키가 없습니다.";
   const key = h("input", { type: "password", placeholder: c.key_source ? "••••••••••••" : "API 키 입력", autocomplete: "off" });
+  const notionHint = c.notion_source === "settings" ? "저장된 토큰이 있습니다. 바꾸려면 새 토큰을 입력하세요."
+    : c.notion_source === "env" ? "환경 변수 NOTION_TOKEN의 토큰을 쓰고 있습니다."
+    : "notion MCP 서버를 쓸 때만 필요합니다.";
+  const notion = h("input", { type: "password", placeholder: c.notion_source ? "••••••••••••" : "ntn_... (선택)", autocomplete: "off" });
+  const clearNotion = h("input", { type: "checkbox", style: "width:auto;margin:0 6px 0 0" });
   const hist = h("input", { type: "number", min: 0, max: 200, value: c.history_messages });
   const steps = h("input", { type: "number", min: 1, max: 100, value: c.max_steps });
   const perm = h("select", {},
@@ -642,6 +647,12 @@ function showSettings() {
     h("div", { class: "field" },
       h("label", { style: "display:flex;align-items:center;font-weight:600;cursor:pointer" }, stream, "답변을 받는 대로 표시 (스트리밍)"),
       h("small", {}, "일반 대화의 답변을 글자가 오는 대로 보여 줍니다. 에이전트 모드의 단계 진행은 그대로입니다.")),
+    h("div", { class: "field" }, h("label", {}, "Notion 통합 토큰"), notion,
+      h("small", {}, notionHint, " notion.so/profile/integrations에서 내부 통합을 만들어 토큰을 받고, ",
+        "쓸 페이지의 ··· → 연결에서 그 통합을 추가하세요."),
+      c.notion_source === "settings"
+        ? h("label", { style: "display:flex;align-items:center;font-size:13px;margin-top:4px;cursor:pointer" }, clearNotion, "저장된 토큰 지우기")
+        : null),
     h("div", { class: "field" }, h("label", {}, "에이전트 권한"), perm,
       h("small", {}, "에이전트가 파일을 고치거나 명령을 실행하기 전에 승인을 받을지 정합니다.")),
     h("div", { class: "row" },
@@ -662,6 +673,7 @@ function showSettings() {
           const state = await api().save_settings({
             api_key: key.value.trim(), history_messages: hist.value, max_steps: steps.value, permission: perm.value,
             api_mode: mode.value, responses_url: url.value.trim(), model: model.value, stream: stream.checked,
+            notion_token: notion.value.trim(), clear_notion: clearNotion.checked && !notion.value.trim(),
           });
           if (state.ok === false) return toast(state.error);
           applyState(state);
@@ -790,11 +802,13 @@ function showMcp() {
   };
   const body = h("div", {},
     h("p", { style: "margin:0 0 8px;color:var(--text-2)" },
-      "MCP 서버는 에이전트가 쓸 수 있는 도구를 더해 줍니다. 내장 서버로 Word·PowerPoint·Excel 문서를 만들고 고칠 수 있으며, ",
-      "작업 폴더 안의 파일만 다룹니다. 다른 MCP 서버는 설정 파일(mcp.json)에 Claude Desktop과 같은 형식으로 추가합니다."),
+      "MCP 서버는 에이전트가 쓸 수 있는 도구를 더해 줍니다. 내장 서버로 Word·PowerPoint·Excel 문서를 만들고 고치고, ",
+      "논문을 찾아 읽고(paper), Notion 페이지를 다루고(notion, 설정에 토큰 필요), HTML로 영상을 만들 수 있습니다(hyperframes). ",
+      "파일은 작업 폴더 안의 것만 다룹니다. 다른 MCP 서버는 설정 파일(mcp.json)에 Claude Desktop과 같은 형식으로 추가합니다."),
     list, note,
     h("small", { style: "display:block;margin-top:10px;color:var(--text-3)" },
-      "서버는 에이전트 모드에서 처음 필요할 때 연결됩니다. 문서를 고치는 도구는 파일 수정처럼, 외부 서버의 도구는 명령 실행처럼 승인을 받습니다."),
+      "서버는 에이전트 모드에서 처음 필요할 때 연결됩니다. 작업 폴더의 파일을 고치는 도구는 파일 수정처럼, ",
+      "외부 서버의 도구와 Notion에 쓰기·영상 렌더링처럼 바깥에 영향을 주는 도구는 명령 실행처럼 승인을 받습니다."),
   );
   const m = modal({
     title: "MCP",

@@ -56,7 +56,10 @@ MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_SEARCH_DOC_BYTES = 20 * 1024 * 1024
 MCP_ACTION_DOC = '{"action": "mcp", "tool": "서버.도구", "args": {"인자": "값"}}  MCP 도구 실행 (아래 [MCP 도구] 목록)'
 MCP_RULE = ("- Word(.docx)·PowerPoint(.pptx)·Excel(.xlsx) 파일을 만들거나 고칠 때는 write/edit 대신 mcp 도구를 쓰세요. "
-            "고치기 전에 read로 내용을 확인하세요.")
+            "고치기 전에 read로 내용을 확인하세요.\n"
+            "- 논문을 읽어 달라고 하면 paper 도구로 info → read(목차·앞부분) → 필요한 section 순서로 나눠 읽고, "
+            "용어를 풀어 쉽게 설명하세요(paper-reading 스킬이 있으면 먼저 부르세요).\n"
+            "- 영상을 만들 때는 hyperframes.guide를 먼저 읽고 create_project → index.html 고치기 → lint → render 순서로 하세요.")
 COMMAND_TIMEOUT = 180
 SHELL = None  # run 단계의 셸. None이면 운영체제 기본(Windows cmd, /bin/sh). 안드로이드는 /system/bin/sh
 
@@ -662,10 +665,11 @@ class Agent:
             raise ToolError("args는 객체여야 합니다.")
         arguments = {**extra, **(args or {})}
         detail = json.dumps(arguments, ensure_ascii=False, indent=2)
-        read_only = bool((spec.get("annotations") or {}).get("readOnlyHint"))
-        if not read_only:
-            # 내장 서버는 작업 폴더 안의 문서만 고치므로 파일 수정으로, 외부 서버는 무엇이든 할 수 있으므로 명령 실행으로 묻는다.
-            kind = "edit" if server.builtin else "run"
+        annotations = spec.get("annotations") or {}
+        if not annotations.get("readOnlyHint"):
+            # 작업 폴더 안의 파일만 고치는 내장 도구는 파일 수정으로, 외부 서버와 바깥에 영향을 주는 내장 도구
+            # (Notion에 쓰기, npx 실행 등 openWorldHint)는 무엇이든 할 수 있으므로 명령 실행으로 묻는다.
+            kind = "edit" if server.builtin and not annotations.get("openWorldHint") else "run"
             if not self.confirm(kind, f"MCP 도구: {tool}", _truncate(detail, 6000)):
                 self.on_tool(f"⛔ mcp {tool} 거부됨", detail)
                 return "사용자가 이 MCP 도구 실행을 거부했습니다."

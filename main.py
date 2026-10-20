@@ -111,6 +111,8 @@ class Bridge:
                 "responses_url": self._config.get("responses_url", ""),
                 "model": self._config.get("model", DEFAULT_MODEL),
                 "stream": self._config.get("stream", True),
+                "notion_source": "settings" if self._config.get("notion_token") else (
+                    "env" if os.environ.get("NOTION_TOKEN") or os.environ.get("NOTION_API_KEY") else None),
             },
             "data_dir": str(storage.APP_DIR),
             "version": APP_VERSION,
@@ -155,6 +157,10 @@ class Bridge:
                 self._config["api_key"] = settings["api_key"].strip()
             if settings.get("clear_key"):
                 self._config["api_key"] = ""
+            if settings.get("notion_token"):
+                self._config["notion_token"] = settings["notion_token"].strip()
+            if settings.get("clear_notion"):
+                self._config["notion_token"] = ""
             for key, lo, hi in (("history_messages", 0, 200), ("max_steps", 1, 100)):
                 if key in settings:
                     try:

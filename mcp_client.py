@@ -1,7 +1,7 @@
 """MCP(Model Context Protocol) 클라이언트: 표준 입출력 MCP 서버를 띄우고 도구를 부른다.
 
-내장 서버(word·powerpoint·excel)는 앱 exe 자신을 `--mcp-server <이름>`으로, 소스 실행 때는
-office_mcp.py를 실행한다. 외부 서버는
+내장 서버(word·powerpoint·excel·paper·notion·hyperframes)는 앱 exe 자신을 `--mcp-server <이름>`으로,
+소스 실행 때는 office_mcp.py를 실행한다. 외부 서버는
 %APPDATA%\\PostechChat\\mcp.json에 Claude Desktop과 같은 형식으로 적는다.
 
     {"mcpServers": {"이름": {"command": "npx", "args": ["-y", "패키지"], "env": {"KEY": "값"}}}}
@@ -34,6 +34,9 @@ BUILTIN_SERVERS = {
     "word": "Word 문서(.docx) 만들기·내용 추가·글자 바꾸기",
     "powerpoint": "PowerPoint(.pptx) 만들기·슬라이드 추가·글자 바꾸기",
     "excel": "Excel(.xlsx) 만들기·셀 쓰기",
+    "paper": "논문 찾기(arXiv·Semantic Scholar)·정보·한 줄 요약·섹션별로 읽기·참고/인용 논문",
+    "notion": "Notion 페이지·데이터베이스 찾기·읽기·만들기·덧붙이기(설정에 Notion 통합 토큰 필요)",
+    "hyperframes": "HTML로 영상 만들기(HyperFrames). 렌더링·미리보기는 PC에 Node.js 22+·FFmpeg 필요",
 }
 
 CONFIG_TEMPLATE = {
