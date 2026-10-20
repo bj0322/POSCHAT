@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import threading
+import time
 import uuid
 
 import webview
@@ -14,10 +15,10 @@ import webview
 import mcp_client
 import storage
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
-from api import ApiError
+from api import DEFAULT_MODEL, MODELS, ApiError, ApiSettings
 
 APP_TITLE = "POSTECH GenAI Chat"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 
 SKILL_TEMPLATE = """---
 name: {name}
@@ -106,9 +107,14 @@ class Bridge:
                 "permission": self._config.get("permission", "ask"),
                 "share_threads": self._config.get("share_threads", True),
                 "key_source": key_source,
+                "api_mode": self._config.get("api_mode", "a1"),
+                "responses_url": self._config.get("responses_url", ""),
+                "model": self._config.get("model", DEFAULT_MODEL),
+                "stream": self._config.get("stream", True),
             },
             "data_dir": str(storage.APP_DIR),
             "version": APP_VERSION,
+            "models": [{"id": m, "label": label} for m, label in MODELS],
             "memory": storage.load_memory(),
         }
 
@@ -141,6 +147,9 @@ class Bridge:
     # ---- 설정 ----
 
     def save_settings(self, settings):
+        url = str(settings.get("responses_url") or "").strip()
+        if url and not url.startswith("https://"):
+            return {"ok": False, "error": "Responses API 주소는 https://로 시작해야 합니다."}
         with self._lock:
             if settings.get("api_key"):
                 self._config["api_key"] = settings["api_key"].strip()
@@ -156,6 +165,14 @@ class Bridge:
                 self._config["share_threads"] = bool(settings["share_threads"])
             if settings.get("permission") in ("ask", "auto_edit", "auto_all"):
                 self._config["permission"] = settings["permission"]
+            if settings.get("api_mode") in ("a1", "responses"):
+                self._config["api_mode"] = settings["api_mode"]
+            if "responses_url" in settings:
+                self._config["responses_url"] = url
+            if settings.get("model") in {m for m, _ in MODELS}:
+                self._config["model"] = settings["model"]
+            if "stream" in settings:
+                self._config["stream"] = bool(settings["stream"])
             storage.save_config(self._config)
         return self.get_state()
 
@@ -294,6 +311,15 @@ class Bridge:
             if alive():
                 self._add(thread_id, "tool", summary, detail=detail)
 
+        last_delta = [0.0]
+
+        def on_delta(text):
+            # 화면 갱신이 너무 잦지 않게 0.08초에 한 번만 보낸다. 마지막 답변은 message 이벤트로 따로 온다.
+            now = time.monotonic()
+            if alive() and now - last_delta[0] >= 0.08:
+                last_delta[0] = now
+                self._push({"type": "delta", "thread_id": thread_id, "text": text})
+
         agent = Agent(
             api_key=api_key,
             workspace=workspace,
@@ -307,6 +333,8 @@ class Bridge:
             thread_id=thread_id,
             share_threads=bool(self._config.get("share_threads", True)),
             mcp=(lambda: self._mcp.ensure(self._config, workspace, on_status)) if agent_mode and workspace else None,
+            api_settings=ApiSettings.from_config(self._config),
+            on_delta=on_delta,
         )
         try:
             answer = agent.run(history, task, forced)
@@ -380,7 +408,9 @@ def selftest():
         finally:
             manager.shutdown()  # 서버가 임시 폴더를 쓰고 있으면 지울 수 없으므로 먼저 끈다
     try:
-        reply = ask(key, "'정상'이라고 한 단어로만 답하세요.") if key else "(API 키 없음)"
+        settings = ApiSettings.from_config(config)
+        lines.append(f"api mode: {settings.mode}" + (f" ({settings.model})" if settings.mode == "responses" else ""))
+        reply = ask(key, "'정상'이라고 한 단어로만 답하세요.", settings=settings) if key else "(API 키 없음)"
         lines.append(f"api: OK {reply[:80]!r}")
     except ApiError as e:
         lines.append(f"api: FAIL {e}")

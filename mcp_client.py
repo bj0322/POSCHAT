@@ -113,7 +113,7 @@ class Server:
         self.request("initialize", {
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {},
-            "clientInfo": {"name": "postech-genai-chat", "version": "1.2.0"},
+            "clientInfo": {"name": "postech-genai-chat", "version": "1.3.0"},
         }, timeout=START_TIMEOUT)
         self.notify("notifications/initialized")
         tools, cursor = [], None

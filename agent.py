@@ -19,7 +19,7 @@ from pathlib import Path
 
 import documents
 import storage
-from api import ask
+from api import ApiSettings, ask
 from documents import DocumentError
 from mcp_client import MCPError
 
@@ -213,7 +213,8 @@ class ToolError(Exception):
 
 class Agent:
     def __init__(self, api_key, workspace, agent_mode, max_steps, history_messages,
-                 on_status, on_tool, confirm, cancelled, thread_id=None, share_threads=True, mcp=None):
+                 on_status, on_tool, confirm, cancelled, thread_id=None, share_threads=True, mcp=None,
+                 api_settings=None, on_delta=None):
         self.api_key = api_key
         self.workspace = Path(workspace).resolve() if workspace else None
         self.agent_mode = agent_mode
@@ -230,9 +231,12 @@ class Agent:
         self.mcp = mcp                # () -> 연결된 mcp_client.Server 목록. 에이전트 모드에서만 부른다
         self.mcp_servers = {}
         self._doc_cache = {}          # 경로 -> ((크기, 수정 시각), 문서 텍스트)
+        self.api_settings = api_settings or ApiSettings()
+        self.on_delta = on_delta      # (지금까지의 답변 텍스트) — 일반 대화의 스트리밍 표시용
 
-    def _ask(self, prompt):
-        reply = SERVER_COMMENT_RE.sub("", ask(self.api_key, prompt))
+    def _ask(self, prompt, on_delta=None):
+        reply = ask(self.api_key, prompt, settings=self.api_settings, on_delta=on_delta, cancelled=self.cancelled)
+        reply = SERVER_COMMENT_RE.sub("", reply)
         return JUNK_CODE_RE.sub("", reply).strip()
 
     def _format_history(self, history):
@@ -308,7 +312,7 @@ class Agent:
             parts.append("[이전 대화]\n" + history_text)
         parts.append("[현재 요청]\n" + task)
         self.on_status("답변을 작성하는 중...")
-        return self._ask("\n\n".join(parts))
+        return self._ask("\n\n".join(parts), on_delta=self.on_delta)
 
     # ---- 에이전트 루프 ----
 
