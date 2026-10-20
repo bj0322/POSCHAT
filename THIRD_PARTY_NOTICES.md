@@ -38,5 +38,15 @@ document reading and the built-in Office MCP servers:
 HWP reading follows the publicly released Hancom HWP 5.0 file format
 specification; this project is not affiliated with Hancom.
 
+The built-in `paper`, `notion` and `firecrawl` MCP servers bundle no
+third-party code. At run time they call public services under those
+services' own terms: the arXiv API, the Semantic Scholar API (Allen
+Institute for AI), the Notion API and the Firecrawl API. The recommended
+`playwright` server downloads and runs Microsoft Playwright MCP
+(https://github.com/microsoft/playwright-mcp, Apache-2.0) with `npx` on the
+user's PC only when the user turns it on; it is not included in the
+installer. This project is not affiliated with arXiv, the Allen Institute
+for AI, Notion, Firecrawl or Microsoft.
+
 POSTECH names and marks belong to their respective owners. This project
 license grants no trademark rights or access rights to the POSTECH GenAI API.

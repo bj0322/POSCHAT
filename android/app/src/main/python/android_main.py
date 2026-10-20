@@ -37,7 +37,7 @@ def _setup(files_dir, res_dir):
     import mcp_client
 
     agent.SHELL = "/system/bin/sh"
-    agent.ACTION_DOCS = agent.ACTION_DOCS.replace("Windows cmd", "Android sh")
+    agent.ACTION_DOCS = agent.ACTION_DOCS.replace(f"({agent.SHELL_NAME},", "(Android sh,")
     agent.resource_dir = lambda: Path(res_dir)  # 내장 스킬(<res>/skills)
     mcp_client.INPROCESS_BUILTIN = True  # 하위 프로세스 대신 앱 안의 스레드로 내장 MCP 서버를 돌린다
 
@@ -72,11 +72,13 @@ def selftest(files_dir, res_dir):
     """설치된 앱이 제대로 묶였는지 확인한다(계측 테스트에서 부른다). 결과는 JSON 문자열."""
     _setup(files_dir, res_dir)
     import agent
+    import attachments
     import documents
     import mcp_client
     from version import APP_VERSION
 
-    report = {"version": APP_VERSION, "skills": sorted(agent.discover_skills("").keys())}
+    report = {"version": APP_VERSION, "skills": sorted(agent.discover_skills("").keys()),
+              "attachments": attachments.selfcheck()}
     try:
         import docx, olefile, openpyxl, pptx, pypdf  # noqa: F401,E401
         report["documents"] = "OK"

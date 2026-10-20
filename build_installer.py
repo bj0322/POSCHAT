@@ -3,9 +3,11 @@
     python build_installer.py
 
 필요 패키지: requirements.txt와 pyinstaller (pip install -r requirements.txt pyinstaller)
-결과: release/PostechChat-Setup.exe
+결과: Windows는 release/PostechChat-Setup.exe, macOS는 release/PostechChat-mac.dmg(앱 아이콘을 위해 pillow도 필요)
 빌드 중간 파일은 %TEMP%\\PostechChat-build 에 만든다(클라우드 동기화 폴더에서 빌드하면 느리다).
 """
+import os
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -17,6 +19,16 @@ ROOT = Path(__file__).resolve().parent
 WORK = Path(tempfile.gettempdir()) / "PostechChat-build"
 ICON = ROOT / "assets" / "icon.ico"
 ICON_PNG = ROOT / "assets" / "icon.png"
+BUNDLE_ID = "io.github.bj0322.poschat"
+APP_DATA = [
+    "--add-data", f"{ROOT / 'web'}{os.pathsep}web",
+    "--add-data", f"{ROOT / 'skills'}{os.pathsep}skills",
+    "--add-data", f"{ROOT / 'LICENSE'}{os.pathsep}.",
+    "--add-data", f"{ROOT / 'THIRD_PARTY_NOTICES.md'}{os.pathsep}.",
+    "--add-data", f"{ROOT / 'licenses'}{os.pathsep}licenses",
+    # python-docx·python-pptx는 새 문서를 만들 때 패키지 안의 기본 서식 파일을 쓴다.
+    "--collect-data", "docx", "--collect-data", "pptx",
+]
 
 
 def pyinstaller(*args):
@@ -26,7 +38,47 @@ def pyinstaller(*args):
     ], check=True)
 
 
+def build_mac():
+    """PostechChat.app을 만들고 '응용 프로그램'으로 끌어다 놓는 디스크 이미지(.dmg)로 묶는다."""
+    from version import APP_VERSION
+
+    print("[1/2] 앱 빌드")
+    pyinstaller(
+        "--windowed", "--onedir", "--name", "PostechChat", "--icon", str(ICON_PNG),
+        "--osx-bundle-identifier", BUNDLE_ID, *APP_DATA,
+        "--distpath", str(WORK / "app"),
+        str(ROOT / "main.py"),
+    )
+    app = WORK / "app" / "PostechChat.app"
+    plist_path = app / "Contents" / "Info.plist"
+    with open(plist_path, "rb") as f:
+        plist = plistlib.load(f)
+    plist.update(CFBundleDisplayName="POSTECH GenAI Chat", CFBundleShortVersionString=APP_VERSION,
+                 CFBundleVersion=APP_VERSION, NSHighResolutionCapable=True)
+    with open(plist_path, "wb") as f:
+        plistlib.dump(plist, f)
+    # Info.plist를 바꾸면 서명이 깨지므로 다시 임시(ad-hoc) 서명한다. Apple Silicon은 서명 없는 앱을 실행하지 않는다.
+    subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(app)], check=True)
+
+    print("[2/2] 디스크 이미지 만들기")
+    stage = WORK / "dmg"
+    stage.mkdir()
+    shutil.copytree(app, stage / app.name, symlinks=True)
+    (stage / "Applications").symlink_to("/Applications")
+    out = ROOT / "release"
+    out.mkdir(exist_ok=True)
+    target = out / "PostechChat-mac.dmg"
+    target.unlink(missing_ok=True)
+    subprocess.run(["hdiutil", "create", "-volname", "POSTECH GenAI Chat", "-srcfolder", str(stage),
+                    "-ov", "-format", "UDZO", str(target)], check=True)
+    print(f"완료: {target} ({target.stat().st_size / 1024 / 1024:.1f} MB)")
+
+
 def main():
+    if sys.platform == "darwin":
+        if WORK.exists():
+            shutil.rmtree(WORK)
+        return build_mac()
     if (Path(sys.base_prefix) / "conda-meta").is_dir():
         # conda의 OpenSSL은 실행 파일에 OPENSSL_Applink가 있어야 해서, PyInstaller exe에서는
         # HTTPS 요청 때 "OPENSSL_Uplink: no OPENSSL_Applink"로 프로세스가 꺼진다.
@@ -42,14 +94,7 @@ def main():
 
     print("[1/3] 앱 빌드")
     pyinstaller(
-        "--windowed", "--onedir", "--name", "PostechChat", "--icon", str(ICON),
-        "--add-data", f"{ROOT / 'web'};web",
-        "--add-data", f"{ROOT / 'skills'};skills",
-        "--add-data", f"{ROOT / 'LICENSE'};.",
-        "--add-data", f"{ROOT / 'THIRD_PARTY_NOTICES.md'};.",
-        "--add-data", f"{ROOT / 'licenses'};licenses",
-        # python-docx·python-pptx는 새 문서를 만들 때 패키지 안의 기본 서식 파일을 쓴다.
-        "--collect-data", "docx", "--collect-data", "pptx",
+        "--windowed", "--onedir", "--name", "PostechChat", "--icon", str(ICON), *APP_DATA,
         "--distpath", str(WORK / "app"),
         str(ROOT / "main.py"),
     )

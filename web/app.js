@@ -17,6 +17,10 @@ const ICONS = {
   chev: '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   plug: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v5"/><path d="M15 2v5"/><path d="M6 7h12v4a6 6 0 0 1-12 0Z"/><path d="M12 17v5"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  clip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m21 11-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6L15 6.6"/></svg>',
+  file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>',
+  user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
   retry: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
 };
 
@@ -35,6 +39,8 @@ const S = {
   version: "",
   memory: [],
   slash: { items: [], index: 0 },
+  attach: [],  // 입력창에 고른 첨부 파일 { id, name, size, kind, status: "uploading"|"ready"|"error", progress, url }
+  attachLimits: { max_bytes: 20 * 1024 * 1024, max_files: 10 },
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -259,7 +265,10 @@ async function newThread() {
 
 function messageNode(msg) {
   if (msg.role === "user") {
-    return h("div", { class: "msg user" }, h("div", { class: "bubble" }, msg.content));
+    const files = msg.attachments && msg.attachments.length ? attachmentList(msg.attachments) : null;
+    return h("div", { class: "msg user" + (files ? " has-files" : "") },
+      files,
+      msg.content ? h("div", { class: "bubble" }, msg.content) : null);
   }
   if (msg.role === "assistant") {
     return h("div", { class: "msg assistant" },
@@ -282,6 +291,130 @@ function messageNode(msg) {
     return h("div", { class: "msg error" }, "⚠ " + msg.content);
   }
   return h("div");
+}
+
+/* ---------- 첨부 파일 ---------- */
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
+const previewCache = new Map();
+
+function fmtSize(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + " KB";
+  return (n / 1024 / 1024).toFixed(1) + " MB";
+}
+
+/* 보낸 메시지의 첨부 파일: 이미지는 미리보기, 나머지는 이름 칩. 누르면 알맞은 앱으로 연다. */
+function attachmentList(items) {
+  return h("div", { class: "msg-files" }, items.map((a) => {
+    if (a.kind === "image") {
+      const img = h("img", { alt: a.name });
+      const node = h("button", { class: "file-img", title: a.name, onclick: () => api().open_attachment(a.id) }, img);
+      const show = (url) => (url ? (img.src = url) : node.replaceWith(fileChip(a)));
+      if (previewCache.has(a.id)) show(previewCache.get(a.id));
+      else api().attachment_preview(a.id).then((url) => { previewCache.set(a.id, url); show(url); });
+      return node;
+    }
+    return fileChip(a);
+  }));
+}
+
+function fileChip(a) {
+  return h("button", { class: "file-chip", title: a.name, onclick: () => api().open_attachment(a.id) },
+    h("span", { class: "f-icon", html: ICONS.file }),
+    h("span", { class: "f-text" }, h("span", { class: "f-name" }, a.name), h("small", {}, fmtSize(a.size))));
+}
+
+function newAttachId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function readBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).slice(String(r.result).indexOf(",") + 1));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
+/* 파일을 512KB 조각으로 나눠 Python으로 보낸다(큰 문자열 하나를 넘기면 브리지가 느려지거나 멈춘다). */
+async function uploadAttachment(file, entry) {
+  const CHUNK = 512 * 1024;
+  let offset = 0;
+  for (;;) {
+    const blob = file.slice(offset, offset + CHUNK);
+    const last = offset + blob.size >= file.size;
+    const res = await api().upload_attachment(entry.id, file.name, offset, await readBase64(blob), last);
+    if (!S.attach.includes(entry)) return;  // 올리는 중에 뺐다
+    if (!res.ok) throw new Error(res.error);
+    offset += blob.size;
+    entry.progress = file.size ? offset / file.size : 1;
+    renderTray();
+    if (last) return res.attachment;
+  }
+}
+
+function addFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  const room = S.attachLimits.max_files - S.attach.length;
+  if (files.length > room) toast(`파일은 한 번에 ${S.attachLimits.max_files}개까지 첨부할 수 있습니다`);
+  for (const file of files.slice(0, Math.max(room, 0))) {
+    if (file.size > S.attachLimits.max_bytes) {
+      toast(`'${file.name}'이(가) 너무 큽니다 (${fmtSize(S.attachLimits.max_bytes)} 초과)`);
+      continue;
+    }
+    const entry = {
+      id: newAttachId(), name: file.name || "붙여넣은 이미지.png", size: file.size, status: "uploading", progress: 0,
+      kind: IMAGE_EXT.test(file.name || ".png") ? "image" : "file",
+    };
+    if (entry.kind === "image") entry.url = URL.createObjectURL(file);
+    S.attach.push(entry);
+    uploadAttachment(file.name ? file : new File([file], entry.name, { type: file.type }), entry)
+      .then((info) => {
+        if (!info) return;
+        entry.status = "ready";
+        entry.kind = info.kind;
+        entry.name = info.name;
+      })
+      .catch((e) => {
+        entry.status = "error";
+        entry.error = e.message || String(e);
+        toast(entry.error);
+      })
+      .finally(() => { renderTray(); updateSend(); });
+  }
+  renderTray();
+  updateSend();
+}
+
+function removeAttachment(entry) {
+  S.attach = S.attach.filter((a) => a !== entry);
+  if (entry.url) URL.revokeObjectURL(entry.url);
+  api().discard_attachment(entry.id);
+  renderTray();
+  updateSend();
+}
+
+function clearTray() {
+  for (const a of S.attach) if (a.url) URL.revokeObjectURL(a.url);
+  S.attach = [];
+  renderTray();
+}
+
+function renderTray() {
+  const tray = $("#attach-tray");
+  tray.hidden = !S.attach.length;
+  tray.replaceChildren(...S.attach.map((a) => {
+    const remove = h("button", { class: "t-remove", title: "빼기", html: ICONS.close, onclick: () => removeAttachment(a) });
+    const label = a.status === "uploading" ? `올리는 중 ${Math.round(a.progress * 100)}%`
+      : a.status === "error" ? "오류 — " + a.error : fmtSize(a.size);
+    return h("div", { class: "tray-item " + a.status, title: a.status === "error" ? a.error : a.name },
+      a.url ? h("img", { src: a.url, alt: "" }) : h("span", { class: "f-icon", html: ICONS.file }),
+      h("span", { class: "f-text" }, h("span", { class: "f-name" }, a.name), h("small", {}, label)),
+      remove);
+  }));
 }
 
 function diffOrPre(text) {
@@ -310,6 +443,7 @@ const SUGGESTIONS = [
   ["/init", "폴더를 분석해 INIT.md 만들기"],
   ["/summarize", "문서를 핵심 위주로 요약"],
   ["/remember", "모든 대화에서 기억할 내용 저장"],
+  ["/user", "대화를 바탕으로 내 정보(USER.md) 정리"],
 ];
 
 function renderMessages() {
@@ -403,8 +537,9 @@ function updateSend() {
     btn.disabled = false;
   } else {
     btn.innerHTML = ICONS.up;
-    btn.title = "보내기";
-    btn.disabled = !$("#input").value.trim();
+    const uploading = S.attach.some((a) => a.status === "uploading");
+    btn.title = uploading ? "파일을 올리는 중입니다" : "보내기";
+    btn.disabled = uploading || !($("#input").value.trim() || S.attach.some((a) => a.status === "ready"));
   }
 }
 
@@ -433,7 +568,9 @@ async function send() {
   }
   const input = $("#input");
   const text = input.value.trim();
-  if (!text) return;
+  const ready = S.attach.filter((a) => a.status === "ready");
+  if (S.attach.some((a) => a.status === "uploading")) return toast("파일을 올리는 중입니다");
+  if (!text && !ready.length) return;
   if (/^\/help\b/i.test(text)) {
     input.value = "";
     autoresize();
@@ -456,12 +593,15 @@ async function send() {
     return toast(res.ok ? "기억했습니다. 모든 대화에서 참고합니다" : "이미 기억하고 있는 내용입니다");
   }
   hideSlash();
-  const res = await api().send(S.currentId, text, $("#agent-toggle").checked);
+  const res = await api().send(S.currentId, text, $("#agent-toggle").checked, ready.map((a) => a.id));
   if (!res.ok) {
     toast(res.error);
     if (res.need_key) showSettings();
     return;
   }
+  for (const a of ready) if (a.url && a.kind === "image") previewCache.delete(a.id);
+  S.attach = S.attach.filter((a) => !ready.includes(a));  // 오류 난 파일은 남겨 두어 사용자가 보고 뺀다
+  renderTray();
   input.value = "";
   autoresize();
   S.thread.messages.push(res.message);
@@ -481,6 +621,7 @@ async function send() {
 function slashItems(query) {
   const base = [
     { name: "init", description: "작업 폴더를 분석해 INIT.md 만들기" },
+    { name: "user", description: "지금까지의 대화로 내 정보(USER.md) 작성·업데이트" },
     { name: "remember", description: "모든 대화에서 기억할 내용 저장 (/remember 내용)" },
     { name: "memory", description: "기억 목록 보기·지우기" },
     { name: "help", description: "도움말" },
@@ -554,6 +695,7 @@ window.onBackendEvent = (ev) => {
 
 /* ---------- 모달 ---------- */
 function modal({ title, body, buttons = [], wide = false, onClose }) {
+  if (isNarrow()) setCollapsed(true);  // 휴대폰: 사이드바 서랍에서 연 창이면 서랍을 닫는다
   const root = $("#modal-root");
   const close = (value) => {
     backdrop.remove();
@@ -607,6 +749,27 @@ function showSettings() {
     : c.key_source === "env" ? "환경 변수 POSTECH_GENAI_API_KEY의 키를 쓰고 있습니다."
     : "API 키가 없습니다.";
   const key = h("input", { type: "password", placeholder: c.key_source ? "••••••••••••" : "API 키 입력", autocomplete: "off" });
+  const notionHint = c.notion_source === "settings" ? "저장된 토큰이 있습니다. 바꾸려면 새 토큰을 입력하세요."
+    : c.notion_source === "env" ? "환경 변수 NOTION_TOKEN의 토큰을 쓰고 있습니다."
+    : "notion MCP 서버를 쓸 때만 필요합니다.";
+  const notion = h("input", { type: "password", placeholder: c.notion_source ? "••••••••••••" : "ntn_... (선택)", autocomplete: "off" });
+  const clearNotion = h("input", { type: "checkbox", style: "width:auto;margin:0 6px 0 0" });
+  const fcHint = c.firecrawl_source === "settings" ? "저장된 키가 있습니다. 바꾸려면 새 키를 입력하세요."
+    : c.firecrawl_source === "env" ? "환경 변수 FIRECRAWL_API_KEY의 키를 쓰고 있습니다."
+    : "firecrawl MCP 서버를 쓸 때만 필요합니다.";
+  const firecrawl = h("input", { type: "password", placeholder: c.firecrawl_source ? "••••••••••••" : "fc-... (선택)", autocomplete: "off" });
+  const clearFirecrawl = h("input", { type: "checkbox", style: "width:auto;margin:0 6px 0 0" });
+  const fmt = (n) => n >= 10000 ? (n / 10000).toFixed(n >= 100000 ? 0 : 1) + "만" : n.toLocaleString();
+  const usageLine = (label, u) => h("div", { class: "row", style: "justify-content:space-between;font-size:13px;margin:2px 0" },
+    h("span", {}, label),
+    h("span", {}, `${u.calls.toLocaleString()}회` + (u.token_calls
+      ? ` · 토큰 입력 ${fmt(u.input_tokens)} / 출력 ${fmt(u.output_tokens)}` + (u.token_calls < u.calls ? ` (${u.token_calls}회분)` : "")
+      : "")));
+  const usageBox = h("div", {}, h("small", {}, "불러오는 중..."));
+  api().get_usage().then((u) => {
+    usageBox.replaceChildren(usageLine("오늘", u.today), usageLine(`이번 달 (${u.month_name})`, u.month),
+      usageLine("최근 30일", u.last30));
+  }).catch(() => usageBox.replaceChildren(h("small", {}, "사용량을 불러오지 못했습니다.")));
   const hist = h("input", { type: "number", min: 0, max: 200, value: c.history_messages });
   const steps = h("input", { type: "number", min: 1, max: 100, value: c.max_steps });
   const perm = h("select", {},
@@ -635,6 +798,9 @@ function showSettings() {
   mode.addEventListener("change", syncMode);
   syncMode();
   const body = h("div", {},
+    h("div", { class: "row guide-link" },
+      h("span", { style: "flex:1" }, "처음 쓰거나 기능이 궁금하면 사용법 가이드를 보세요."),
+      h("button", { class: "btn", onclick: showGuide }, "사용법 가이드")),
     h("div", { class: "field" }, h("label", {}, "POSTECH GenAI API 키"), key,
       h("small", {}, keyHint, h("br"), "키는 이 PC의 사용자 데이터 폴더(config.json)에 저장됩니다.")),
     h("div", { class: "field" }, h("label", {}, "API 방식"), mode),
@@ -642,11 +808,26 @@ function showSettings() {
     h("div", { class: "field" },
       h("label", { style: "display:flex;align-items:center;font-weight:600;cursor:pointer" }, stream, "답변을 받는 대로 표시 (스트리밍)"),
       h("small", {}, "일반 대화의 답변을 글자가 오는 대로 보여 줍니다. 에이전트 모드의 단계 진행은 그대로입니다.")),
+    h("div", { class: "field" }, h("label", {}, "Notion 통합 토큰"), notion,
+      h("small", {}, notionHint, " notion.so/profile/integrations에서 내부 통합을 만들어 토큰을 받고, ",
+        "쓸 페이지의 ··· → 연결에서 그 통합을 추가하세요."),
+      c.notion_source === "settings"
+        ? h("label", { style: "display:flex;align-items:center;font-size:13px;margin-top:4px;cursor:pointer" }, clearNotion, "저장된 토큰 지우기")
+        : null),
+    h("div", { class: "field" }, h("label", {}, "Firecrawl API 키"), firecrawl,
+      h("small", {}, fcHint, " firecrawl.dev에서 무료로 가입하면 키와 무료 크레딧을 받습니다."),
+      c.firecrawl_source === "settings"
+        ? h("label", { style: "display:flex;align-items:center;font-size:13px;margin-top:4px;cursor:pointer" }, clearFirecrawl, "저장된 키 지우기")
+        : null),
     h("div", { class: "field" }, h("label", {}, "에이전트 권한"), perm,
       h("small", {}, "에이전트가 파일을 고치거나 명령을 실행하기 전에 승인을 받을지 정합니다.")),
     h("div", { class: "row" },
       h("div", { class: "field", style: "flex:1" }, h("label", {}, "기억할 이전 메시지 수"), hist),
       h("div", { class: "field", style: "flex:1" }, h("label", {}, "에이전트 최대 단계 수"), steps)),
+    h("div", { class: "field" }, h("label", {}, "모델 API 사용량 (이 앱에서 보낸 요청)"),
+      usageBox,
+      h("small", {}, "POSTECH GenAI API는 남은 한도를 알려 주지 않으므로 정확한 잔여량은 GenAI 콘솔에서 확인하세요. ",
+        "토큰 수는 서버가 응답에 사용량을 담아 준 요청만 셉니다.")),
     h("div", { class: "field" }, h("label", {}, "데이터 폴더"),
       h("div", { class: "row" }, h("small", { style: "flex:1;margin:0;word-break:break-all" }, S.dataDir),
         h("button", { class: "btn", onclick: () => api().open_folder("data") }, "열기"))),
@@ -662,6 +843,8 @@ function showSettings() {
           const state = await api().save_settings({
             api_key: key.value.trim(), history_messages: hist.value, max_steps: steps.value, permission: perm.value,
             api_mode: mode.value, responses_url: url.value.trim(), model: model.value, stream: stream.checked,
+            notion_token: notion.value.trim(), clear_notion: clearNotion.checked && !notion.value.trim(),
+            firecrawl_key: firecrawl.value.trim(), clear_firecrawl: clearFirecrawl.checked && !firecrawl.value.trim(),
           });
           if (state.ok === false) return toast(state.error);
           applyState(state);
@@ -718,8 +901,65 @@ function showMemory() {
       h("small", {}, "새 질문과 관련된 내용이 다른 대화에 있으면 찾아서 함께 참고합니다. 참고한 대화는 답변 위에 📎로 표시됩니다. ",
         "에이전트 모드에서는 \"지난번에 얘기한 ...\"처럼 말하면 다른 대화를 직접 검색합니다.")),
   );
-  modal({ title: "메모리", body, buttons: [{ label: "닫기", class: "primary" }] });
+  const m = modal({
+    title: "메모리",
+    body,
+    buttons: [
+      { label: "memory.md 편집", action: () => { m.close(); showNoteEditor("memory"); } },
+      { label: "닫기", class: "primary" },
+    ],
+  });
   setTimeout(() => input.focus(), 50);
+}
+
+/* memory.md·USER.md를 앱 안에서 고친다. 휴대폰에서도 같은 방법으로 고칠 수 있다. */
+const NOTES = {
+  memory: {
+    title: "메모리 (memory.md)",
+    desc: "\"- \"로 시작하는 줄 하나가 기억 하나입니다. 제목이나 설명을 더 써도 모두 대화에 전달되고, <!-- --> 안의 안내문만 빠집니다.",
+  },
+  profile: {
+    title: "내 정보 (USER.md)",
+    desc: "나에 대한 정보입니다. 모든 대화에 함께 전달되어 답변을 나에게 맞추는 데 쓰입니다. " +
+      "직접 쓰거나, 아래 'AI로 작성·업데이트'를 누르면 지금까지의 대화를 바탕으로 AI가 정리합니다(/user).",
+  },
+};
+
+async function showNoteEditor(kind) {
+  const note = await api().read_note(kind);
+  const info = NOTES[kind];
+  const area = h("textarea", { class: "note-editor", spellcheck: "false" });
+  area.value = note.text;
+  const body = h("div", {},
+    h("p", { style: "margin:0 0 8px;color:var(--text-2)" }, info.desc),
+    area,
+    h("small", { style: "display:block;margin-top:6px;color:var(--text-3);word-break:break-all" }, note.path));
+  const save = async () => {
+    const res = await api().save_note(kind, area.value);
+    S.memory = res.memory;
+    toast("저장했습니다");
+  };
+  const buttons = [{ label: "파일 열기", action: async () => { await save(); api().open_note(kind); } }];
+  if (kind === "profile") {
+    buttons.push({
+      label: "AI로 작성·업데이트", action: async (close) => {
+        if (area.value !== note.text) await save();
+        close();
+        if (S.busy) return toast("이전 응답을 기다리는 중입니다");
+        const input = $("#input");
+        const draft = input.value;  // 쓰던 글은 /user를 보낸 뒤 되돌려 놓는다
+        input.value = "/user";
+        await send();
+        input.value = draft;
+        autoresize();
+        updateSend();
+      },
+    });
+  }
+  buttons.push({ label: "취소", value: null });
+  buttons.push({ label: "저장", class: "primary", action: async (close) => { await save(); close(); } });
+  modal({ title: info.title, body, wide: true, buttons });
+  setTimeout(() => { area.focus(); area.setSelectionRange(0, 0); area.scrollTop = 0; }, 50);
 }
 
 function showSkills() {
@@ -781,7 +1021,7 @@ function showMcp() {
         toggle,
         h("div", { class: "s-main" },
           h("b", {}, sv.name),
-          h("span", { class: "badge" }, sv.builtin ? "내장" : "외부"),
+          h("span", { class: "badge" }, sv.builtin ? "내장" : sv.preset ? "추천" : "외부"),
           sv.enabled ? h("span", { class: "badge mcp-" + sv.state }, STATE[sv.state] || sv.state) : null,
           h("p", {}, sv.description || ""),
           detail && detail !== sv.description ? h("p", { class: sv.error ? "mcp-error" : "" }, detail) : null),
@@ -790,11 +1030,15 @@ function showMcp() {
   };
   const body = h("div", {},
     h("p", { style: "margin:0 0 8px;color:var(--text-2)" },
-      "MCP 서버는 에이전트가 쓸 수 있는 도구를 더해 줍니다. 내장 서버로 Word·PowerPoint·Excel 문서를 만들고 고칠 수 있으며, ",
-      "작업 폴더 안의 파일만 다룹니다. 다른 MCP 서버는 설정 파일(mcp.json)에 Claude Desktop과 같은 형식으로 추가합니다."),
+      "MCP 서버는 에이전트가 쓸 수 있는 도구를 더해 줍니다. 내장 서버로 Word·PowerPoint·Excel 문서를 만들고 고치고, ",
+      "논문을 찾아 읽고(paper), Notion 페이지를 다루고(notion, 설정에 토큰 필요), ",
+      "웹페이지를 읽고 검색할 수 있습니다(firecrawl, 설정에 키 필요). 파일은 작업 폴더 안의 것만 다룹니다. ",
+      "추천 서버(playwright: 브라우저 자동화)는 PC에 Node.js가 있으면 켜서 씁니다. ",
+      "다른 MCP 서버는 설정 파일(mcp.json)에 Claude Desktop과 같은 형식으로 추가합니다."),
     list, note,
     h("small", { style: "display:block;margin-top:10px;color:var(--text-3)" },
-      "서버는 에이전트 모드에서 처음 필요할 때 연결됩니다. 문서를 고치는 도구는 파일 수정처럼, 외부 서버의 도구는 명령 실행처럼 승인을 받습니다."),
+      "서버는 에이전트 모드에서 처음 필요할 때 연결됩니다. 작업 폴더의 파일을 고치는 도구는 파일 수정처럼, ",
+      "외부 서버의 도구와 Notion에 쓰기·브라우저 조작처럼 바깥에 영향을 주는 도구는 명령 실행처럼 승인을 받습니다."),
   );
   const m = modal({
     title: "MCP",
@@ -814,10 +1058,94 @@ function showMcp() {
   return m;
 }
 
+/* ---------- 사용법 가이드 (설정 → 사용법 가이드) ---------- */
+const GUIDE = [
+  ["처음 시작하기", `
+1. **설정 → POSTECH GenAI API 키**에 본인의 키를 넣고 저장합니다.
+2. 입력창에 질문을 쓰고 **Enter**로 보냅니다(줄바꿈은 Shift+Enter).
+3. 파일을 다루게 하려면 왼쪽 아래 **작업 폴더**를 고르고 오른쪽 위 **에이전트** 스위치를 켭니다.
+
+새 대화는 왼쪽 위 **새 채팅**(Ctrl+Shift+O, 맥은 ⌘+Shift+O)으로 만들고, 대화 목록에 마우스를 올리면 이름 바꾸기·삭제 아이콘이 나옵니다.`],
+  ["모델과 API 방식", `
+**설정 → API 방식**에서 고릅니다.
+
+- **기본 (a1/gpt)**: 키만 있으면 바로 쓰며, 모델은 서버가 정합니다.
+- **모델 선택 (Responses API)**: GenAI 콘솔의 \`.../a번호/openai/responses\` 주소를 넣고 모델을 고릅니다. GPT-5.1을 권장하며, 에이전트처럼 요청이 많을 때는 GPT-5 mini가 저렴합니다. 이미지 첨부는 이 방식에서만 모델이 봅니다.
+
+**답변을 받는 대로 표시(스트리밍)**를 켜면 일반 대화의 답변이 글자가 오는 대로 나옵니다. 표시가 이상하면 끄세요. 설정 창 아래쪽에서 이 앱이 보낸 요청의 **모델 API 사용량**을 볼 수 있습니다.`],
+  ["파일 첨부", `
+입력창의 **+** 버튼, 파일 끌어다 놓기, 이미지 붙여 넣기(Ctrl+V, 맥은 ⌘+V)로 첨부합니다. 파일은 하나에 20MB, 한 번에 10개까지입니다.
+
+- PDF·Word·PowerPoint·Excel·한글 문서와 텍스트 파일은 내용을 읽어 질문과 함께 보냅니다.
+- 이미지는 '모델 선택(Responses API)' 방식에서만 모델에게 전달됩니다.`],
+  ["에이전트 모드", `
+작업 폴더를 고르고 에이전트를 켜면 AI가 목표를 이룰 때까지 단계를 반복합니다: 폴더 보기·파일 읽기·검색, 파일 쓰기·수정, 명령 실행, 스킬 불러오기, MCP 도구 실행.
+
+- 각 단계는 대화에 한 줄로 표시되고, 누르면 파일 내용·변경 diff·명령 출력이 펼쳐집니다.
+- **파일 수정과 명령 실행은 실행 전에 승인을 받습니다.** 설정의 **에이전트 권한**에서 자동 허용으로 바꿀 수 있지만, 명령은 현재 사용자 권한으로 실행되므로 주의하세요.
+- 단계가 너무 많으면 설정의 **에이전트 최대 단계 수**에서 멈춥니다.
+- 작업 폴더가 없거나 에이전트를 끄면 일반 챗봇으로 동작합니다.`],
+  ["명령어", `
+입력창에 \`/\`를 입력하면 목록이 뜹니다.
+
+| 명령 | 하는 일 |
+|---|---|
+| \`/init\` | 작업 폴더를 분석해 INIT.md(프로젝트 지침)를 만듭니다 |
+| \`/user 요청\` | 대화 내용으로 내 정보(USER.md)를 작성·업데이트합니다 |
+| \`/remember 내용\` | 모든 대화에서 기억할 내용을 저장합니다 |
+| \`/memory\` | 기억 목록을 보고 지웁니다 |
+| \`/스킬이름 요청\` | 그 스킬의 지침대로 요청을 수행합니다 |
+| \`/help\` | 간단한 도움말 |`],
+  ["기억: 메모리·내 정보·다른 대화", `
+- **메모리(memory.md)**: "~를 기억해 줘"라고 하거나 \`/remember\`로 저장하면 모든 대화에 전달됩니다. 왼쪽 아래 **메모리**에서 보고 고칩니다.
+- **내 정보(USER.md)**: 하는 일, 관심 분야, 원하는 답변 방식 등을 적어 두면 답변이 나에게 맞춰집니다. **내 정보**에서 직접 쓰거나 \`/user\`로 AI에게 맡깁니다. 비밀번호·키 같은 비밀은 적지 마세요.
+- **다른 대화 참고**: 새 질문과 관련된 내용이 다른 대화에 있으면 자동으로 찾아 참고합니다(📎 표시). 메모리 창에서 끌 수 있습니다.`],
+  ["INIT.md와 스킬", `
+- **INIT.md**: 작업 폴더 최상위의 INIT.md는 모든 대화에 프로젝트 지침으로 들어갑니다. \`/init\`으로 만들 수 있습니다.
+- **스킬**: \`<스킬이름>/SKILL.md\` 형식의 작업 지침입니다. 에이전트가 요청에 맞는 스킬을 스스로 불러오고, \`/스킬이름\`으로 직접 실행할 수도 있습니다. 앱 내장(요약, 코드 검토, 논문 읽기), 사용자 스킬 폴더(**스킬 → 새 스킬 만들기**), 작업 폴더의 \`skills\\\` 순서로 읽고, 이름이 같으면 뒤의 것이 우선합니다.`],
+  ["MCP 도구", `
+왼쪽 아래 **MCP**에서 서버를 켜고 끕니다. 에이전트 모드에서 켜진 서버의 도구를 씁니다.
+
+- **내장 서버**(설치 필요 없음): word·powerpoint·excel(문서 만들기·고치기), paper(논문 찾기·섹션별 읽기), notion(설정에 Notion 토큰 필요), firecrawl(웹페이지 읽기·웹 검색, 설정에 Firecrawl 키 필요).
+- **추천 서버**: playwright(브라우저 자동화). PC에 Node.js가 있어야 합니다.
+- **외부 서버**: **MCP → 설정 파일 열기**로 \`mcp.json\`에 Claude Desktop과 같은 형식으로 추가합니다.
+
+바깥에 영향을 주는 도구는 명령 실행처럼 승인을 받습니다.`],
+  ["다른 AI 에이전트와 기억 이어 쓰기 (ai-memory)", `
+Claude Code·Codex·Cursor·Gemini CLI 같은 코딩 에이전트에서 하던 작업을 POSCHAT에서 이어받고, POSCHAT에서 한 작업을 그 에이전트들이 이어받게 할 수 있습니다.
+
+1. PC에 [ai-memory](https://github.com/akitaonrails/ai-memory)를 설치하고 \`ai-memory setup\`을 실행합니다. 다른 에이전트들도 이때 함께 연결됩니다.
+2. **MCP → 설정 파일 열기**로 \`mcp.json\`에 다음을 추가하고 저장합니다.
+
+\`\`\`json
+{ "mcpServers": { "ai-memory": { "command": "ai-memory", "args": ["mcp-bridge", "--no-session-id"] } } }
+\`\`\`
+
+3. 작업 폴더를 고르고 에이전트 모드로 대화합니다.
+
+그러면 앱이 자동으로 다음을 합니다.
+
+- **대화 시작**: 그 폴더에 다른 에이전트가 남긴 인계(한 일·남은 질문·다음 할 일)를 받고 최근 기억을 불러옵니다(🧠 표시). 인계는 한 번 받으면 사라집니다.
+- **작업 후**: 파일을 고치거나 명령·도구를 실행했다면, 다음 에이전트가 이어받을 인계를 남깁니다(📤 표시).
+- **검색**: "전에 이 버그 어떻게 고쳤지?"처럼 물으면 AI가 ai-memory에서 찾아봅니다.
+
+ChatGPT·claude.ai 같은 웹 채팅 서비스의 기억은 이어받을 수 없습니다.`],
+  ["데이터와 개인정보", `
+대화·설정·메모리·첨부 파일은 이 기기의 데이터 폴더(설정 창 아래쪽 **데이터 폴더 → 열기**)에만 저장됩니다. 질문할 때 대화 내용, 첨부 내용, 메모리, 내 정보, INIT.md가 POSTECH GenAI API로 전달됩니다. API 키는 설정 파일(config.json)에 저장됩니다.`],
+];
+
+function showGuide() {
+  const body = h("div", { class: "guide" },
+    GUIDE.map(([title, text], i) => h("details", { open: i === 0 },
+      h("summary", {}, title), renderMarkdown(text.trim()))));
+  modal({ title: "사용법 가이드", body, wide: true, buttons: [{ label: "닫기", class: "primary" }] });
+}
+
 function showHelp() {
   const rows = [
     ["/init", "작업 폴더를 분석해 INIT.md를 만듭니다"],
-    ["/remember 내용", "모든 대화에서 기억할 내용을 저장합니다"],
+    ["/user 요청", "지금까지의 대화로 내 정보(USER.md)를 작성·업데이트합니다"],
+    ["/remember 내용", "모든 대화에서 기억할 내용(memory.md)을 저장합니다"],
     ["/memory", "기억 목록을 보고 지웁니다"],
     ["/스킬이름 요청", "해당 스킬 지침을 적용해 요청을 수행합니다"],
     ["/help", "이 도움말"],
@@ -829,12 +1157,22 @@ function showHelp() {
     h("p", { style: "margin:0;color:var(--text-2)" },
       "작업 폴더를 고르고 에이전트를 켜면, AI가 파일을 읽고 검색하고 고치고 명령을 실행하면서 목표를 이룰 때까지 단계적으로 일합니다. ",
       "파일 수정과 명령 실행은 설정에 따라 실행 전에 승인을 받습니다."),
+    h("h3", { style: "margin:18px 0 6px;font-size:15px" }, "파일 첨부"),
+    h("p", { style: "margin:0;color:var(--text-2)" },
+      "입력창의 클립 버튼을 누르거나 파일을 끌어다 놓거나 이미지를 붙여 넣으면 첨부됩니다. ",
+      "문서(PDF·Word·PowerPoint·Excel·한글)와 텍스트 파일은 내용을 읽어 함께 보내고, 이미지는 '모델 선택(Responses API)' 방식에서 모델이 직접 봅니다."),
+    h("h3", { style: "margin:18px 0 6px;font-size:15px" }, "내 정보(USER.md)와 메모리(memory.md)"),
+    h("p", { style: "margin:0;color:var(--text-2)" },
+      "두 파일은 Markdown이며 모든 대화에 함께 전달됩니다. 왼쪽 아래 '내 정보'와 '메모리'에서 직접 고칠 수 있습니다."),
     h("h3", { style: "margin:18px 0 6px;font-size:15px" }, "INIT.md와 스킬"),
     h("p", { style: "margin:0;color:var(--text-2)" },
       "작업 폴더 최상위의 INIT.md는 모든 대화에 프로젝트 지침으로 들어갑니다. ",
       "스킬은 <폴더>/SKILL.md 형식의 지침이며 앱 내장, 사용자 스킬 폴더, 작업 폴더의 skills\\ 에서 읽습니다."),
   );
-  modal({ title: "도움말", body, buttons: [{ label: "닫기", class: "primary" }] });
+  modal({
+    title: "도움말", body,
+    buttons: [{ label: "사용법 가이드", action: (close) => { close(); showGuide(); } }, { label: "닫기", class: "primary" }],
+  });
 }
 
 /* ---------- 초기화 ---------- */
@@ -847,6 +1185,7 @@ function applyState(state) {
   S.version = state.version || "";
   S.models = state.models || [];
   S.memory = state.memory || [];
+  if (state.attach_limits) S.attachLimits = state.attach_limits;
   $("#agent-toggle").checked = !!state.config.agent_mode;
   renderSidebar();
   renderWorkspaceChip();
@@ -900,6 +1239,29 @@ function bindUI() {
   });
   input.addEventListener("blur", () => setTimeout(hideSlash, 100));
   $("#btn-send").addEventListener("click", send);
+  const picker = $("#file-input");
+  $("#btn-attach").addEventListener("click", () => picker.click());
+  picker.addEventListener("change", () => { addFiles(picker.files); picker.value = ""; });
+  // 파일 끌어다 놓기, 이미지 붙여 넣기
+  const main = $("#main");
+  main.addEventListener("dragover", (e) => {
+    if (!Array.from(e.dataTransfer?.types || []).includes("Files")) return;
+    e.preventDefault();
+    main.classList.add("dropping");
+  });
+  main.addEventListener("dragleave", (e) => { if (e.target === main || !main.contains(e.relatedTarget)) main.classList.remove("dropping"); });
+  main.addEventListener("drop", (e) => {
+    main.classList.remove("dropping");
+    if (!e.dataTransfer?.files?.length) return;
+    e.preventDefault();
+    addFiles(e.dataTransfer.files);
+  });
+  input.addEventListener("paste", (e) => {
+    const files = Array.from(e.clipboardData?.items || []).filter((it) => it.kind === "file").map((it) => it.getAsFile()).filter(Boolean);
+    if (!files.length) return;
+    e.preventDefault();
+    addFiles(files);
+  });
   $("#btn-new").addEventListener("click", newThread);
   $("#btn-new-top").addEventListener("click", newThread);
   $("#btn-collapse").addEventListener("click", () => setCollapsed(true));
@@ -912,6 +1274,7 @@ function bindUI() {
   $("#btn-skills").addEventListener("click", showSkills);
   $("#btn-mcp").addEventListener("click", showMcp);
   $("#btn-memory").addEventListener("click", async () => { S.memory = await api().list_memory(); showMemory(); });
+  $("#btn-profile").addEventListener("click", () => showNoteEditor("profile"));
   $("#btn-settings").addEventListener("click", showSettings);
   $("#agent-toggle").addEventListener("change", (e) => {
     S.config.agent_mode = e.target.checked;
@@ -920,7 +1283,7 @@ function bindUI() {
     if (S.thread && !S.thread.messages.length) renderMessages();
   });
   document.addEventListener("keydown", (e) => {
-    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "o") { e.preventDefault(); newThread(); }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "o") { e.preventDefault(); newThread(); }
   });
 }
 

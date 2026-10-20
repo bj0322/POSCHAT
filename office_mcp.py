@@ -3,6 +3,9 @@
 앱이 `PostechChat.exe --mcp-server word`(소스 실행은 `python office_mcp.py word`)로 띄우고,
 표준 입출력으로 MCP(JSON-RPC 2.0, 줄 단위 JSON)를 주고받는다. 작업 폴더를 현재 폴더(cwd)로 받아
 그 밖의 경로는 거부한다. 문서 읽기는 에이전트의 read 단계(documents.py)가 맡는다.
+
+다른 내장 서버(paper_mcp·notion_mcp·firecrawl_mcp)도 이 모듈의 serve()로 돌고,
+여기의 ToolFailure·경로 검사·HTTP 도우미를 함께 쓴다.
 """
 import json
 import os
@@ -55,6 +58,33 @@ def _existing(path, suffixes):
     if not p.is_file():
         raise ToolFailure(f"파일이 없습니다: {_rel(p)}")
     return p
+
+
+# ---- 네트워크(인터넷을 쓰는 내장 서버 공통) ----
+
+_SESSION = None
+
+
+def http(method, url, timeout=30, **kwargs):
+    """requests 호출. 연결 실패는 ToolFailure로 바꾼다. 응답 상태는 호출한 쪽이 본다."""
+    global _SESSION
+    import requests
+
+    if _SESSION is None:
+        try:
+            import truststore  # Windows 인증서 저장소를 쓴다(학교·회사 프록시 인증서). 안드로이드에는 없다
+
+            truststore.inject_into_ssl()
+        except ImportError:
+            pass
+        from version import APP_VERSION
+
+        _SESSION = requests.Session()
+        _SESSION.headers["User-Agent"] = f"PostechChat/{APP_VERSION} (+https://github.com/bj0322/POSCHAT)"
+    try:
+        return _SESSION.request(method, url, timeout=timeout, **kwargs)
+    except requests.RequestException as e:
+        raise ToolFailure(f"인터넷 요청에 실패했습니다({url.split('?')[0]}): {type(e).__name__}: {e}")
 
 
 def _save(doc, p):
@@ -479,6 +509,10 @@ def _schema(props, required):
 
 STR = {"type": "string"}
 BOOL = {"type": "boolean"}
+INT = {"type": "integer"}
+# 도구 정의 (함수, 설명, 입력 스키마[, 주석]). 주석을 생략하면 파일을 고치는 도구로 본다.
+READ_ONLY = {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": True}
+WRITES = {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False}
 SLIDE = {
     "type": "object",
     "description": "layout: title|content|section|table|blank (기본 content). title, subtitle(title 레이아웃), "
@@ -521,6 +555,15 @@ SERVERS = {
 }
 
 
+def all_servers():
+    """내장 서버 이름 -> 도구 정의. 다른 서버 모듈은 이 모듈을 가져다 쓰므로 여기서 늦게 가져온다."""
+    import firecrawl_mcp
+    import notion_mcp
+    import paper_mcp
+
+    return {**SERVERS, "paper": paper_mcp.TOOLS, "notion": notion_mcp.TOOLS, "firecrawl": firecrawl_mcp.TOOLS}
+
+
 # ---- MCP 표준 입출력 서버 ----
 
 def _std_streams():
@@ -550,9 +593,9 @@ def _handle(name, tools, msg):
         return {}
     if method == "tools/list":
         return {"tools": [{
-            "name": tool, "description": desc, "inputSchema": schema,
-            "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
-        } for tool, (_, desc, schema) in tools.items()]}
+            "name": tool, "description": entry[1], "inputSchema": entry[2],
+            "annotations": entry[3] if len(entry) > 3 else WRITES,
+        } for tool, entry in tools.items()]}
     if method == "tools/call":
         entry = tools.get(params.get("name"))
         if entry is None:
@@ -571,9 +614,10 @@ def _handle(name, tools, msg):
 
 def serve(name, fin=None, fout=None):
     """MCP 서버를 돌린다. fin/fout을 주지 않으면 표준 입출력을 쓴다."""
-    tools = SERVERS.get(name)
+    servers = all_servers()
+    tools = servers.get(name)
     if tools is None:
-        sys.exit(f"알 수 없는 MCP 서버: {name} (사용 가능: {', '.join(SERVERS)})")
+        sys.exit(f"알 수 없는 MCP 서버: {name} (사용 가능: {', '.join(servers)})")
     if fin is None:
         fin, fout = _std_streams()
     for line in fin:
@@ -598,4 +642,7 @@ def serve(name, fin=None, fout=None):
 
 
 if __name__ == "__main__":
-    serve(sys.argv[1] if len(sys.argv) > 1 else "")
+    # 다른 서버 모듈이 `import office_mcp`로 가져가는 모듈과 같은 것을 써야 ToolFailure·ROOT가 하나가 된다.
+    import office_mcp
+
+    office_mcp.serve(sys.argv[1] if len(sys.argv) > 1 else "")

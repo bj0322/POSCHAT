@@ -15,6 +15,7 @@ import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.MimeTypeMap
+import android.webkit.ValueCallback
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -49,6 +50,10 @@ class MainActivity : ComponentActivity() {
     @Volatile private var folderLatch: CountDownLatch? = null
     @Volatile private var pickedFolder: String? = null
 
+    // 화면의 <input type="file">(채팅창 첨부 버튼)
+    private lateinit var pickFiles: ActivityResultLauncher<Intent>
+    private var filesCallback: ValueCallback<Array<Uri>>? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -57,6 +62,17 @@ class MainActivity : ComponentActivity() {
                 toast("이 위치는 작업 폴더로 쓸 수 없습니다. 내부 저장소나 SD 카드의 폴더를 고르세요.")
             }
             folderLatch?.countDown()
+        }
+        pickFiles = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val data = result.data
+            val uris = when {
+                result.resultCode != RESULT_OK || data == null -> null
+                data.clipData != null -> Array(data.clipData!!.itemCount) { data.clipData!!.getItemAt(it).uri }
+                data.data != null -> arrayOf(data.data!!)
+                else -> null
+            }
+            filesCallback?.onReceiveValue(uris)
+            filesCallback = null
         }
 
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
@@ -70,6 +86,23 @@ class MainActivity : ComponentActivity() {
             override fun onConsoleMessage(message: ConsoleMessage): Boolean {
                 Log.i("PoschatWeb", "${message.message()} (${message.sourceId()}:${message.lineNumber()})")
                 return true
+            }
+
+            override fun onShowFileChooser(
+                view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams,
+            ): Boolean {
+                filesCallback?.onReceiveValue(null)  // 앞의 선택 창이 답 없이 남아 있으면 끝낸다
+                filesCallback = callback
+                val intent = Intent(Intent.ACTION_GET_CONTENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
+                    .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.mode == FileChooserParams.MODE_OPEN_MULTIPLE)
+                return try {
+                    pickFiles.launch(Intent.createChooser(intent, "첨부할 파일"))
+                    true
+                } catch (e: ActivityNotFoundException) {
+                    filesCallback = null
+                    toast("파일을 고를 앱이 없습니다.")
+                    false
+                }
             }
         }
 
