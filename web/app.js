@@ -342,6 +342,39 @@ function appendMessage(msg) {
   scrollToBottom();
 }
 
+/* 스트리밍 중인 답변: 받은 텍스트를 화면 갱신 주기에 맞춰 다시 그린다. 최종 답변이 오면 일반 메시지로 바뀐다. */
+const streaming = { text: "", frame: 0 };
+
+function showStreaming(text) {
+  streaming.text = text;
+  if (streaming.frame) return;
+  streaming.frame = requestAnimationFrame(() => {
+    streaming.frame = 0;
+    let node = $("#streaming");
+    if (!node) {
+      node = h("div", { class: "msg assistant streaming", id: "streaming" }, h("div", { class: "avatar" }, "P"), h("div", { class: "body" }));
+      const typing = $("#typing");
+      if (typing) {
+        typing.hidden = true;
+        $("#messages").insertBefore(node, typing);
+      } else {
+        $("#messages").append(node);
+      }
+    }
+    node.querySelector(".body").replaceChildren(renderMarkdown(streaming.text));
+    scrollToBottom();
+  });
+}
+
+function endStreaming() {
+  if (streaming.frame) cancelAnimationFrame(streaming.frame);
+  streaming.frame = 0;
+  streaming.text = "";
+  $("#streaming")?.remove();
+  const typing = $("#typing");
+  if (typing) typing.hidden = false;
+}
+
 function scrollToBottom(force) {
   const sc = $("#scroll");
   const near = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 200;
@@ -489,9 +522,12 @@ function pickSlash(i) {
 window.onBackendEvent = (ev) => {
   if (ev.type === "message") {
     if (ev.thread_id === S.currentId && S.thread) {
+      if (ev.message.role === "assistant") endStreaming();
       S.thread.messages.push(ev.message);
       appendMessage(ev.message);
     }
+  } else if (ev.type === "delta") {
+    if (ev.thread_id === S.currentId && S.thread) showStreaming(ev.text);
   } else if (ev.type === "status") {
     S.status = ev.text;
     const st = $("#status-text");
@@ -501,6 +537,7 @@ window.onBackendEvent = (ev) => {
   } else if (ev.type === "done") {
     S.busy = false;
     S.busyThread = null;
+    endStreaming();
     $("#typing")?.remove();
     if (ev.workspace) S.workspace = ev.workspace;
     updateSend();
@@ -571,9 +608,33 @@ function showSettings() {
     h("option", { value: "auto_all" }, "모두 자동 허용 (주의)"),
   );
   perm.value = c.permission || "ask";
+  const mode = h("select", {},
+    h("option", { value: "a1" }, "기본 — a1/gpt (모델은 서버가 정함, 키만 있으면 사용)"),
+    h("option", { value: "responses" }, "모델 선택 — OpenAI Responses API"),
+  );
+  mode.value = c.api_mode || "a1";
+  const url = h("input", { placeholder: "https://genai.postech.ac.kr/agent/api/a번호/openai/responses", value: c.responses_url || "" });
+  const model = h("select", {}, (S.models || []).map((m) => h("option", { value: m.id }, m.label)));
+  model.value = c.model || ((S.models || [])[0] || {}).id || "";
+  const stream = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
+  stream.checked = c.stream !== false;
+  const responsesBox = h("div", {},
+    h("div", { class: "field" }, h("label", {}, "Responses API 주소"), url,
+      h("small", {}, "POSTECH GenAI 콘솔의 API 안내에서 openai/responses 주소(a번호 포함)를 복사해 넣으세요.")),
+    h("div", { class: "field" }, h("label", {}, "모델"), model,
+      h("small", {}, "GPT-5.1을 권장합니다. 에이전트는 단계마다 모델을 부르므로 비용을 줄이려면 GPT-5 mini를 고르세요.")),
+  );
+  const syncMode = () => { responsesBox.hidden = mode.value !== "responses"; };
+  mode.addEventListener("change", syncMode);
+  syncMode();
   const body = h("div", {},
     h("div", { class: "field" }, h("label", {}, "POSTECH GenAI API 키"), key,
       h("small", {}, keyHint, h("br"), "키는 이 PC의 사용자 데이터 폴더(config.json)에 저장됩니다.")),
+    h("div", { class: "field" }, h("label", {}, "API 방식"), mode),
+    responsesBox,
+    h("div", { class: "field" },
+      h("label", { style: "display:flex;align-items:center;font-weight:600;cursor:pointer" }, stream, "답변을 받는 대로 표시 (스트리밍)"),
+      h("small", {}, "일반 대화의 답변을 글자가 오는 대로 보여 줍니다. 에이전트 모드의 단계 진행은 그대로입니다.")),
     h("div", { class: "field" }, h("label", {}, "에이전트 권한"), perm,
       h("small", {}, "에이전트가 파일을 고치거나 명령을 실행하기 전에 승인을 받을지 정합니다.")),
     h("div", { class: "row" },
@@ -593,7 +654,9 @@ function showSettings() {
         label: "저장", class: "primary", action: async (close) => {
           const state = await api().save_settings({
             api_key: key.value.trim(), history_messages: hist.value, max_steps: steps.value, permission: perm.value,
+            api_mode: mode.value, responses_url: url.value.trim(), model: model.value, stream: stream.checked,
           });
+          if (state.ok === false) return toast(state.error);
           applyState(state);
           close();
           toast("설정을 저장했습니다");
@@ -775,6 +838,7 @@ function applyState(state) {
   S.config = state.config;
   S.dataDir = state.data_dir;
   S.version = state.version || "";
+  S.models = state.models || [];
   S.memory = state.memory || [];
   $("#agent-toggle").checked = !!state.config.agent_mode;
   renderSidebar();

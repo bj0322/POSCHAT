@@ -212,6 +212,7 @@ svg { width: 18px; height: 18px; flex: none; }
 
 /* 진행 중 표시 */
 .typing { display: flex; gap: 14px; align-items: center; margin: 22px 0; }
+.typing[hidden] { display: none; }
 .typing .avatar {
   width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--border);
   display: grid; place-items: center; font-size: 13px; font-weight: 700; color: var(--brand);
