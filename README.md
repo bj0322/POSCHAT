@@ -189,6 +189,9 @@ py -3 -m venv .venv
   git push origin v1.2.0
   ```
 
+  태그를 직접 push하지 않고 Actions에서 **Build installer → Run workflow**의 `release` 칸에 `v1.2.0`을 넣어 실행해도 됩니다. 이 경우 실행한 커밋에 태그와 Release가 만들어집니다.
+- 사용자에게는 항상 최신 버전을 가리키는 링크 `https://github.com/bj0322/POSCHAT/releases/latest/download/PostechChat-Setup.exe`를 안내하면 됩니다.
+
 - 설치 파일에는 코드 서명이 없어서 처음 실행할 때 Windows SmartScreen 경고가 뜰 수 있습니다. 경고를 없애려면 코드 서명 인증서로 서명해야 합니다.
 
 ## v1.1.0 아키텍처
