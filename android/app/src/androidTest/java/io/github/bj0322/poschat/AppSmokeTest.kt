@@ -42,6 +42,7 @@ class AppSmokeTest {
         assertEquals("OK", report.getString("word_create"))
         assertTrue(report.getString("word_read").contains("제목"))
         assertTrue(report.getJSONArray("skills").toString().contains("summarize"))
+        assertEquals("OK", report.getString("attachments"))
     }
 
     @Test
@@ -57,7 +58,9 @@ class AppSmokeTest {
                   }
                   var md = renderMarkdown("\\(x^2\\)");
                   return JSON.stringify({ version: S.version, katex: !!md.querySelector(".katex"),
-                                          narrow: isNarrow(), collapsed: document.getElementById("app").classList.contains("collapsed") });
+                                          narrow: isNarrow(), collapsed: document.getElementById("app").classList.contains("collapsed"),
+                                          attach: !!document.getElementById("btn-attach") && !!document.getElementById("file-input"),
+                                          profile: !!document.getElementById("btn-profile") });
                 })()
             """.trimIndent()
             var result = ""
@@ -81,6 +84,8 @@ class AppSmokeTest {
             assertEquals(BuildConfig.VERSION_NAME, state.getString("version"))
             assertTrue("KaTeX 수식 렌더링", state.getBoolean("katex"))
             assertTrue("휴대폰 화면에서는 사이드바가 닫힌 채로 시작", !state.getBoolean("narrow") || state.getBoolean("collapsed"))
+            assertTrue("채팅창 첨부 버튼", state.getBoolean("attach"))
+            assertTrue("내 정보 버튼", state.getBoolean("profile"))
         }
     }
 

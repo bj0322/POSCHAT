@@ -1,6 +1,6 @@
 # POSTECH GenAI Chat
 
-버전 1.6.0 — 웹페이지 읽기·웹 검색 내장 MCP 서버(firecrawl), 브라우저 자동화 추천 서버(Playwright, MCP 창에서 켜기), 설정 창에서 모델 API 사용량 보기. 잘 동작하지 않던 HTML 영상 서버(hyperframes) 제거
+버전 1.6.0 — 채팅창 파일 첨부(이미지·문서·텍스트), 메모리를 Markdown 파일(memory.md)로 관리, 사용자 정보 파일(USER.md)과 `/user`, 웹페이지 읽기·웹 검색 내장 MCP 서버(firecrawl), 브라우저 자동화 추천 서버(Playwright, MCP 창에서 켜기), 설정 창에서 모델 API 사용량 보기. 잘 동작하지 않던 HTML 영상 서버(hyperframes) 제거
 
 1.5.0 — 내장 MCP 서버 추가: 논문 찾기·섹션별 읽기(paper), Notion 페이지·데이터베이스(notion), HTML로 영상 만들기(hyperframes). 논문을 쉽게 풀어 주는 `paper-reading` 스킬
 
@@ -56,7 +56,9 @@ Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 
 | 작업 폴더 지정 | 왼쪽 아래 **작업 폴더**, 또는 입력창의 폴더 칩 |
 | 에이전트 켜기·끄기 | 오른쪽 위 **에이전트** 스위치 |
 | 명령어·스킬 | 입력창에 `/`를 입력하면 목록이 뜹니다 |
-| 메모리 | 왼쪽 아래 **메모리**, `/remember 내용`, `/memory` |
+| 파일 첨부 | 입력창의 + 버튼, 파일 끌어다 놓기, 이미지 붙여 넣기(Ctrl+V) |
+| 내 정보(USER.md) | 왼쪽 아래 **내 정보**, `/user` |
+| 메모리(memory.md) | 왼쪽 아래 **메모리**, `/remember 내용`, `/memory` |
 | MCP 서버 켜기·끄기, 외부 서버 추가 | 왼쪽 아래 **MCP** |
 | 모델 API 사용량 보기 | 왼쪽 아래 **설정** → 모델 API 사용량. 이 앱에서 보낸 요청의 오늘·이번 달·최근 30일 호출 수와(서버가 알려 주면) 토큰 수. POSTECH GenAI API는 남은 한도를 알려 주지 않으므로 잔여량은 GenAI 콘솔에서 확인하세요. |
 
@@ -67,7 +69,23 @@ Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 
 - **메모리**: 모든 대화에 공통으로 전달되는 기억입니다. 대화 중에 "~를 기억해 줘", "잊지 마"라고 하면 앱이 기억할 내용을 한 문장으로 정리해 저장합니다. 이때 대화에 `🧠 기억: …` 줄이 표시됩니다. `/remember 내용`으로 직접 추가할 수도 있습니다. "기억해?"처럼 묻는 말은 저장하지 않습니다.
 - **다른 대화 참고**: 새 질문과 관련된 내용이 다른 대화에 있으면 자동으로 찾아 함께 참고합니다. 참고한 대화는 `📎 다른 대화 참고: …`로 표시됩니다. 에이전트 모드에서는 "지난번에 얘기한 …"처럼 말하면 `recall` 단계로 다른 대화를 직접 검색합니다. 메모리 창에서 끌 수 있습니다.
 
-메모리는 `%APPDATA%\PostechChat\memory.json`에 저장됩니다. 메모리 창에서 항목을 보거나 지울 수 있습니다.
+메모리는 `%APPDATA%\PostechChat\memory.md`에 Markdown으로 저장됩니다. `- `로 시작하는 줄 하나가 기억 하나이고, 메모리 창에서 항목을 보거나 지울 수 있으며 **memory.md 편집**으로 파일 전체를 직접 고칠 수 있습니다. 제목이나 설명을 더 써도 모두 대화에 전달되고, `<!-- -->` 안의 안내문만 빠집니다. 1.4 이전의 `memory.json`은 처음 실행할 때 memory.md로 옮겨집니다(원래 파일은 그대로 둡니다).
+
+### 내 정보 (USER.md)
+
+`%APPDATA%\PostechChat\USER.md`는 나에 대한 정보(하는 일, 관심 분야, 선호하는 답변 방식 등)이며, 작업 폴더의 INIT.md처럼 모든 대화에 함께 전달되어 답변을 나에게 맞추는 데 쓰입니다.
+
+- **직접 쓰기**: 왼쪽 아래 **내 정보**에서 고치고 저장합니다.
+- **AI로 작성·업데이트**: `/user`를 입력하면(또는 내 정보 창의 **AI로 작성·업데이트**) AI가 모든 대화의 최근 사용자 메시지와 메모리를 살펴보고 USER.md를 새로 쓰거나 고칩니다. 기존 내용은 어긋나지 않는 한 유지하고, 근거 없는 내용은 쓰지 않습니다. `/user 소속은 빼 줘`처럼 요청을 덧붙이거나 이력서 같은 파일을 첨부해 함께 보낼 수 있습니다. 바뀐 내용은 대화에 `📝 USER.md` 줄로 비교해 보여 줍니다.
+- 비밀번호나 API 키 같은 비밀 정보는 적지 마세요. 내용은 질문할 때마다 POSTECH GenAI API로 전달됩니다.
+
+### 파일 첨부
+
+입력창 왼쪽 아래의 + 버튼으로 파일을 고르거나, 파일을 창에 끌어다 놓거나, 이미지를 붙여 넣으면 첨부됩니다. 파일은 하나에 20MB, 한 번에 10개까지입니다.
+
+- **문서·텍스트**: PDF·Word·PowerPoint·Excel·한글 문서와 텍스트 파일(코드, CSV, Markdown 등)은 글자를 뽑아 질문과 함께 보냅니다(파일 하나에 2만 자, 한 번에 4만 자까지). 기억하는 이전 메시지 범위 안이면 다음 질문에서도 그 파일 내용을 다시 참고합니다.
+- **이미지**(PNG·JPEG·GIF·WebP): 설정의 API 방식이 **모델 선택 — OpenAI Responses API**일 때 모델이 이미지를 직접 봅니다. 기본 방식(a1)은 글자만 보낼 수 있어서 이미지는 전달되지 않으며, 대화에 그렇게 안내합니다.
+- 첨부한 파일은 `%APPDATA%\PostechChat\attachments`에 복사해 두고, 대화를 지우면 함께 지웁니다. 보낸 메시지의 파일을 누르면 알맞은 앱으로 엽니다.
 
 ### 에이전트 모드
 
@@ -211,8 +229,9 @@ POSTECH GenAI 서버의 모델은 자체 시스템 프롬프트 때문에 "사�
 | `mcp_client.py` | MCP 클라이언트: 서버 실행·연결·도구 호출, `mcp.json` 읽기 |
 | `office_mcp.py` | 내장 MCP 서버(word·powerpoint·excel)와 모든 내장 서버의 공통 실행 루프. 앱 exe를 `--mcp-server <이름>`으로 실행하면 이 서버가 됩니다. |
 | `paper_mcp.py` · `notion_mcp.py` · `firecrawl_mcp.py` | 내장 MCP 서버 paper(arXiv·Semantic Scholar), notion(Notion API), firecrawl(Firecrawl API) |
-| `api.py` | POSTECH GenAI API 호출(a1 / OpenAI Responses), 스트리밍 해석 |
-| `storage.py` | 대화·설정·메모리 저장(`%APPDATA%\PostechChat`), 다른 대화 검색 |
+| `api.py` | POSTECH GenAI API 호출(a1 / OpenAI Responses), 스트리밍 해석, 이미지 입력, 사용량 기록 |
+| `attachments.py` | 채팅창 첨부 파일: 조각 업로드, 종류 확인, 문서·텍스트 내용 뽑기, 이미지 |
+| `storage.py` | 대화·설정 저장(`%APPDATA%\PostechChat`), memory.md·USER.md, 첨부 파일 폴더, 모델 API 사용량, 다른 대화 검색 |
 | `web/` | 화면(HTML/CSS/JS, marked·DOMPurify·KaTeX 포함) |
 | `.github/workflows/build.yml` | Windows에서 설치 파일 빌드·자가 진단, 태그 push 때 Release에 첨부 |
 | `android/` | 안드로이드 앱(Kotlin WebView + Chaquopy). 빌드할 때 저장소 최상위의 Python 모듈·`web/`·`skills/`를 복사해 넣고, `android_main.py`가 pywebview 대신 화면과 Python을 연결합니다. |
@@ -283,7 +302,7 @@ py -3 -m venv .venv
 ## 데이터와 저장소 관리
 
 - API 키를 설정 창에 입력하면 `%APPDATA%\PostechChat\config.json`에 평문으로 저장됩니다. 공용 PC에서는 환경 변수를 사용하는 등 보관 방식을 신중히 선택하세요.
-- 대화·공통 메모리·관련 대화 발췌·읽은 파일 및 명령 출력은 답변 생성에 필요할 때 POSTECH GenAI API로 전달됩니다.
+- 대화·공통 메모리·사용자 정보(USER.md)·첨부 파일 내용·관련 대화 발췌·읽은 파일 및 명령 출력은 답변 생성에 필요할 때 POSTECH GenAI API로 전달됩니다.
 - 사용자 대화, 메모리, 설정, 로그, 개인 API 키는 소스 저장소에 포함하지 않습니다. `.gitignore`는 이 파일들과 가상환경·캐시·빌드 결과·실행 파일을 제외합니다.
 - 앱 소스, 설치 프로그램 소스, 실행·빌드 스크립트, 기본 스킬 2종, 아이콘, 정적 UI와 번들 JavaScript 라이브러리를 포함합니다. `web/vendor/` 파일은 UI 실행에 필요한 배포 의존성이므로 포함하며, 원본 저작권·라이선스 주석을 유지합니다.
 - 이 저장소는 v1.1.0 소스 스냅샷을 시작점으로 합니다. 이전 버전의 코드·변경 이력은 가져오지 않습니다.

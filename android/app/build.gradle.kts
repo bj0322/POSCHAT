@@ -16,7 +16,7 @@ val sharedAssetsDir = layout.buildDirectory.dir("generated/sharedAssets")
 val syncSharedPython by tasks.registering(Sync::class) {
     from(repoRoot) {
         include(
-            "agent.py", "api.py", "certs.py", "documents.py", "main.py",
+            "agent.py", "api.py", "attachments.py", "certs.py", "documents.py", "main.py",
             "mcp_client.py", "office_mcp.py", "paper_mcp.py", "notion_mcp.py", "firecrawl_mcp.py",
             "storage.py", "version.py",
         )

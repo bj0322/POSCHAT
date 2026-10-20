@@ -95,12 +95,16 @@ class ApiSettings:
         )
 
 
-def ask(api_key, message, timeout=180, settings=None, on_delta=None, cancelled=None):
-    """모델 답변 전체를 돌려준다. on_delta가 있고 스트리밍이 켜져 있으면 받는 동안 중간 텍스트를 넘긴다."""
+def ask(api_key, message, timeout=180, settings=None, on_delta=None, cancelled=None, images=None):
+    """모델 답변 전체를 돌려준다. on_delta가 있고 스트리밍이 켜져 있으면 받는 동안 중간 텍스트를 넘긴다.
+
+    images는 [(MIME 형식, base64)]이며 Responses API에서만 보낸다(a1은 글자만 받는다).
+    """
     settings = settings or ApiSettings()
     stream = bool(on_delta) and settings.stream
     if settings.mode == "responses":
-        text, usage = _ask_responses(api_key, message, timeout, settings, on_delta if stream else None, cancelled)
+        text, usage = _ask_responses(api_key, message, timeout, settings, on_delta if stream else None, cancelled,
+                                     images)
     else:
         text, usage = None, None
         if stream:
@@ -149,10 +153,14 @@ def _ask_a1(api_key, message, timeout, on_delta, cancelled):
 
 # ---- OpenAI Responses ----
 
-def _ask_responses(api_key, message, timeout, settings, on_delta, cancelled):
+def _ask_responses(api_key, message, timeout, settings, on_delta, cancelled, images=None):
     if not settings.responses_url:
         raise ApiError("모델 선택(Responses API)을 쓰려면 설정에서 Responses API 주소를 입력하세요.")
-    payload = {"model": settings.model, "input": message, "stream": bool(on_delta), "store": False}
+    content = message
+    if images:
+        content = [{"role": "user", "content": [{"type": "input_text", "text": message}] + [
+            {"type": "input_image", "image_url": f"data:{mime};base64,{data}"} for mime, data in images]}]
+    payload = {"model": settings.model, "input": content, "stream": bool(on_delta), "store": False}
     if not settings.model.startswith("gpt-4"):
         payload["reasoning"] = {"effort": REASONING_EFFORT}
     headers = {"x-api-key": api_key, "Content-Type": "application/json"}
