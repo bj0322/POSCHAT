@@ -10,7 +10,10 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.Settings
+import android.util.Log
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
 import android.webkit.MimeTypeMap
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -62,6 +65,13 @@ class MainActivity : ComponentActivity() {
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.addJavascriptInterface(JsHost(), "PoschatHost")
+        // 화면의 오류·콘솔 출력을 logcat(태그 PoschatWeb)에 남긴다
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                Log.i("PoschatWeb", "${message.message()} (${message.sourceId()}:${message.lineNumber()})")
+                return true
+            }
+        }
 
         // https://appassets.androidplatform.net/assets/... 로 앱 안의 파일을 웹 페이지처럼 연다(file:// 제약 없음).
         val assets = WebViewAssetLoader.Builder()
@@ -120,6 +130,7 @@ class MainActivity : ComponentActivity() {
             bridge = module
         } catch (e: Throwable) {
             startError = e.toString()
+            Log.e("Poschat", "Python을 시작하지 못했습니다", e)
         } finally {
             pythonReady.countDown()
         }
@@ -267,6 +278,10 @@ class MainActivity : ComponentActivity() {
                 },
               });
               window.pywebview = { api: api, platform: "android" };
+              window.addEventListener("unhandledrejection", function (e) {
+                window.__lastError = String(e.reason && (e.reason.stack || e.reason.message) || e.reason);
+                console.error("unhandled: " + window.__lastError);
+              });
               window.__androidBack = function () {
                 if (document.querySelector(".modal-backdrop")) {
                   document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
