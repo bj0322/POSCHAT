@@ -11,12 +11,13 @@ import uuid
 
 import webview
 
+import mcp_client
 import storage
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
 from api import ApiError
 
 APP_TITLE = "POSTECH GenAI Chat"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 
 SKILL_TEMPLATE = """---
 name: {name}
@@ -47,6 +48,7 @@ class Bridge:
         self._cancel = threading.Event()
         self._pending = {}            # confirm id -> [Event, decision]
         self._session_allow = set()   # "edit" / "run" — 이번 실행 동안 항상 허용
+        self._mcp = mcp_client.Manager()
 
     # ---- 내부 도우미 ----
 
@@ -210,6 +212,27 @@ class Bridge:
     def get_skills(self):
         return self._skills()
 
+    # ---- MCP ----
+
+    def get_mcp(self):
+        return self._mcp.status(self._config, self._workspace())
+
+    def connect_mcp(self):
+        """켜진 MCP 서버를 지금 연결해 본다(MCP 창의 '연결' 버튼)."""
+        self._mcp.ensure(self._config, self._workspace())
+        return self.get_mcp()
+
+    def set_mcp_enabled(self, name, enabled):
+        with self._lock:
+            disabled = set(self._config.get("mcp_disabled", []))
+            (disabled.discard if enabled else disabled.add)(str(name))
+            self._config["mcp_disabled"] = sorted(disabled)
+            storage.save_config(self._config)
+        return self.get_mcp()
+
+    def open_mcp_config(self):
+        os.startfile(mcp_client.ensure_config_file())
+
     # ---- 대화 실행 ----
 
     def send(self, thread_id, text, agent_mode):
@@ -283,6 +306,7 @@ class Bridge:
             cancelled=lambda: not alive(),
             thread_id=thread_id,
             share_threads=bool(self._config.get("share_threads", True)),
+            mcp=(lambda: self._mcp.ensure(self._config, workspace, on_status)) if agent_mode and workspace else None,
         )
         try:
             answer = agent.run(history, task, forced)
@@ -339,6 +363,22 @@ def selftest():
     key = config.get("api_key") or os.environ.get("POSTECH_GENAI_API_KEY", "")
     lines = [f"web: {(resource_dir() / 'web' / 'index.html').exists()}",
              f"skills: {len(discover_skills(config.get('workspace', '')))}"]
+    try:
+        import docx, olefile, openpyxl, pptx, pypdf  # noqa: F401,E401  문서 라이브러리가 함께 묶였는지
+        lines.append("documents: OK")
+    except ImportError as e:
+        lines.append(f"documents: FAIL {e}")
+    import tempfile
+    manager = mcp_client.Manager()
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        try:
+            servers = manager.ensure(config, tmp)
+            status = manager.status(config, tmp)["servers"]
+            lines.append("mcp: " + ", ".join(
+                f"{s['name']} OK({len(s['tools'])})" if s["state"] == "connected" else f"{s['name']} {s['state'].upper()} {s['error']}"
+                for s in status if s["enabled"]) + f" [{len(servers)} connected]")
+        finally:
+            manager.shutdown()  # 서버가 임시 폴더를 쓰고 있으면 지울 수 없으므로 먼저 끈다
     try:
         reply = ask(key, "'정상'이라고 한 단어로만 답하세요.") if key else "(API 키 없음)"
         lines.append(f"api: OK {reply[:80]!r}")
@@ -403,7 +443,12 @@ def _log_crash():
 
 def main():
     try:
-        if "--selftest" in sys.argv:
+        if "--mcp-server" in sys.argv:
+            # 앱 자신을 내장 MCP 서버로 실행한다(mcp_client가 띄운다).
+            import office_mcp
+            i = sys.argv.index("--mcp-server")
+            office_mcp.serve(sys.argv[i + 1] if i + 1 < len(sys.argv) else "")
+        elif "--selftest" in sys.argv:
             selftest()
         elif "--uninstall" in sys.argv:
             uninstall(quiet="--quiet" in sys.argv)
@@ -441,7 +486,10 @@ def run_app():
         width=width, height=height, min_size=(760, 520), text_select=True,
     )
     bridge._window = window
-    webview.start(debug=os.environ.get("POSTECH_CHAT_DEBUG") == "1")
+    try:
+        webview.start(debug=os.environ.get("POSTECH_CHAT_DEBUG") == "1")
+    finally:
+        bridge._mcp.shutdown()
 
 
 if __name__ == "__main__":

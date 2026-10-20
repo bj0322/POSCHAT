@@ -2,7 +2,7 @@
 
     python build_installer.py
 
-필요 패키지: requests, truststore, pywebview, pyinstaller (pip install -r requirements.txt pyinstaller)
+필요 패키지: requirements.txt와 pyinstaller (pip install -r requirements.txt pyinstaller)
 결과: release/PostechChat-Setup.exe
 빌드 중간 파일은 %TEMP%\\PostechChat-build 에 만든다(클라우드 동기화 폴더에서 빌드하면 느리다).
 """
@@ -48,6 +48,8 @@ def main():
         "--add-data", f"{ROOT / 'LICENSE'};.",
         "--add-data", f"{ROOT / 'THIRD_PARTY_NOTICES.md'};.",
         "--add-data", f"{ROOT / 'licenses'};licenses",
+        # python-docx·python-pptx는 새 문서를 만들 때 패키지 안의 기본 서식 파일을 쓴다.
+        "--collect-data", "docx", "--collect-data", "pptx",
         "--distpath", str(WORK / "app"),
         str(ROOT / "main.py"),
     )

@@ -1,0 +1,315 @@
+"""MCP(Model Context Protocol) 클라이언트: 표준 입출력 MCP 서버를 띄우고 도구를 부른다.
+
+내장 서버(word·powerpoint·excel)는 앱 exe 자신을 `--mcp-server <이름>`으로, 소스 실행 때는
+office_mcp.py를 실행한다. 외부 서버는
+%APPDATA%\\PostechChat\\mcp.json에 Claude Desktop과 같은 형식으로 적는다.
+
+    {"mcpServers": {"이름": {"command": "npx", "args": ["-y", "패키지"], "env": {"KEY": "값"}}}}
+
+서버는 처음 필요할 때(에이전트 실행이나 MCP 창의 '연결') 작업 폴더를 현재 폴더로 해서 띄우고,
+작업 폴더나 설정이 바뀌면 다시 띄운다.
+"""
+import collections
+import json
+import os
+import queue
+import shutil
+import subprocess
+import sys
+import threading
+from pathlib import Path
+
+import storage
+
+PROTOCOL_VERSION = "2025-06-18"
+START_TIMEOUT = 30
+CALL_TIMEOUT = 180
+
+BUILTIN_SERVERS = {
+    "word": "Word 문서(.docx) 만들기·내용 추가·글자 바꾸기",
+    "powerpoint": "PowerPoint(.pptx) 만들기·슬라이드 추가·글자 바꾸기",
+    "excel": "Excel(.xlsx) 만들기·셀 쓰기",
+}
+
+CONFIG_TEMPLATE = {
+    "mcpServers": {},
+    "_설명": "외부 MCP 서버를 mcpServers 아래에 적으세요. 예: "
+             "\"filesystem\": {\"command\": \"npx\", \"args\": [\"-y\", \"@modelcontextprotocol/server-filesystem\", \".\"]}. "
+             "npx·uvx 같은 실행 도구는 이 PC에 따로 설치되어 있어야 합니다.",
+}
+
+
+class MCPError(Exception):
+    pass
+
+
+def builtin_command(name):
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--mcp-server", name]
+    return [sys.executable, str(Path(__file__).resolve().parent / "office_mcp.py"), name]
+
+
+def load_external():
+    """mcp.json의 외부 서버 설정. 파일이 없거나 잘못되면 (빈 dict, 오류 문구)."""
+    path = storage.MCP_PATH
+    if not path.exists():
+        return {}, ""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        servers = data.get("mcpServers", {}) if isinstance(data, dict) else {}
+        if not isinstance(servers, dict):
+            raise ValueError("mcpServers는 객체여야 합니다")
+    except (OSError, ValueError) as e:
+        return {}, f"mcp.json을 읽지 못했습니다: {e}"
+    out = {}
+    for name, spec in servers.items():
+        if isinstance(spec, dict) and spec.get("command") and name not in BUILTIN_SERVERS:
+            out[str(name)] = spec
+    return out, ""
+
+
+def ensure_config_file():
+    path = storage.MCP_PATH
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(CONFIG_TEMPLATE, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
+class Server:
+    """표준 입출력으로 연결된 MCP 서버 하나."""
+
+    def __init__(self, name, command, args=(), env=None, cwd=None, builtin=False):
+        self.name, self.builtin = name, builtin
+        self.command, self.args, self.env, self.cwd = command, list(args), dict(env or {}), cwd
+        self.proc = None
+        self.tools = []
+        self.error = ""
+        self._next_id = 0
+        self._pending = {}
+        self._lock = threading.Lock()
+        self._write_lock = threading.Lock()
+        self.stderr_tail = collections.deque(maxlen=40)
+        self.spec_key = None  # Manager가 설정이 바뀌었는지 비교하는 값
+
+    def alive(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    def start(self):
+        exe = shutil.which(self.command) or self.command
+        env = dict(os.environ, **{k: str(v) for k, v in self.env.items()})
+        env.setdefault("PYTHONIOENCODING", "utf-8")
+        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        cmd = [exe, *self.args]
+        if os.name == "nt" and Path(exe).suffix.lower() in (".cmd", ".bat"):
+            cmd = ["cmd", "/c", exe, *self.args]  # npx.cmd 같은 배치 파일은 cmd로 실행해야 한다
+        try:
+            self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                         cwd=self.cwd or None, env=env, creationflags=flags)
+        except OSError as e:
+            raise MCPError(f"서버를 실행하지 못했습니다({self.command}): {e}")
+        threading.Thread(target=self._read_stdout, daemon=True).start()
+        threading.Thread(target=self._read_stderr, daemon=True).start()
+        self.request("initialize", {
+            "protocolVersion": PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": {"name": "postech-genai-chat", "version": "1.2.0"},
+        }, timeout=START_TIMEOUT)
+        self.notify("notifications/initialized")
+        tools, cursor = [], None
+        while True:
+            result = self.request("tools/list", {"cursor": cursor} if cursor else {}, timeout=START_TIMEOUT)
+            tools += [t for t in result.get("tools", []) if isinstance(t, dict) and t.get("name")]
+            cursor = result.get("nextCursor")
+            if not cursor:
+                break
+        self.tools, self.error = tools, ""
+
+    def _read_stdout(self):
+        for line in self.proc.stdout:
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                continue  # 서버가 표준 출력에 섞어 쓴 로그
+            if isinstance(msg, dict) and "id" in msg and ("result" in msg or "error" in msg):
+                with self._lock:
+                    box = self._pending.pop(msg["id"], None)
+                if box:
+                    box.put(msg)
+        with self._lock:  # 서버가 끝났다: 기다리는 요청을 모두 깨운다
+            for box in self._pending.values():
+                box.put(None)
+            self._pending.clear()
+
+    def _read_stderr(self):
+        for line in self.proc.stderr:
+            self.stderr_tail.append(line.decode("utf-8", errors="replace").rstrip())
+
+    def _send(self, msg):
+        data = (json.dumps(msg, ensure_ascii=False) + "\n").encode("utf-8")
+        try:
+            with self._write_lock:
+                self.proc.stdin.write(data)
+                self.proc.stdin.flush()
+        except (OSError, ValueError):
+            raise MCPError(f"'{self.name}' 서버와 연결이 끊겼습니다.{self._stderr_hint()}")
+
+    def _stderr_hint(self):
+        tail = [line for line in self.stderr_tail if line.strip()][-3:]
+        return ("\n" + "\n".join(tail)) if tail else ""
+
+    def notify(self, method, params=None):
+        self._send({"jsonrpc": "2.0", "method": method, **({"params": params} if params else {})})
+
+    def request(self, method, params=None, timeout=CALL_TIMEOUT):
+        if not self.alive():
+            raise MCPError(f"'{self.name}' 서버가 실행 중이 아닙니다.{self._stderr_hint()}")
+        box = queue.Queue(maxsize=1)
+        with self._lock:
+            self._next_id += 1
+            rid = self._next_id
+            self._pending[rid] = box
+        self._send({"jsonrpc": "2.0", "id": rid, "method": method, "params": params or {}})
+        try:
+            msg = box.get(timeout=timeout)
+        except queue.Empty:
+            with self._lock:
+                self._pending.pop(rid, None)
+            raise MCPError(f"'{self.name}' 서버가 {timeout}초 안에 응답하지 않았습니다({method}).")
+        if msg is None:
+            raise MCPError(f"'{self.name}' 서버가 종료되었습니다.{self._stderr_hint()}")
+        if "error" in msg:
+            err = msg["error"] or {}
+            raise MCPError(f"{err.get('message', '알 수 없는 오류')} (코드 {err.get('code')})")
+        return msg.get("result") or {}
+
+    def call(self, tool, arguments):
+        result = self.request("tools/call", {"name": tool, "arguments": arguments or {}})
+        parts = []
+        for item in result.get("content") or []:
+            kind = item.get("type")
+            if kind == "text":
+                parts.append(item.get("text", ""))
+            elif kind == "resource":
+                res = item.get("resource") or {}
+                parts.append(res.get("text") or f"[리소스 {res.get('uri', '')}]")
+            elif kind == "resource_link":
+                parts.append(f"[링크 {item.get('name', '')} {item.get('uri', '')}]")
+            else:
+                parts.append(f"[{kind} {item.get('mimeType', '')}]")
+        if not parts and result.get("structuredContent") is not None:
+            parts.append(json.dumps(result["structuredContent"], ensure_ascii=False))
+        return "\n".join(parts).strip() or "(결과 없음)", bool(result.get("isError"))
+
+    def close(self):
+        if self.proc is None:
+            return
+        try:
+            self.proc.stdin.close()  # 표준 입력이 닫히면 서버는 스스로 끝난다
+            self.proc.wait(timeout=3)
+        except Exception:
+            try:
+                self.proc.kill()
+            except OSError:
+                pass
+        self.proc = None
+
+
+class Manager:
+    """설정에 맞게 서버들을 띄우고 유지한다. 브리지와 에이전트 스레드에서 함께 쓴다."""
+
+    def __init__(self):
+        self._servers = {}
+        self._errors = {}   # 이름 -> 마지막 연결 오류
+        self._lock = threading.RLock()
+        self._ensure_lock = threading.Lock()
+
+    def specs(self, config, workspace):
+        disabled = set(config.get("mcp_disabled", []))
+        specs = {}
+        for name in BUILTIN_SERVERS:
+            cmd = builtin_command(name)
+            specs[name] = {"command": cmd[0], "args": cmd[1:], "env": {}, "builtin": True,
+                           "enabled": name not in disabled, "description": BUILTIN_SERVERS[name]}
+        external, _ = load_external()
+        for name, spec in external.items():
+            args = spec.get("args") or []
+            specs[name] = {"command": str(spec["command"]), "args": [str(a) for a in args] if isinstance(args, list) else [],
+                           "env": spec.get("env") if isinstance(spec.get("env"), dict) else {}, "builtin": False,
+                           "enabled": name not in disabled and not spec.get("disabled"),
+                           "description": str(spec.get("description", ""))}
+        for spec in specs.values():
+            spec["cwd"] = workspace or None
+        return specs
+
+    def ensure(self, config, workspace, on_status=None):
+        """켜진 서버를 모두 연결된 상태로 만든다. 연결된 서버 목록을 돌려준다."""
+        specs = self.specs(config, workspace)
+        with self._ensure_lock:  # 동시에 불려도 같은 서버를 두 번 띄우지 않는다
+            stale = []
+            with self._lock:
+                for name in list(self._servers):
+                    spec, server = specs.get(name), self._servers[name]
+                    if not spec or not spec["enabled"] or not server.alive() or server.spec_key != self._key(spec):
+                        stale.append(self._servers.pop(name))
+                todo = [(n, s) for n, s in specs.items() if s["enabled"] and n not in self._servers]
+            for server in stale:
+                server.close()
+            if todo and on_status:
+                on_status("MCP 서버 연결 중... (" + ", ".join(n for n, _ in todo) + ")")
+            threads = [threading.Thread(target=self._start, args=(n, s), daemon=True) for n, s in todo]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+        with self._lock:
+            return [self._servers[n] for n in specs if n in self._servers]
+
+    @staticmethod
+    def _key(spec):
+        return (spec["command"], tuple(spec["args"]), tuple(sorted((k, str(v)) for k, v in spec["env"].items())), spec["cwd"])
+
+    def _start(self, name, spec):
+        server = Server(name, spec["command"], spec["args"], spec["env"], spec["cwd"], spec["builtin"])
+        server.spec_key = self._key(spec)
+        try:
+            server.start()
+        except MCPError as e:
+            server.close()
+            with self._lock:
+                self._errors[name] = str(e)
+            return
+        with self._lock:
+            self._servers[name] = server
+            self._errors.pop(name, None)
+
+    def status(self, config, workspace):
+        specs = self.specs(config, workspace)
+        _, file_error = load_external()
+        out = []
+        with self._lock:
+            for name, spec in specs.items():
+                server = self._servers.get(name)
+                connected = server is not None and server.alive()
+                out.append({
+                    "name": name, "builtin": spec["builtin"], "enabled": spec["enabled"],
+                    "description": spec["description"],
+                    "command": " ".join([spec["command"], *spec["args"]]) if not spec["builtin"] else "",
+                    "state": "connected" if connected else ("error" if name in self._errors and spec["enabled"] else "idle"),
+                    "error": self._errors.get(name, "") if spec["enabled"] else "",
+                    "tools": [t["name"] for t in server.tools] if connected else [],
+                })
+        return {"servers": out, "config_error": file_error, "config_path": str(storage.MCP_PATH)}
+
+    def get(self, name):
+        with self._lock:
+            server = self._servers.get(name)
+        if server is None or not server.alive():
+            raise MCPError(f"MCP 서버 '{name}'가 연결되어 있지 않습니다.")
+        return server
+
+    def shutdown(self):
+        with self._lock:
+            servers, self._servers = list(self._servers.values()), {}
+        for server in servers:
+            server.close()

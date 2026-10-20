@@ -16,6 +16,7 @@ const ICONS = {
   pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
   chev: '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  plug: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v5"/><path d="M15 2v5"/><path d="M6 7h12v4a6 6 0 0 1-12 0Z"/><path d="M12 17v5"/></svg>',
   retry: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
 };
 
@@ -693,6 +694,56 @@ function showSkills() {
   });
 }
 
+function showMcp() {
+  const list = h("div", {});
+  const note = h("p", { style: "margin:6px 0 0;color:var(--text-3);font-size:13px" });
+  const STATE = { connected: "연결됨", error: "연결 실패", idle: "대기" };
+  const render = (st) => {
+    list.innerHTML = "";
+    note.textContent = st.config_error || "";
+    for (const sv of st.servers) {
+      const toggle = h("input", { type: "checkbox", style: "width:auto;margin:0", title: sv.enabled ? "끄기" : "켜기" });
+      toggle.checked = sv.enabled;
+      toggle.addEventListener("change", async () => render(await api().set_mcp_enabled(sv.name, toggle.checked)));
+      const detail = sv.state === "connected" ? "도구: " + sv.tools.join(", ")
+        : sv.error ? sv.error : (sv.command || sv.description);
+      list.append(h("div", { class: "skill-item" },
+        toggle,
+        h("div", { class: "s-main" },
+          h("b", {}, sv.name),
+          h("span", { class: "badge" }, sv.builtin ? "내장" : "외부"),
+          sv.enabled ? h("span", { class: "badge mcp-" + sv.state }, STATE[sv.state] || sv.state) : null,
+          h("p", {}, sv.description || ""),
+          detail && detail !== sv.description ? h("p", { class: sv.error ? "mcp-error" : "" }, detail) : null),
+      ));
+    }
+  };
+  const body = h("div", {},
+    h("p", { style: "margin:0 0 8px;color:var(--text-2)" },
+      "MCP 서버는 에이전트가 쓸 수 있는 도구를 더해 줍니다. 내장 서버로 Word·PowerPoint·Excel 문서를 만들고 고칠 수 있으며, ",
+      "작업 폴더 안의 파일만 다룹니다. 다른 MCP 서버는 설정 파일(mcp.json)에 Claude Desktop과 같은 형식으로 추가합니다."),
+    list, note,
+    h("small", { style: "display:block;margin-top:10px;color:var(--text-3)" },
+      "서버는 에이전트 모드에서 처음 필요할 때 연결됩니다. 문서를 고치는 도구는 파일 수정처럼, 외부 서버의 도구는 명령 실행처럼 승인을 받습니다."),
+  );
+  const m = modal({
+    title: "MCP",
+    body,
+    wide: true,
+    buttons: [
+      { label: "설정 파일 열기", action: () => api().open_mcp_config() },
+      { label: "지금 연결", action: async () => {
+        if (!S.workspace.path) return toast("먼저 작업 폴더를 선택하세요");
+        toast("MCP 서버에 연결하는 중...");
+        render(await api().connect_mcp());
+      } },
+      { label: "닫기", class: "primary", value: null },
+    ],
+  });
+  api().get_mcp().then(render);
+  return m;
+}
+
 function showHelp() {
   const rows = [
     ["/init", "작업 폴더를 분석해 INIT.md를 만듭니다"],
@@ -781,6 +832,7 @@ function bindUI() {
   $("#btn-workspace").addEventListener("click", chooseWorkspace);
   $("#ws-chip").addEventListener("click", chooseWorkspace);
   $("#btn-skills").addEventListener("click", showSkills);
+  $("#btn-mcp").addEventListener("click", showMcp);
   $("#btn-memory").addEventListener("click", async () => { S.memory = await api().list_memory(); showMemory(); });
   $("#btn-settings").addEventListener("click", showSettings);
   $("#agent-toggle").addEventListener("change", (e) => {

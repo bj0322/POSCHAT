@@ -19,6 +19,24 @@ license file includes both offered license texts.
 Python packages listed in `requirements.txt` and build dependencies are
 installed separately and retain their respective licenses. When distributing
 a built installer, include the applicable dependency license notices with it.
+The installer bundles these runtime packages (and their dependencies) for
+document reading and the built-in Office MCP servers:
+
+| Package | Purpose | License |
+|---|---|---|
+| pypdf | PDF text extraction | BSD-3-Clause |
+| olefile | HWP 5.0 container reading | BSD-2-Clause |
+| openpyxl | Excel reading and writing | MIT |
+| python-docx | Word writing | MIT |
+| python-pptx | PowerPoint writing | MIT |
+| lxml (via python-docx, python-pptx) | XML processing | BSD-3-Clause |
+| Pillow (via python-pptx) | Image handling | MIT-CMU (HPND) |
+| XlsxWriter (via python-pptx) | Chart data | BSD-2-Clause |
+| et-xmlfile (via openpyxl) | XML writing | MIT |
+| typing_extensions | Typing backports | PSF-2.0 |
+
+HWP reading follows the publicly released Hancom HWP 5.0 file format
+specification; this project is not affiliated with Hancom.
 
 POSTECH names and marks belong to their respective owners. This project
 license grants no trademark rights or access rights to the POSTECH GenAI API.
