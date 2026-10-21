@@ -180,7 +180,7 @@ def install(dest, desktop, progress):
 
 
 class InstallerUI:
-    def __init__(self, root):
+    def __init__(self, root, destination=None):
         self.root = root
         root.title(f"{APP_NAME} 설치")
         root.resizable(False, False)
@@ -218,7 +218,7 @@ class InstallerUI:
         ttk.Label(self.body, text="설치 위치", style="Body.TLabel").pack(anchor="w")
         row = ttk.Frame(self.body)
         row.pack(fill=tk.X, pady=(4, 12))
-        self.dest = tk.StringVar(value=str(DEFAULT_DIR))
+        self.dest = tk.StringVar(value=str(destination or DEFAULT_DIR))
         ttk.Entry(row, textvariable=self.dest, width=46).pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Button(row, text="찾아보기...", command=self.browse).pack(side=tk.LEFT, padx=(6, 0))
         self.desktop = tk.BooleanVar(value=True)
@@ -333,8 +333,9 @@ def main():
             with log.open("a", encoding="utf-8") as f:
                 f.write("바로가기 경고:\n" + "\n".join(failed) + "\n")
         return
+    destination = next((arg[6:] for arg in sys.argv if arg.startswith("--dir=")), None)
     root = tk.Tk()
-    InstallerUI(root)
+    InstallerUI(root, destination)
     root.mainloop()
 
 

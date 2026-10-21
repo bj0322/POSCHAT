@@ -246,10 +246,25 @@ async function openThread(id) {
   S.currentId = id;
   S.thread = thread;
   $("#chat-title").textContent = thread.title;
+  renderThreadModel();
   renderSidebar();
   renderMessages();
   if (isNarrow()) setCollapsed(true);
   else $("#input").focus();  // 휴대폰에서는 키보드가 화면을 가리지 않게 자동으로 띄우지 않는다
+}
+
+function renderThreadModel() {
+  const select = $("#thread-model");
+  const picker = $("#thread-model-picker");
+  if (!select || !picker) return;
+  const mode = S.config.api_mode || "a1";
+  picker.hidden = !S.thread || mode === "a1";
+  if (picker.hidden) return;
+  const models = mode === "responses" ? (S.models || []).slice(0, 5) : (S.models || []);
+  select.replaceChildren(...models.map((m) => h("option", { value: m.id }, m.label)));
+  const selected = S.thread.model || S.config.model || (models[0] || {}).id;
+  select.value = models.some((m) => m.id === selected) ? selected : ((models[0] || {}).id || "");
+  select.disabled = S.busy;
 }
 
 async function newThread() {
@@ -781,20 +796,38 @@ function showSettings() {
   const mode = h("select", {},
     h("option", { value: "a1" }, "기본 — a1/gpt (모델은 서버가 정함, 키만 있으면 사용)"),
     h("option", { value: "responses" }, "모델 선택 — OpenAI Responses API"),
+    h("option", { value: "chat_completions" }, "OpenAI 호환 API — GPT·Claude·Gemini"),
   );
   mode.value = c.api_mode || "a1";
-  const url = h("input", { placeholder: "https://genai.postech.ac.kr/agent/api/a번호/openai/responses", value: c.responses_url || "" });
-  const model = h("select", {}, (S.models || []).map((m) => h("option", { value: m.id }, m.label)));
-  model.value = c.model || ((S.models || [])[0] || {}).id || "";
+  const url = h("input", { type: "url", placeholder: "https://.../agent/api/a번호/openai/responses", value: c.responses_url || "" });
+  const compatibleUrl = h("input", { type: "url", placeholder: "https://.../v1/chat/completions",
+    value: c.chat_completions_url || "" });
+  const responsesModel = h("select", {}, (S.models || []).slice(0, 5).map((m) => h("option", { value: m.id }, m.label)));
+  const compatibleModel = h("select", {}, (S.models || []).map((m) => h("option", { value: m.id }, m.label)));
+  const defaultModel = c.model || ((S.models || [])[0] || {}).id || "";
+  responsesModel.value = (S.models || []).slice(0, 5).some((m) => m.id === defaultModel)
+    ? defaultModel : ((S.models || [])[0] || {}).id || "";
+  compatibleModel.value = defaultModel;
   const stream = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
   stream.checked = c.stream !== false;
   const responsesBox = h("div", {},
-    h("div", { class: "field" }, h("label", {}, "Responses API 주소"), url,
-      h("small", {}, "POSTECH GenAI 콘솔의 API 안내에서 openai/responses 주소(a번호 포함)를 복사해 넣으세요.")),
-    h("div", { class: "field" }, h("label", {}, "모델"), model,
+    h("div", { class: "field" }, h("label", {}, "Responses API 주소 (필수)"), url,
+      h("small", {}, "필수 입력. POSTECH GenAI 콘솔에서 openai/responses로 끝나는 전체 HTTPS 주소를 복사하세요.")),
+    h("div", { class: "field" }, h("label", {}, "모델"), responsesModel,
       h("small", {}, "GPT-5.1을 권장합니다. 에이전트는 단계마다 모델을 부르므로 비용을 줄이려면 GPT-5 mini를 고르세요.")),
   );
-  const syncMode = () => { responsesBox.hidden = mode.value !== "responses"; };
+  const compatibleBox = h("div", {},
+    h("div", { class: "field" }, h("label", {}, "OpenAI 호환 Chat Completions 주소 (필수)"), compatibleUrl,
+      h("small", {}, "새 POSTECH GenAI API 안내에서 OpenAI 호환 Chat Completions 주소를 복사하세요. API 키는 Bearer 인증으로 전달됩니다.")),
+    h("div", { class: "field" }, h("label", {}, "기본 모델"), compatibleModel,
+      h("small", {}, "새 대화의 기본 모델입니다. 기존 대화의 모델은 대화 상단에서 개별 선택하며 각각 저장됩니다.")),
+  );
+  const syncMode = () => {
+    responsesBox.hidden = mode.value !== "responses";
+    compatibleBox.hidden = mode.value !== "chat_completions";
+    url.required = mode.value === "responses";
+    compatibleUrl.required = mode.value === "chat_completions";
+  };
   mode.addEventListener("change", syncMode);
   syncMode();
   const body = h("div", {},
@@ -805,6 +838,7 @@ function showSettings() {
       h("small", {}, keyHint, h("br"), "키는 이 PC의 사용자 데이터 폴더(config.json)에 저장됩니다.")),
     h("div", { class: "field" }, h("label", {}, "API 방식"), mode),
     responsesBox,
+    compatibleBox,
     h("div", { class: "field" },
       h("label", { style: "display:flex;align-items:center;font-weight:600;cursor:pointer" }, stream, "답변을 받는 대로 표시 (스트리밍)"),
       h("small", {}, "일반 대화의 답변을 글자가 오는 대로 보여 줍니다. 에이전트 모드의 단계 진행은 그대로입니다.")),
@@ -819,6 +853,15 @@ function showSettings() {
       c.firecrawl_source === "settings"
         ? h("label", { style: "display:flex;align-items:center;font-size:13px;margin-top:4px;cursor:pointer" }, clearFirecrawl, "저장된 키 지우기")
         : null),
+    h("div", { class: "field" }, h("label", {}, "자동 업데이트"),
+      h("small", {}, "공개 CDN에서 업데이트 정보를 확인합니다. GitHub 토큰 없이 새 버전을 확인하고 내려받습니다."),
+      h("button", { class: "btn", style: "margin-top:8px", onclick: async () => {
+        const result = await api().check_for_updates();
+        if (result.available) {
+          settingsModal.close();
+          offerUpdate(result);
+        } else toast(result.error || "최신 버전을 사용 중입니다.");
+      } }, "업데이트 확인")),
     h("div", { class: "field" }, h("label", {}, "에이전트 권한"), perm,
       h("small", {}, "에이전트가 파일을 고치거나 명령을 실행하기 전에 승인을 받을지 정합니다.")),
     h("div", { class: "row" },
@@ -833,16 +876,26 @@ function showSettings() {
         h("button", { class: "btn", onclick: () => api().open_folder("data") }, "열기"))),
   );
   body.append(h("p", { style: "margin:14px 0 0;color:var(--text-3);font-size:12px" }, `POSTECH GenAI Chat 버전 ${S.version}`));
-  modal({
+  const settingsModal = modal({
     title: "설정",
     body,
     buttons: [
       { label: "취소", value: null },
       {
         label: "저장", class: "primary", action: async (close) => {
+          if (mode.value === "responses" && !url.value.trim()) {
+            url.focus();
+            return toast("Responses API 주소를 입력하세요.");
+          }
+          if (mode.value === "chat_completions" && !compatibleUrl.value.trim()) {
+            compatibleUrl.focus();
+            return toast("Chat Completions 주소를 입력하세요.");
+          }
           const state = await api().save_settings({
             api_key: key.value.trim(), history_messages: hist.value, max_steps: steps.value, permission: perm.value,
-            api_mode: mode.value, responses_url: url.value.trim(), model: model.value, stream: stream.checked,
+            api_mode: mode.value, responses_url: url.value.trim(),
+            chat_completions_url: compatibleUrl.value.trim(),
+            model: mode.value === "responses" ? responsesModel.value : compatibleModel.value, stream: stream.checked,
             notion_token: notion.value.trim(), clear_notion: clearNotion.checked && !notion.value.trim(),
             firecrawl_key: firecrawl.value.trim(), clear_firecrawl: clearFirecrawl.checked && !firecrawl.value.trim(),
           });
@@ -855,6 +908,34 @@ function showSettings() {
     ],
   });
   setTimeout(() => key.focus(), 50);
+}
+
+function offerUpdate(update, attempts = 0) {
+  if ($("#modal-root .modal")) {
+    if (attempts < 120) setTimeout(() => offerUpdate(update, attempts + 1), 500);
+    else toast(`새 버전 ${update.version}을 설정에서 확인할 수 있습니다.`);
+    return;
+  }
+  const body = h("div", {},
+    h("p", {}, `새 버전 ${update.version}을 사용할 수 있습니다. 현재 버전은 ${S.version}입니다.`),
+    update.notes ? h("pre", { class: "update-notes" }, update.notes) : null,
+    h("small", {}, "공개 CDN에서 설치 파일을 내려받습니다."));
+  modal({
+    title: "업데이트",
+    body,
+    buttons: [
+      { label: "나중에", value: null },
+      { label: "다운로드 및 업데이트", class: "primary", action: async (close) => {
+        close();
+        try {
+          const result = await api().download_update();
+          toast(result.ok ? result.message : result.error);
+        } catch (error) {
+          toast(`업데이트 설치 파일을 열지 못했습니다: ${error.message}`);
+        }
+      } },
+    ],
+  });
 }
 
 function showMemory() {
@@ -1070,14 +1151,18 @@ const GUIDE = [
 **설정 → API 방식**에서 고릅니다.
 
 - **기본 (a1/gpt)**: 키만 있으면 바로 쓰며, 모델은 서버가 정합니다.
-- **모델 선택 (Responses API)**: GenAI 콘솔의 \`.../a번호/openai/responses\` 주소를 넣고 모델을 고릅니다. GPT-5.1을 권장하며, 에이전트처럼 요청이 많을 때는 GPT-5 mini가 저렴합니다. 이미지 첨부는 이 방식에서만 모델이 봅니다.
+- **모델 선택 (Responses API)**: GenAI 콘솔의 \`.../a번호/openai/responses\` 주소를 넣고 GPT-5 계열 모델을 고릅니다.
+
+- **OpenAI 호환 API**: 콘솔의 Chat Completions 주소를 넣고 GPT·Claude·Gemini 모델을 선택합니다.
+
+- Responses 또는 OpenAI 호환 API에서는 화면 위쪽 메뉴에서 대화별 모델을 지정합니다.
 
 **답변을 받는 대로 표시(스트리밍)**를 켜면 일반 대화의 답변이 글자가 오는 대로 나옵니다. 표시가 이상하면 끄세요. 설정 창 아래쪽에서 이 앱이 보낸 요청의 **모델 API 사용량**을 볼 수 있습니다.`],
   ["파일 첨부", `
 입력창의 **+** 버튼, 파일 끌어다 놓기, 이미지 붙여 넣기(Ctrl+V, 맥은 ⌘+V)로 첨부합니다. 파일은 하나에 20MB, 한 번에 10개까지입니다.
 
 - PDF·Word·PowerPoint·Excel·한글 문서와 텍스트 파일은 내용을 읽어 질문과 함께 보냅니다.
-- 이미지는 '모델 선택(Responses API)' 방식에서만 모델에게 전달됩니다.`],
+- 이미지는 Responses 또는 OpenAI 호환 API 방식에서 모델에게 전달됩니다. 기본 a1 방식은 이미지를 전달하지 않습니다.`],
   ["에이전트 모드", `
 작업 폴더를 고르고 에이전트를 켜면 AI가 목표를 이룰 때까지 단계를 반복합니다: 폴더 보기·파일 읽기·검색, 파일 쓰기·수정, 명령 실행, 스킬 불러오기, MCP 도구 실행.
 
@@ -1160,7 +1245,7 @@ function showHelp() {
     h("h3", { style: "margin:18px 0 6px;font-size:15px" }, "파일 첨부"),
     h("p", { style: "margin:0;color:var(--text-2)" },
       "입력창의 클립 버튼을 누르거나 파일을 끌어다 놓거나 이미지를 붙여 넣으면 첨부됩니다. ",
-      "문서(PDF·Word·PowerPoint·Excel·한글)와 텍스트 파일은 내용을 읽어 함께 보내고, 이미지는 '모델 선택(Responses API)' 방식에서 모델이 직접 봅니다."),
+      "문서(PDF·Word·PowerPoint·Excel·한글)와 텍스트 파일은 내용을 읽어 함께 보내고, 이미지는 Responses 또는 OpenAI 호환 API에서 모델이 직접 봅니다."),
     h("h3", { style: "margin:18px 0 6px;font-size:15px" }, "내 정보(USER.md)와 메모리(memory.md)"),
     h("p", { style: "margin:0;color:var(--text-2)" },
       "두 파일은 Markdown이며 모든 대화에 함께 전달됩니다. 왼쪽 아래 '내 정보'와 '메모리'에서 직접 고칠 수 있습니다."),
@@ -1187,6 +1272,7 @@ function applyState(state) {
   S.memory = state.memory || [];
   if (state.attach_limits) S.attachLimits = state.attach_limits;
   $("#agent-toggle").checked = !!state.config.agent_mode;
+  renderThreadModel();
   renderSidebar();
   renderWorkspaceChip();
 }
@@ -1276,6 +1362,18 @@ function bindUI() {
   $("#btn-memory").addEventListener("click", async () => { S.memory = await api().list_memory(); showMemory(); });
   $("#btn-profile").addEventListener("click", () => showNoteEditor("profile"));
   $("#btn-settings").addEventListener("click", showSettings);
+  $("#thread-model").addEventListener("change", async (event) => {
+    if (!S.thread) return;
+    const thread = await api().set_thread_model(S.thread.id, event.target.value);
+    if (thread.ok === false) {
+      toast(thread.error);
+      renderThreadModel();
+      return;
+    }
+    S.thread = thread;
+    S.threads = await api().list_threads();
+    renderSidebar();
+  });
   $("#agent-toggle").addEventListener("change", (e) => {
     S.config.agent_mode = e.target.checked;
     api().set_agent_mode(e.target.checked);
@@ -1296,6 +1394,10 @@ async function init() {
   else await newThread();
   updateSend();
   if (!state.config.key_source) showSettings();
+  api().check_for_updates().then((result) => {
+    if (result.available) offerUpdate(result);
+    else if (result.error) toast(result.error);
+  }).catch((error) => toast(`업데이트 확인에 실패했습니다: ${error.message}`));
 }
 
 if (window.pywebview && window.pywebview.api) init();

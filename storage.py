@@ -77,8 +77,9 @@ def new_thread():
     return thread
 
 
-def save_thread(thread):
-    thread["updated"] = time.time()
+def save_thread(thread, update_timestamp=True):
+    if update_timestamp:
+        thread["updated"] = time.time()
     _write_json(THREADS_DIR / f"{thread['id']}.json", thread)
 
 
