@@ -18,7 +18,6 @@ import api
 import attachments
 import mcp_client
 import storage
-import updates
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
 from api import DEFAULT_MODEL, MODELS, RESPONSES_MODELS, ApiError, ApiSettings
 from version import APP_VERSION
@@ -65,7 +64,7 @@ class Bridge:
     def __init__(self):
         storage.ensure_dirs()
         self._config = storage.load_config()
-        if "github_update_token" in self._config:
+        if "github_update_token" in self._config:  # 1.8.0의 업데이트 확인용 GitHub 토큰은 더 쓰지 않는다
             self._config.pop("github_update_token", None)
             storage.save_config(self._config)
         self._lock = threading.RLock()
@@ -298,41 +297,6 @@ class Bridge:
                     and not parsed.username and not parsed.password and parsed.port != 0)
         except ValueError:
             return False
-
-    def check_for_updates(self):
-        try:
-            return updates.check_update(APP_VERSION)
-        except updates.UpdateError as e:
-            return {"available": False, "error": str(e)}
-
-    def download_update(self):
-        try:
-            path = updates.download_update(APP_VERSION, destination=storage.APP_DIR / "updates" /
-                                           updates.ASSETS.get(updates.current_platform(), ""))
-        except updates.UpdateError as e:
-            return {"ok": False, "error": str(e)}
-        platform = updates.current_platform()
-        try:
-            if platform == "windows":
-                install_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
-                                           "Programs", "PostechChat")
-                try:
-                    import winreg
-                    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                                         r"Software\Microsoft\Windows\CurrentVersion\Uninstall\PostechChat")
-                    with key:
-                        install_dir, _ = winreg.QueryValueEx(key, "InstallLocation")
-                except (ImportError, OSError):
-                    pass
-                subprocess.Popen([str(path), f"--dir={install_dir}"], cwd=str(path.parent))
-                message = "설치 프로그램을 열었습니다. 앱을 닫은 뒤 설치 프로그램에서 설치를 눌러 업데이트하세요."
-            else:
-                open_path(path)
-                message = ("Android 설치 화면에서 업데이트를 승인하세요." if platform == "android"
-                           else "디스크 이미지를 열었습니다. 앱을 Applications 폴더에 복사해 업데이트하세요.")
-        except OSError as e:
-            return {"ok": False, "error": f"업데이트 설치 파일을 열지 못했습니다: {e}"}
-        return {"ok": True, "message": message}
 
     def set_agent_mode(self, enabled):
         with self._lock:

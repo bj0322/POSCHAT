@@ -1,8 +1,6 @@
 # POSTECH GenAI Chat
 
-버전 1.8.2 — OpenAI 호환 API의 모델 목록을 서버에서 불러오기, 기본 주소(Base URL)만 넣어도 동작
-
-1.8.1 — 공개 Cloudflare R2 CDN 업데이트, 필수 API 주소 검증, 대화별 모델 선택 개선
+버전 1.8.2 — OpenAI 호환 API의 모델 목록을 서버에서 불러오기, 기본 주소(Base URL)만 넣어도 동작, 필수 API 주소 검증, 대화별 모델 선택. 앱 안의 자동 업데이트(CDN)는 빼고 새 버전은 Releases에서 받습니다
 
 1.7.0 — 다른 AI 코딩 에이전트(Claude Code·Codex 등)와 기억 이어 쓰기(ai-memory 연동: 인계 받기·남기기, 기억 범위 자동 지정), 설정 창의 사용법 가이드
 
@@ -22,9 +20,9 @@ POSTECH GenAI API를 쓰는 Windows·macOS 데스크톱·안드로이드 챗봇�
 
 ## 설치
 
-설치 파일은 [공개 업데이트 CDN](https://pub-a728df363f0f4ef5a6ee3fae8245231f.r2.dev/releases/1.8.1/PostechChat-Setup.exe)에서 받습니다. 저장소 자체에는 exe를 넣지 않습니다. 설치 파일 하나에 Python, 화면 라이브러리(marked·DOMPurify·KaTeX), 문서 라이브러리, 내장 MCP 서버가 모두 들어 있으므로 npm·curl·Python을 따로 설치할 필요가 없습니다. 직접 빌드하려면 아래 [개발](#개발)을 보세요.
+설치 파일(`PostechChat-Setup.exe`)은 저장소의 [Releases](https://github.com/bj0322/POSCHAT/releases)에서 받습니다. 저장소 자체에는 exe를 넣지 않습니다. 설치 파일 하나에 Python, 화면 라이브러리(marked·DOMPurify·KaTeX), 문서 라이브러리, 내장 MCP 서버가 모두 들어 있으므로 npm·curl·Python을 따로 설치할 필요가 없습니다. 직접 빌드하려면 아래 [개발](#개발)을 보세요.
 
-1. CDN에서 받은 `PostechChat-Setup.exe`(또는 직접 빌드한 `release\PostechChat-Setup.exe`)를 실행합니다.
+1. Releases에서 받은 `PostechChat-Setup.exe`(또는 직접 빌드한 `release\PostechChat-Setup.exe`)를 실행합니다.
 2. 설치 프로그램에는 코드 서명이 없습니다. Windows 또는 보안 제품이 실행을 차단하면 경고 내용과 파일 출처를 확인하고, 필요하면 소스로 실행하세요. 보호 기능을 끄거나 예외를 추가하는 것을 설치 절차로 요구하지 않습니다.
 3. **설치**를 누릅니다. 관리자 권한은 필요 없습니다.
    - 설치 위치: `%LOCALAPPDATA%\Programs\PostechChat`
@@ -35,7 +33,7 @@ POSTECH GenAI API를 쓰는 Windows·macOS 데스크톱·안드로이드 챗봇�
 
 ### macOS
 
-[공개 업데이트 CDN](https://pub-a728df363f0f4ef5a6ee3fae8245231f.r2.dev/releases/1.8.1/PostechChat-mac.dmg)에서 `PostechChat-mac.dmg`를 받아 엽니다. Apple Silicon(M1 이후) 맥용이며 Intel 맥은 지원하지 않습니다.
+Releases의 `PostechChat-mac.dmg`를 받아 엽니다. Apple Silicon(M1 이후) 맥용이며 Intel 맥은 지원하지 않습니다.
 
 1. 열린 창에서 **POSTECH GenAI Chat**을 **Applications(응용 프로그램)** 폴더로 끌어다 놓습니다.
 2. 앱에는 Apple 개발자 서명·공증이 없어서, 처음 실행하면 "확인되지 않은 개발자" 또는 "열 수 없음" 경고가 뜹니다. 응용 프로그램 폴더에서 앱을 **Control 키를 누른 채 클릭 → 열기**를 누르세요. macOS 15 이후에서는 **시스템 설정 → 개인정보 보호 및 보안**의 아래쪽에서 **그래도 열기**를 누릅니다. 한 번 허용하면 이후에는 그대로 실행됩니다.
@@ -53,7 +51,7 @@ POSTECH GenAI API를 쓰는 Windows·macOS 데스크톱·안드로이드 챗봇�
 
 ### 안드로이드
 
-[공개 업데이트 CDN](https://pub-a728df363f0f4ef5a6ee3fae8245231f.r2.dev/releases/1.8.1/PostechChat.apk)에서 `PostechChat.apk`를 휴대폰에 받아 설치합니다(Android 7.0 이상, 64비트 ARM). 스토어 앱이 아니므로 처음 설치할 때 "출처를 알 수 없는 앱 설치"를 허용해야 합니다. 새 버전도 APK를 그대로 설치하면 대화·설정을 유지한 채 업데이트됩니다.
+Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 7.0 이상, 64비트 ARM). 스토어 앱이 아니므로 처음 설치할 때 "출처를 알 수 없는 앱 설치"를 허용해야 합니다. 새 버전도 APK를 그대로 설치하면 대화·설정을 유지한 채 업데이트됩니다.
 
 데스크톱과 같은 화면과 Python 코드(에이전트, 문서 읽기, 내장 MCP 서버, 스트리밍, 수식)를 앱 안에서 그대로 실행합니다. 다른 점은 다음과 같습니다.
 
@@ -275,7 +273,6 @@ POSTECH GenAI 서버의 모델은 자체 시스템 프롬프트 때문에 "사�
 | `office_mcp.py` | 내장 MCP 서버(word·powerpoint·excel)와 모든 내장 서버의 공통 실행 루프. 앱 exe를 `--mcp-server <이름>`으로 실행하면 이 서버가 됩니다. |
 | `paper_mcp.py` · `notion_mcp.py` · `firecrawl_mcp.py` | 내장 MCP 서버 paper(arXiv·Semantic Scholar), notion(Notion API), firecrawl(Firecrawl API) |
 | `api.py` | POSTECH GenAI API 호출(a1 / OpenAI Responses / OpenAI 호환 Chat Completions), 스트리밍 해석, 이미지 입력, 사용량 기록 |
-| `updates.py` | 공개 Cloudflare R2 CDN 업데이트 정보 확인, SHA-256 검증 및 설치 파일 다운로드 |
 | `attachments.py` | 채팅창 첨부 파일: 조각 업로드, 종류 확인, 문서·텍스트 내용 뽑기, 이미지 |
 | `storage.py` | 대화·설정 저장(`%APPDATA%\PostechChat`), memory.md·USER.md, 첨부 파일 폴더, 모델 API 사용량, 다른 대화 검색 |
 | `web/` | 화면(HTML/CSS/JS, marked·DOMPurify·KaTeX 포함) |
@@ -320,10 +317,10 @@ py -3 -m venv .venv
 
 안드로이드 APK는 `android/`에서 `./gradlew assembleRelease`(JDK 17, Android SDK, Python 3.11 필요)로 빌드합니다. 결과는 `android/app/build/outputs/apk/release/app-release.apk`입니다. 모든 빌드는 저장소의 공용 키(`android/app/poschat-shared.keystore`)로 서명해 덮어 설치가 되게 합니다. 공개 스토어에 올릴 때는 따로 보관한 키로 바꾸세요.
 
-설치 파일은 비공개 GitHub Release와 공개 Cloudflare R2 CDN에 배포합니다. `.github/workflows/build.yml`이 Windows·macOS·Android 빌드와 플랫폼별 검증을 자동으로 수행합니다.
+설치 파일은 GitHub Releases에 올립니다. `.github/workflows/build.yml`이 Windows·macOS·Android 빌드와 플랫폼별 검증을 자동으로 수행합니다.
 
 - PR을 올리거나 Actions에서 **Build installer**를 수동 실행하면, 빌드한 `PostechChat-Setup.exe`를 실행 결과의 Artifacts에서 받을 수 있습니다.
-- 버전 태그를 push하면 같은 빌드가 비공개 GitHub Release에 첨부되고, 공개 CDN에도 게시됩니다.
+- 버전 태그를 push하면 같은 빌드가 그 태그의 Release에 첨부됩니다.
 
   ```powershell
   git tag v1.2.0
@@ -331,16 +328,10 @@ py -3 -m venv .venv
   ```
 
   태그를 직접 push하지 않고 Actions에서 **Build installer → Run workflow**의 `release` 칸에 `v1.2.0`을 넣어 실행해도 됩니다. 이 경우 실행한 커밋에 태그와 Release가 만들어집니다.
-- 앱 업데이트 파일은 공개 CDN에서 내려받으므로 최종 사용자에게 GitHub 계정이나 토큰이 필요하지 않습니다. GitHub Release는 저장소 권한이 있는 사용자만 볼 수 있습니다.
-- CDN 자동 배포를 위해 저장소의 **Settings → Secrets and variables → Actions**에 `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_R2_BUCKET`, `CLOUDFLARE_R2_ACCESS_KEY_ID`, `CLOUDFLARE_R2_SECRET_ACCESS_KEY`를 등록해야 합니다. 자격 증명은 업로드 전용 R2 토큰으로 만들고 채팅이나 코드에 넣지 마세요.
+- 사용자에게는 항상 최신 버전을 가리키는 링크 `https://github.com/bj0322/POSCHAT/releases/latest/download/PostechChat-Setup.exe`를 안내하면 됩니다. 저장소가 비공개이면 저장소 권한이 있는 사용자만 받을 수 있습니다.
+- 앱 안에서 새 버전을 확인하거나 내려받는 기능은 없습니다. 새 버전은 Releases에서 받아 설치하면 대화·설정을 유지한 채 업데이트됩니다.
 
 - 설치 파일에는 코드 서명이 없어서 처음 실행할 때 Windows SmartScreen 경고가 뜰 수 있습니다. 경고를 없애려면 코드 서명 인증서로 서명해야 합니다.
-
-### 자동 업데이트
-
-앱은 실행할 때마다 [`latest.json`](https://pub-a728df363f0f4ef5a6ee3fae8245231f.r2.dev/latest.json)을 공개 CDN에서 확인하고, 새 버전이 있으면 먼저 사용자에게 묻습니다. 동의 후 Windows 설치 프로그램·macOS DMG·Android APK를 같은 CDN에서 내려받아 크기와 SHA-256 체크섬을 확인합니다. 앱과 GitHub 저장소는 비공개로 유지할 수 있고, 사용자 PC에 GitHub 토큰을 저장할 필요가 없습니다. 배포 자산은 공개 다운로드가 가능하므로 누구나 해당 설치 파일을 받을 수 있습니다. 기존 설정에 저장된 GitHub 업데이트 토큰은 새 버전을 처음 실행할 때 자동으로 제거됩니다.
-
-동의하면 Windows는 설치 프로그램을 열고(앱을 닫은 뒤 설치 프로그램에서 설치를 눌러야 함), macOS는 DMG를 열어 Applications 폴더로 복사하도록 안내합니다. Android는 시스템 패키지 설치 화면에서 최종 승인을 받습니다.
 
 ## v1.1.0 아키텍처
 

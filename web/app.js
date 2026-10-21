@@ -882,15 +882,6 @@ function showSettings() {
       c.firecrawl_source === "settings"
         ? h("label", { style: "display:flex;align-items:center;font-size:13px;margin-top:4px;cursor:pointer" }, clearFirecrawl, "저장된 키 지우기")
         : null),
-    h("div", { class: "field" }, h("label", {}, "자동 업데이트"),
-      h("small", {}, "공개 CDN에서 업데이트 정보를 확인합니다. GitHub 토큰 없이 새 버전을 확인하고 내려받습니다."),
-      h("button", { class: "btn", style: "margin-top:8px", onclick: async () => {
-        const result = await api().check_for_updates();
-        if (result.available) {
-          settingsModal.close();
-          offerUpdate(result);
-        } else toast(result.error || "최신 버전을 사용 중입니다.");
-      } }, "업데이트 확인")),
     h("div", { class: "field" }, h("label", {}, "에이전트 권한"), perm,
       h("small", {}, "에이전트가 파일을 고치거나 명령을 실행하기 전에 승인을 받을지 정합니다.")),
     h("div", { class: "row" },
@@ -905,7 +896,7 @@ function showSettings() {
         h("button", { class: "btn", onclick: () => api().open_folder("data") }, "열기"))),
   );
   body.append(h("p", { style: "margin:14px 0 0;color:var(--text-3);font-size:12px" }, `POSTECH GenAI Chat 버전 ${S.version}`));
-  const settingsModal = modal({
+  modal({
     title: "설정",
     body,
     buttons: [
@@ -937,34 +928,6 @@ function showSettings() {
     ],
   });
   setTimeout(() => key.focus(), 50);
-}
-
-function offerUpdate(update, attempts = 0) {
-  if ($("#modal-root .modal")) {
-    if (attempts < 120) setTimeout(() => offerUpdate(update, attempts + 1), 500);
-    else toast(`새 버전 ${update.version}을 설정에서 확인할 수 있습니다.`);
-    return;
-  }
-  const body = h("div", {},
-    h("p", {}, `새 버전 ${update.version}을 사용할 수 있습니다. 현재 버전은 ${S.version}입니다.`),
-    update.notes ? h("pre", { class: "update-notes" }, update.notes) : null,
-    h("small", {}, "공개 CDN에서 설치 파일을 내려받습니다."));
-  modal({
-    title: "업데이트",
-    body,
-    buttons: [
-      { label: "나중에", value: null },
-      { label: "다운로드 및 업데이트", class: "primary", action: async (close) => {
-        close();
-        try {
-          const result = await api().download_update();
-          toast(result.ok ? result.message : result.error);
-        } catch (error) {
-          toast(`업데이트 설치 파일을 열지 못했습니다: ${error.message}`);
-        }
-      } },
-    ],
-  });
 }
 
 function showMemory() {
@@ -1506,10 +1469,6 @@ async function init() {
   else await newThread();
   updateSend();
   if (!state.config.key_source) showSettings();
-  api().check_for_updates().then((result) => {
-    if (result.available) offerUpdate(result);
-    else if (result.error) toast(result.error);
-  }).catch((error) => toast(`업데이트 확인에 실패했습니다: ${error.message}`));
 }
 
 if (window.pywebview && window.pywebview.api) init();
