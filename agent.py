@@ -355,7 +355,7 @@ class Agent:
         images = [a for a in current if a["kind"] == "image"]
         if not images:
             return
-        if self.api_settings.mode != "responses":
+        if self.api_settings.mode not in ("responses", "chat_completions"):
             names = ", ".join(f"'{a['name']}'" for a in images)
             self.attachment_blocks.append(
                 f"[첨부 이미지]\n{names} — 지금 쓰는 API 방식(a1)으로는 이미지를 볼 수 없습니다. 이미지 내용이 필요한 요청이면 "

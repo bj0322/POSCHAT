@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- 작업 폴더(휴대폰 저장소의 일반 폴더)의 파일을 에이전트가 읽고 쓰려면 필요하다. 폴더를 고를 때 요청한다. -->
     <uses-permission
         android:name="android.permission.MANAGE_EXTERNAL_STORAGE"

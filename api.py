@@ -63,7 +63,13 @@ MODELS = [
     ("gpt-5-gs-2025-08-07", "GPT-5"),
     ("gpt-5-mini-gs-2025-08-07", "GPT-5 mini — 빠르고 저렴"),
     ("gpt-4.1-mini-gs-2025-04-14", "GPT-4.1 mini — 추론 없음, 저렴"),
+    ("gpt-6.1-sol", "GPT-6.1 Sol"),
+    ("gpt-6-astra", "GPT-6 Astra"),
+    ("claude-opus-5.5", "Claude Opus 5.5"),
+    ("claude-sonnet-5.5", "Claude Sonnet 5.5"),
+    ("gemini-3.8-flash", "Gemini 3.8 Flash"),
 ]
+RESPONSES_MODELS = MODELS[:5]
 DEFAULT_MODEL = MODELS[0][0]
 REASONING_EFFORT = "low"  # 에이전트는 단계마다 호출하므로 추론 토큰을 아낀다
 
@@ -79,8 +85,9 @@ on_usage = None
 
 @dataclass
 class ApiSettings:
-    mode: str = "a1"               # "a1" | "responses"
+    mode: str = "a1"               # "a1" | "responses" | "chat_completions"
     responses_url: str = ""
+    chat_completions_url: str = ""
     model: str = DEFAULT_MODEL
     stream: bool = True
 
@@ -88,8 +95,9 @@ class ApiSettings:
     def from_config(cls, config):
         mode = config.get("api_mode", "a1")
         return cls(
-            mode=mode if mode in ("a1", "responses") else "a1",
+            mode=mode if mode in ("a1", "responses", "chat_completions") else "a1",
             responses_url=str(config.get("responses_url", "") or "").strip(),
+            chat_completions_url=str(config.get("chat_completions_url", "") or "").strip(),
             model=str(config.get("model") or DEFAULT_MODEL),
             stream=bool(config.get("stream", True)),
         )
@@ -98,13 +106,16 @@ class ApiSettings:
 def ask(api_key, message, timeout=180, settings=None, on_delta=None, cancelled=None, images=None):
     """모델 답변 전체를 돌려준다. on_delta가 있고 스트리밍이 켜져 있으면 받는 동안 중간 텍스트를 넘긴다.
 
-    images는 [(MIME 형식, base64)]이며 Responses API에서만 보낸다(a1은 글자만 받는다).
+    images는 [(MIME 형식, base64)]이며 Responses/호환 API에서 보낸다(a1은 글자만 받는다).
     """
     settings = settings or ApiSettings()
     stream = bool(on_delta) and settings.stream
     if settings.mode == "responses":
         text, usage = _ask_responses(api_key, message, timeout, settings, on_delta if stream else None, cancelled,
                                      images)
+    elif settings.mode == "chat_completions":
+        text, usage = _ask_chat_completions(api_key, message, timeout, settings,
+                                            on_delta if stream else None, cancelled, images)
     else:
         text, usage = None, None
         if stream:
@@ -116,10 +127,41 @@ def ask(api_key, message, timeout=180, settings=None, on_delta=None, cancelled=N
             text, usage = _ask_a1(api_key, message, timeout, None, cancelled)
     if on_usage:
         try:
-            on_usage(settings.mode, settings.model if settings.mode == "responses" else "a1", usage)
+            on_usage(settings.mode, settings.model if settings.mode != "a1" else "a1", usage)
         except Exception:
             pass  # 사용량 기록 실패로 답변을 잃지 않는다
     return text
+
+
+def _ask_chat_completions(api_key, message, timeout, settings, on_delta, cancelled, images=None):
+    if not settings.chat_completions_url:
+        raise ApiError("OpenAI 호환 API를 쓰려면 설정에서 Chat Completions 주소를 입력하세요.")
+    content = message
+    if images:
+        content = [{"type": "text", "text": message}] + [
+            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{data}"}}
+            for mime, data in images
+        ]
+    payload = {
+        "model": settings.model,
+        "messages": [{"role": "user", "content": content}],
+        "stream": bool(on_delta),
+    }
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    response = _post(settings.chat_completions_url, headers, payload, timeout, stream=bool(on_delta))
+    if on_delta and not _is_json(response):
+        return _read_stream(response, on_delta, cancelled)
+    try:
+        data = response.json()
+        choice = data["choices"][0]
+        text = choice["message"]["content"]
+        if isinstance(text, list):
+            text = "".join(part.get("text", "") for part in text if isinstance(part, dict))
+        if not isinstance(text, str):
+            raise TypeError("응답 내용이 문자열이 아닙니다.")
+        return text, _usage(data)
+    except (ValueError, KeyError, IndexError, TypeError) as e:
+        raise ApiError(f"응답 형식 오류: {response.text[:300]}") from e
 
 
 def _usage(data):

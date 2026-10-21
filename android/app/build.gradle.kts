@@ -18,7 +18,7 @@ val syncSharedPython by tasks.registering(Sync::class) {
         include(
             "agent.py", "ai_memory.py", "api.py", "attachments.py", "certs.py", "documents.py", "main.py",
             "mcp_client.py", "office_mcp.py", "paper_mcp.py", "notion_mcp.py", "firecrawl_mcp.py",
-            "storage.py", "version.py",
+            "storage.py", "updates.py", "version.py",
         )
     }
     into(sharedPythonDir)

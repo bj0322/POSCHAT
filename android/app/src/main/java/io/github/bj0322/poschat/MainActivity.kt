@@ -52,10 +52,19 @@ class MainActivity : ComponentActivity() {
 
     // 화면의 <input type="file">(채팅창 첨부 버튼)
     private lateinit var pickFiles: ActivityResultLauncher<Intent>
+    private lateinit var installPermission: ActivityResultLauncher<Intent>
+    private var pendingApkUri: Uri? = null
     private var filesCallback: ValueCallback<Array<Uri>>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            val uri = pendingApkUri
+            pendingApkUri = null
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()) {
+                uri?.let { launchApkInstaller(it) }
+            } else toast("설치 권한이 허용되지 않았습니다. 설정에서 허용한 뒤 다시 업데이트를 선택하세요.")
+        }
         pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             pickedFolder = uri?.let { treeUriToPath(it) }
             if (uri != null && pickedFolder == null) {
@@ -225,9 +234,31 @@ class MainActivity : ComponentActivity() {
                 when {
                     file.isDirectory -> toast("폴더 위치: $path")
                     !file.exists() -> toast("파일이 없습니다: $path")
+                    file.extension.equals("apk", ignoreCase = true) -> installApk(file)
                     else -> openFile(file)
                 }
             }
+        }
+    }
+
+    private fun installApk(file: File) {
+        val uri = FileProvider.getUriForFile(this, "$packageName.files", file)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+            pendingApkUri = uri
+            installPermission.launch(
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")),
+            )
+        } else launchApkInstaller(uri)
+    }
+
+    private fun launchApkInstaller(uri: Uri) {
+        try {
+            startActivity(
+                Intent(Intent.ACTION_INSTALL_PACKAGE).setDataAndType(uri, "application/vnd.android.package-archive")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
+            )
+        } catch (e: ActivityNotFoundException) {
+            toast("이 기기에서 Android 설치 프로그램을 열 수 없습니다.")
         }
     }
 
