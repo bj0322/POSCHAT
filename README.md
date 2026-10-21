@@ -1,6 +1,8 @@
 # POSTECH GenAI Chat
 
-버전 1.8.1 — 공개 Cloudflare R2 CDN 업데이트, 필수 API 주소 검증, 대화별 모델 선택 개선
+버전 1.8.2 — OpenAI 호환 API의 모델 목록을 서버에서 불러오기, 기본 주소(Base URL)만 넣어도 동작
+
+1.8.1 — 공개 Cloudflare R2 CDN 업데이트, 필수 API 주소 검증, 대화별 모델 선택 개선
 
 1.7.0 — 다른 AI 코딩 에이전트(Claude Code·Codex 등)와 기억 이어 쓰기(ai-memory 연동: 인계 받기·남기기, 기억 범위 자동 지정), 설정 창의 사용법 가이드
 

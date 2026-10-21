@@ -71,6 +71,43 @@ class SettingsTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("지원하지 않는", result["error"])
 
+    @patch.object(app_main.storage, "save_config")
+    def test_base_url_is_saved_as_full_endpoint(self, _save_config):
+        bridge = self.bridge()
+        bridge.get_state = lambda: {"ok": True}
+        result = bridge.save_settings({"api_mode": "chat_completions", "chat_completions_url": "https://api.example.edu/v1/"})
+        self.assertTrue(result["ok"])
+        self.assertEqual(bridge._config["chat_completions_url"], "https://api.example.edu/v1/chat/completions")
+
+    @patch.object(app_main.storage, "save_config")
+    @patch.object(app_main.api, "list_models", return_value=["gpt-6.1-sol", "new-model-x"])
+    def test_server_models_replace_the_builtin_list(self, list_models, _save_config):
+        bridge = self.bridge({"api_mode": "chat_completions", "api_key": "saved-key"})
+        result = bridge.refresh_models({"chat_completions_url": "https://api.example.edu/v1"})
+
+        self.assertTrue(result["ok"])
+        list_models.assert_called_once_with("saved-key", "https://api.example.edu/v1/chat/completions")
+        self.assertEqual([m["id"] for m in result["models"]], ["gpt-6.1-sol", "new-model-x"])
+        self.assertEqual(bridge._model_ids("chat_completions"), {"gpt-6.1-sol", "new-model-x"})
+        self.assertEqual(bridge._default_model(), "gpt-6.1-sol")
+        self.assertEqual({m for m, _ in bridge._models("responses")}, {m for m, _ in app_main.RESPONSES_MODELS})
+
+        bridge.get_state = lambda: {"ok": True}
+        bridge.save_settings({"chat_completions_url": "https://other.example.edu/v1"})
+        self.assertNotIn("server_models", bridge._config)
+
+    def test_refresh_models_needs_key_and_https_url(self):
+        with patch.dict(app_main.os.environ, {}, clear=True):
+            self.assertFalse(self.bridge().refresh_models({"chat_completions_url": "https://api.example.edu/v1"})["ok"])
+        bad = self.bridge({"api_key": "k"}).refresh_models({"chat_completions_url": "http://api.example.edu/v1"})
+        self.assertFalse(bad["ok"])
+
+    @patch.object(app_main.api, "list_models", side_effect=app_main.ApiError("API 오류 401"))
+    def test_refresh_models_reports_server_errors(self, _list_models):
+        result = self.bridge({"api_key": "k"}).refresh_models({"chat_completions_url": "https://api.example.edu/v1"})
+        self.assertFalse(result["ok"])
+        self.assertIn("401", result["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

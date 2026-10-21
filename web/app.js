@@ -260,7 +260,7 @@ function renderThreadModel() {
   const mode = S.config.api_mode || "a1";
   picker.hidden = !S.thread || mode === "a1";
   if (picker.hidden) return;
-  const models = mode === "responses" ? (S.models || []).slice(0, 5) : (S.models || []);
+  const models = mode === "responses" ? (S.responsesModels || []) : (S.models || []);
   select.replaceChildren(...models.map((m) => h("option", { value: m.id }, m.label)));
   const selected = S.thread.model || S.config.model || (models[0] || {}).id;
   select.value = models.some((m) => m.id === selected) ? selected : ((models[0] || {}).id || "");
@@ -800,14 +800,42 @@ function showSettings() {
   );
   mode.value = c.api_mode || "a1";
   const url = h("input", { type: "url", placeholder: "https://.../agent/api/a번호/openai/responses", value: c.responses_url || "" });
-  const compatibleUrl = h("input", { type: "url", placeholder: "https://.../v1/chat/completions",
+  const compatibleUrl = h("input", { type: "url", placeholder: "https://.../v1 또는 https://.../v1/chat/completions",
     value: c.chat_completions_url || "" });
-  const responsesModel = h("select", {}, (S.models || []).slice(0, 5).map((m) => h("option", { value: m.id }, m.label)));
-  const compatibleModel = h("select", {}, (S.models || []).map((m) => h("option", { value: m.id }, m.label)));
+  const responsesModels = S.responsesModels || [];
+  const responsesModel = h("select", {}, responsesModels.map((m) => h("option", { value: m.id }, m.label)));
+  const compatibleModel = h("select", {});
+  const fillCompatible = (models, selected) => {
+    compatibleModel.replaceChildren(...models.map((m) => h("option", { value: m.id }, m.label)));
+    compatibleModel.value = models.some((m) => m.id === selected) ? selected : ((models[0] || {}).id || "");
+  };
   const defaultModel = c.model || ((S.models || [])[0] || {}).id || "";
-  responsesModel.value = (S.models || []).slice(0, 5).some((m) => m.id === defaultModel)
-    ? defaultModel : ((S.models || [])[0] || {}).id || "";
-  compatibleModel.value = defaultModel;
+  responsesModel.value = responsesModels.some((m) => m.id === defaultModel)
+    ? defaultModel : ((responsesModels[0] || {}).id || "");
+  fillCompatible(S.models || [], defaultModel);
+  const modelsHint = h("small", {}, S.modelsSource === "server"
+    ? "서버에서 받은 모델 목록입니다."
+    : "기본 목록입니다. '모델 목록 불러오기'를 누르면 서버가 실제로 제공하는 모델로 바꿉니다.");
+  const loadModels = h("button", { class: "btn", type: "button", style: "margin-top:8px", onclick: async () => {
+    if (!compatibleUrl.value.trim()) {
+      compatibleUrl.focus();
+      return toast("Chat Completions 주소를 입력하세요.");
+    }
+    loadModels.disabled = true;
+    try {
+      const result = await api().refresh_models({ api_key: key.value.trim(), chat_completions_url: compatibleUrl.value.trim() });
+      if (result.ok === false) return toast(result.error);
+      compatibleUrl.value = result.chat_completions_url;
+      fillCompatible(result.models, compatibleModel.value);
+      S.models = result.models;
+      S.modelsSource = "server";
+      renderThreadModel();
+      modelsHint.textContent = `서버에서 받은 모델 목록입니다 (${result.models.length}개).`;
+      toast("모델 목록을 불러왔습니다");
+    } finally {
+      loadModels.disabled = false;
+    }
+  } }, "모델 목록 불러오기");
   const stream = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
   stream.checked = c.stream !== false;
   const responsesBox = h("div", {},
@@ -818,8 +846,9 @@ function showSettings() {
   );
   const compatibleBox = h("div", {},
     h("div", { class: "field" }, h("label", {}, "OpenAI 호환 Chat Completions 주소 (필수)"), compatibleUrl,
-      h("small", {}, "새 POSTECH GenAI API 안내에서 OpenAI 호환 Chat Completions 주소를 복사하세요. API 키는 Bearer 인증으로 전달됩니다.")),
-    h("div", { class: "field" }, h("label", {}, "기본 모델"), compatibleModel,
+      h("small", {}, "POSTECH GenAI 안내의 OpenAI 호환 API 주소를 붙여 넣으세요. 기본 주소(Base URL, 예: .../v1)만 넣어도 ",
+        "/chat/completions를 자동으로 붙입니다. API 키는 Bearer 인증으로 전달됩니다.")),
+    h("div", { class: "field" }, h("label", {}, "기본 모델"), compatibleModel, modelsHint, loadModels,
       h("small", {}, "새 대화의 기본 모델입니다. 기존 대화의 모델은 대화 상단에서 개별 선택하며 각각 저장됩니다.")),
   );
   const syncMode = () => {
@@ -1139,93 +1168,174 @@ function showMcp() {
   return m;
 }
 
-/* ---------- 사용법 가이드 (설정 → 사용법 가이드) ---------- */
-const GUIDE = [
-  ["처음 시작하기", `
-1. **설정 → POSTECH GenAI API 키**에 본인의 키를 넣고 저장합니다.
-2. 입력창에 질문을 쓰고 **Enter**로 보냅니다(줄바꿈은 Shift+Enter).
-3. 파일을 다루게 하려면 왼쪽 아래 **작업 폴더**를 고르고 오른쪽 위 **에이전트** 스위치를 켭니다.
-
-새 대화는 왼쪽 위 **새 채팅**(Ctrl+Shift+O, 맥은 ⌘+Shift+O)으로 만들고, 대화 목록에 마우스를 올리면 이름 바꾸기·삭제 아이콘이 나옵니다.`],
-  ["모델과 API 방식", `
-**설정 → API 방식**에서 고릅니다.
-
-- **기본 (a1/gpt)**: 키만 있으면 바로 쓰며, 모델은 서버가 정합니다.
+/* ---------- 사용법 가이드 (설정 → 사용법 가이드) ---------- */
+
+const GUIDE = [
+
+  ["처음 시작하기", `
+
+1. **설정 → POSTECH GenAI API 키**에 본인의 키를 넣고 저장합니다.
+
+2. 입력창에 질문을 쓰고 **Enter**로 보냅니다(줄바꿈은 Shift+Enter).
+
+3. 파일을 다루게 하려면 왼쪽 아래 **작업 폴더**를 고르고 오른쪽 위 **에이전트** 스위치를 켭니다.
+
+
+
+새 대화는 왼쪽 위 **새 채팅**(Ctrl+Shift+O, 맥은 ⌘+Shift+O)으로 만들고, 대화 목록에 마우스를 올리면 이름 바꾸기·삭제 아이콘이 나옵니다.`],
+
+  ["모델과 API 방식", `
+
+**설정 → API 방식**에서 고릅니다.
+
+
+
+- **기본 (a1/gpt)**: 키만 있으면 바로 쓰며, 모델은 서버가 정합니다.
+
 - **모델 선택 (Responses API)**: GenAI 콘솔의 \`.../a번호/openai/responses\` 주소를 넣고 GPT-5 계열 모델을 고릅니다.
 
-- **OpenAI 호환 API**: 콘솔의 Chat Completions 주소를 넣고 GPT·Claude·Gemini 모델을 선택합니다.
+- **OpenAI 호환 API**: 콘솔의 OpenAI 호환 API 주소(기본 주소 \`.../v1\`도 됨)를 넣고 **모델 목록 불러오기**를 누르면 서버가 제공하는 GPT·Claude·Gemini 모델이 목록에 나옵니다.
 
 - Responses 또는 OpenAI 호환 API에서는 화면 위쪽 메뉴에서 대화별 모델을 지정합니다.
-
-**답변을 받는 대로 표시(스트리밍)**를 켜면 일반 대화의 답변이 글자가 오는 대로 나옵니다. 표시가 이상하면 끄세요. 설정 창 아래쪽에서 이 앱이 보낸 요청의 **모델 API 사용량**을 볼 수 있습니다.`],
-  ["파일 첨부", `
-입력창의 **+** 버튼, 파일 끌어다 놓기, 이미지 붙여 넣기(Ctrl+V, 맥은 ⌘+V)로 첨부합니다. 파일은 하나에 20MB, 한 번에 10개까지입니다.
-
-- PDF·Word·PowerPoint·Excel·한글 문서와 텍스트 파일은 내용을 읽어 질문과 함께 보냅니다.
+
+
+**답변을 받는 대로 표시(스트리밍)**를 켜면 일반 대화의 답변이 글자가 오는 대로 나옵니다. 표시가 이상하면 끄세요. 설정 창 아래쪽에서 이 앱이 보낸 요청의 **모델 API 사용량**을 볼 수 있습니다.`],
+
+  ["파일 첨부", `
+
+입력창의 **+** 버튼, 파일 끌어다 놓기, 이미지 붙여 넣기(Ctrl+V, 맥은 ⌘+V)로 첨부합니다. 파일은 하나에 20MB, 한 번에 10개까지입니다.
+
+
+
+- PDF·Word·PowerPoint·Excel·한글 문서와 텍스트 파일은 내용을 읽어 질문과 함께 보냅니다.
+
 - 이미지는 Responses 또는 OpenAI 호환 API 방식에서 모델에게 전달됩니다. 기본 a1 방식은 이미지를 전달하지 않습니다.`],
-  ["에이전트 모드", `
-작업 폴더를 고르고 에이전트를 켜면 AI가 목표를 이룰 때까지 단계를 반복합니다: 폴더 보기·파일 읽기·검색, 파일 쓰기·수정, 명령 실행, 스킬 불러오기, MCP 도구 실행.
-
-- 각 단계는 대화에 한 줄로 표시되고, 누르면 파일 내용·변경 diff·명령 출력이 펼쳐집니다.
-- **파일 수정과 명령 실행은 실행 전에 승인을 받습니다.** 설정의 **에이전트 권한**에서 자동 허용으로 바꿀 수 있지만, 명령은 현재 사용자 권한으로 실행되므로 주의하세요.
-- 단계가 너무 많으면 설정의 **에이전트 최대 단계 수**에서 멈춥니다.
-- 작업 폴더가 없거나 에이전트를 끄면 일반 챗봇으로 동작합니다.`],
-  ["명령어", `
-입력창에 \`/\`를 입력하면 목록이 뜹니다.
-
-| 명령 | 하는 일 |
-|---|---|
-| \`/init\` | 작업 폴더를 분석해 INIT.md(프로젝트 지침)를 만듭니다 |
-| \`/user 요청\` | 대화 내용으로 내 정보(USER.md)를 작성·업데이트합니다 |
-| \`/remember 내용\` | 모든 대화에서 기억할 내용을 저장합니다 |
-| \`/memory\` | 기억 목록을 보고 지웁니다 |
-| \`/스킬이름 요청\` | 그 스킬의 지침대로 요청을 수행합니다 |
-| \`/help\` | 간단한 도움말 |`],
-  ["기억: 메모리·내 정보·다른 대화", `
-- **메모리(memory.md)**: "~를 기억해 줘"라고 하거나 \`/remember\`로 저장하면 모든 대화에 전달됩니다. 왼쪽 아래 **메모리**에서 보고 고칩니다.
-- **내 정보(USER.md)**: 하는 일, 관심 분야, 원하는 답변 방식 등을 적어 두면 답변이 나에게 맞춰집니다. **내 정보**에서 직접 쓰거나 \`/user\`로 AI에게 맡깁니다. 비밀번호·키 같은 비밀은 적지 마세요.
-- **다른 대화 참고**: 새 질문과 관련된 내용이 다른 대화에 있으면 자동으로 찾아 참고합니다(📎 표시). 메모리 창에서 끌 수 있습니다.`],
-  ["INIT.md와 스킬", `
-- **INIT.md**: 작업 폴더 최상위의 INIT.md는 모든 대화에 프로젝트 지침으로 들어갑니다. \`/init\`으로 만들 수 있습니다.
-- **스킬**: \`<스킬이름>/SKILL.md\` 형식의 작업 지침입니다. 에이전트가 요청에 맞는 스킬을 스스로 불러오고, \`/스킬이름\`으로 직접 실행할 수도 있습니다. 앱 내장(요약, 코드 검토, 논문 읽기), 사용자 스킬 폴더(**스킬 → 새 스킬 만들기**), 작업 폴더의 \`skills\\\` 순서로 읽고, 이름이 같으면 뒤의 것이 우선합니다.`],
-  ["MCP 도구", `
-왼쪽 아래 **MCP**에서 서버를 켜고 끕니다. 에이전트 모드에서 켜진 서버의 도구를 씁니다.
-
-- **내장 서버**(설치 필요 없음): word·powerpoint·excel(문서 만들기·고치기), paper(논문 찾기·섹션별 읽기), notion(설정에 Notion 토큰 필요), firecrawl(웹페이지 읽기·웹 검색, 설정에 Firecrawl 키 필요).
-- **추천 서버**: playwright(브라우저 자동화). PC에 Node.js가 있어야 합니다.
-- **외부 서버**: **MCP → 설정 파일 열기**로 \`mcp.json\`에 Claude Desktop과 같은 형식으로 추가합니다.
-
-바깥에 영향을 주는 도구는 명령 실행처럼 승인을 받습니다.`],
-  ["다른 AI 에이전트와 기억 이어 쓰기 (ai-memory)", `
-Claude Code·Codex·Cursor·Gemini CLI 같은 코딩 에이전트에서 하던 작업을 POSCHAT에서 이어받고, POSCHAT에서 한 작업을 그 에이전트들이 이어받게 할 수 있습니다.
-
-1. PC에 [ai-memory](https://github.com/akitaonrails/ai-memory)를 설치하고 \`ai-memory setup\`을 실행합니다. 다른 에이전트들도 이때 함께 연결됩니다.
-2. **MCP → 설정 파일 열기**로 \`mcp.json\`에 다음을 추가하고 저장합니다.
-
-\`\`\`json
-{ "mcpServers": { "ai-memory": { "command": "ai-memory", "args": ["mcp-bridge", "--no-session-id"] } } }
-\`\`\`
-
-3. 작업 폴더를 고르고 에이전트 모드로 대화합니다.
-
-그러면 앱이 자동으로 다음을 합니다.
-
-- **대화 시작**: 그 폴더에 다른 에이전트가 남긴 인계(한 일·남은 질문·다음 할 일)를 받고 최근 기억을 불러옵니다(🧠 표시). 인계는 한 번 받으면 사라집니다.
-- **작업 후**: 파일을 고치거나 명령·도구를 실행했다면, 다음 에이전트가 이어받을 인계를 남깁니다(📤 표시).
-- **검색**: "전에 이 버그 어떻게 고쳤지?"처럼 물으면 AI가 ai-memory에서 찾아봅니다.
-
-ChatGPT·claude.ai 같은 웹 채팅 서비스의 기억은 이어받을 수 없습니다.`],
-  ["데이터와 개인정보", `
-대화·설정·메모리·첨부 파일은 이 기기의 데이터 폴더(설정 창 아래쪽 **데이터 폴더 → 열기**)에만 저장됩니다. 질문할 때 대화 내용, 첨부 내용, 메모리, 내 정보, INIT.md가 POSTECH GenAI API로 전달됩니다. API 키는 설정 파일(config.json)에 저장됩니다.`],
-];
-
-function showGuide() {
-  const body = h("div", { class: "guide" },
-    GUIDE.map(([title, text], i) => h("details", { open: i === 0 },
-      h("summary", {}, title), renderMarkdown(text.trim()))));
-  modal({ title: "사용법 가이드", body, wide: true, buttons: [{ label: "닫기", class: "primary" }] });
-}
-
+  ["에이전트 모드", `
+
+작업 폴더를 고르고 에이전트를 켜면 AI가 목표를 이룰 때까지 단계를 반복합니다: 폴더 보기·파일 읽기·검색, 파일 쓰기·수정, 명령 실행, 스킬 불러오기, MCP 도구 실행.
+
+
+
+- 각 단계는 대화에 한 줄로 표시되고, 누르면 파일 내용·변경 diff·명령 출력이 펼쳐집니다.
+
+- **파일 수정과 명령 실행은 실행 전에 승인을 받습니다.** 설정의 **에이전트 권한**에서 자동 허용으로 바꿀 수 있지만, 명령은 현재 사용자 권한으로 실행되므로 주의하세요.
+
+- 단계가 너무 많으면 설정의 **에이전트 최대 단계 수**에서 멈춥니다.
+
+- 작업 폴더가 없거나 에이전트를 끄면 일반 챗봇으로 동작합니다.`],
+
+  ["명령어", `
+
+입력창에 \`/\`를 입력하면 목록이 뜹니다.
+
+
+
+| 명령 | 하는 일 |
+
+|---|---|
+
+| \`/init\` | 작업 폴더를 분석해 INIT.md(프로젝트 지침)를 만듭니다 |
+
+| \`/user 요청\` | 대화 내용으로 내 정보(USER.md)를 작성·업데이트합니다 |
+
+| \`/remember 내용\` | 모든 대화에서 기억할 내용을 저장합니다 |
+
+| \`/memory\` | 기억 목록을 보고 지웁니다 |
+
+| \`/스킬이름 요청\` | 그 스킬의 지침대로 요청을 수행합니다 |
+
+| \`/help\` | 간단한 도움말 |`],
+
+  ["기억: 메모리·내 정보·다른 대화", `
+
+- **메모리(memory.md)**: "~를 기억해 줘"라고 하거나 \`/remember\`로 저장하면 모든 대화에 전달됩니다. 왼쪽 아래 **메모리**에서 보고 고칩니다.
+
+- **내 정보(USER.md)**: 하는 일, 관심 분야, 원하는 답변 방식 등을 적어 두면 답변이 나에게 맞춰집니다. **내 정보**에서 직접 쓰거나 \`/user\`로 AI에게 맡깁니다. 비밀번호·키 같은 비밀은 적지 마세요.
+
+- **다른 대화 참고**: 새 질문과 관련된 내용이 다른 대화에 있으면 자동으로 찾아 참고합니다(📎 표시). 메모리 창에서 끌 수 있습니다.`],
+
+  ["INIT.md와 스킬", `
+
+- **INIT.md**: 작업 폴더 최상위의 INIT.md는 모든 대화에 프로젝트 지침으로 들어갑니다. \`/init\`으로 만들 수 있습니다.
+
+- **스킬**: \`<스킬이름>/SKILL.md\` 형식의 작업 지침입니다. 에이전트가 요청에 맞는 스킬을 스스로 불러오고, \`/스킬이름\`으로 직접 실행할 수도 있습니다. 앱 내장(요약, 코드 검토, 논문 읽기), 사용자 스킬 폴더(**스킬 → 새 스킬 만들기**), 작업 폴더의 \`skills\\\` 순서로 읽고, 이름이 같으면 뒤의 것이 우선합니다.`],
+
+  ["MCP 도구", `
+
+왼쪽 아래 **MCP**에서 서버를 켜고 끕니다. 에이전트 모드에서 켜진 서버의 도구를 씁니다.
+
+
+
+- **내장 서버**(설치 필요 없음): word·powerpoint·excel(문서 만들기·고치기), paper(논문 찾기·섹션별 읽기), notion(설정에 Notion 토큰 필요), firecrawl(웹페이지 읽기·웹 검색, 설정에 Firecrawl 키 필요).
+
+- **추천 서버**: playwright(브라우저 자동화). PC에 Node.js가 있어야 합니다.
+
+- **외부 서버**: **MCP → 설정 파일 열기**로 \`mcp.json\`에 Claude Desktop과 같은 형식으로 추가합니다.
+
+
+
+바깥에 영향을 주는 도구는 명령 실행처럼 승인을 받습니다.`],
+
+  ["다른 AI 에이전트와 기억 이어 쓰기 (ai-memory)", `
+
+Claude Code·Codex·Cursor·Gemini CLI 같은 코딩 에이전트에서 하던 작업을 POSCHAT에서 이어받고, POSCHAT에서 한 작업을 그 에이전트들이 이어받게 할 수 있습니다.
+
+
+
+1. PC에 [ai-memory](https://github.com/akitaonrails/ai-memory)를 설치하고 \`ai-memory setup\`을 실행합니다. 다른 에이전트들도 이때 함께 연결됩니다.
+
+2. **MCP → 설정 파일 열기**로 \`mcp.json\`에 다음을 추가하고 저장합니다.
+
+
+
+\`\`\`json
+
+{ "mcpServers": { "ai-memory": { "command": "ai-memory", "args": ["mcp-bridge", "--no-session-id"] } } }
+
+\`\`\`
+
+
+
+3. 작업 폴더를 고르고 에이전트 모드로 대화합니다.
+
+
+
+그러면 앱이 자동으로 다음을 합니다.
+
+
+
+- **대화 시작**: 그 폴더에 다른 에이전트가 남긴 인계(한 일·남은 질문·다음 할 일)를 받고 최근 기억을 불러옵니다(🧠 표시). 인계는 한 번 받으면 사라집니다.
+
+- **작업 후**: 파일을 고치거나 명령·도구를 실행했다면, 다음 에이전트가 이어받을 인계를 남깁니다(📤 표시).
+
+- **검색**: "전에 이 버그 어떻게 고쳤지?"처럼 물으면 AI가 ai-memory에서 찾아봅니다.
+
+
+
+ChatGPT·claude.ai 같은 웹 채팅 서비스의 기억은 이어받을 수 없습니다.`],
+
+  ["데이터와 개인정보", `
+
+대화·설정·메모리·첨부 파일은 이 기기의 데이터 폴더(설정 창 아래쪽 **데이터 폴더 → 열기**)에만 저장됩니다. 질문할 때 대화 내용, 첨부 내용, 메모리, 내 정보, INIT.md가 POSTECH GenAI API로 전달됩니다. API 키는 설정 파일(config.json)에 저장됩니다.`],
+
+];
+
+
+
+function showGuide() {
+
+  const body = h("div", { class: "guide" },
+
+    GUIDE.map(([title, text], i) => h("details", { open: i === 0 },
+
+      h("summary", {}, title), renderMarkdown(text.trim()))));
+
+  modal({ title: "사용법 가이드", body, wide: true, buttons: [{ label: "닫기", class: "primary" }] });
+
+}
+
+
+
 function showHelp() {
   const rows = [
     ["/init", "작업 폴더를 분석해 INIT.md를 만듭니다"],
@@ -1269,6 +1379,8 @@ function applyState(state) {
   S.dataDir = state.data_dir;
   S.version = state.version || "";
   S.models = state.models || [];
+  S.responsesModels = state.responses_models || [];
+  S.modelsSource = state.models_source || "builtin";
   S.memory = state.memory || [];
   if (state.attach_limits) S.attachLimits = state.attach_limits;
   $("#agent-toggle").checked = !!state.config.agent_mode;
