@@ -18,7 +18,6 @@ import api
 import attachments
 import mcp_client
 import storage
-import updates
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
 from api import DEFAULT_MODEL, MODELS, RESPONSES_MODELS, ApiError, ApiSettings
 from version import APP_VERSION
@@ -65,7 +64,7 @@ class Bridge:
     def __init__(self):
         storage.ensure_dirs()
         self._config = storage.load_config()
-        if "github_update_token" in self._config:
+        if "github_update_token" in self._config:  # 1.8.0의 업데이트 확인용 GitHub 토큰은 더 쓰지 않는다
             self._config.pop("github_update_token", None)
             storage.save_config(self._config)
         self._lock = threading.RLock()
@@ -147,7 +146,9 @@ class Bridge:
             },
             "data_dir": str(storage.APP_DIR),
             "version": APP_VERSION,
-            "models": [{"id": m, "label": label} for m, label in MODELS],
+            "models": [{"id": m, "label": label} for m, label in self._models("chat_completions")],
+            "responses_models": [{"id": m, "label": label} for m, label in RESPONSES_MODELS],
+            "models_source": "server" if self._config.get("server_models") else "builtin",
             "memory": storage.load_memory(),
             "attach_limits": {"max_bytes": attachments.MAX_BYTES, "max_files": attachments.MAX_FILES},
         }
@@ -160,7 +161,7 @@ class Bridge:
     def load_thread(self, thread_id):
         with self._lock:
             thread = storage.load_thread(thread_id)
-            if thread is not None and thread.get("model") not in {model_id for model_id, _ in MODELS}:
+            if thread is not None and thread.get("model") not in self._model_ids(self._config.get("api_mode", "a1")):
                 thread["model"] = self._default_model()
                 storage.save_thread(thread, update_timestamp=False)
             return thread
@@ -172,9 +173,19 @@ class Bridge:
             storage.save_thread(thread)
             return thread
 
+    def _models(self, mode):
+        """mode에서 고를 수 있는 (모델 ID, 이름). OpenAI 호환 API는 서버에서 받아 둔 목록을 먼저 쓴다."""
+        if mode == "responses":
+            return RESPONSES_MODELS
+        server = [m for m in self._config.get("server_models") or [] if isinstance(m, str) and m]
+        return [(m, api.model_label(m)) for m in server] if server else MODELS
+
+    def _model_ids(self, mode):
+        return {model_id for model_id, _ in self._models(mode)}
+
     def _default_model(self):
         mode = self._config.get("api_mode", "a1")
-        allowed = RESPONSES_MODELS if mode == "responses" else MODELS
+        allowed = self._models(mode)
         configured = self._config.get("model", DEFAULT_MODEL)
         return configured if configured in {model_id for model_id, _ in allowed} else allowed[0][0]
 
@@ -193,8 +204,7 @@ class Bridge:
         return storage.list_threads()
 
     def set_thread_model(self, thread_id, model):
-        allowed = RESPONSES_MODELS if self._config.get("api_mode") == "responses" else MODELS
-        if model not in {model_id for model_id, _ in allowed}:
+        if model not in self._model_ids(self._config.get("api_mode", "a1")):
             return {"ok": False, "error": "지원하지 않는 모델입니다."}
         with self._lock:
             thread = storage.load_thread(thread_id)
@@ -208,9 +218,11 @@ class Bridge:
 
     def save_settings(self, settings):
         mode = settings.get("api_mode", self._config.get("api_mode", "a1"))
-        url = str(settings.get("responses_url", self._config.get("responses_url", "")) or "").strip()
-        compatible_url = str(settings.get("chat_completions_url",
-                                          self._config.get("chat_completions_url", "")) or "").strip()
+        url = api.endpoint_url(settings.get("responses_url", self._config.get("responses_url", "")),
+                               api.RESPONSES_PATH)
+        compatible_url = api.endpoint_url(settings.get("chat_completions_url",
+                                                       self._config.get("chat_completions_url", "")),
+                                          api.CHAT_COMPLETIONS_PATH)
         if mode == "responses" and not self._valid_https_url(url):
             return {"ok": False, "error": "Responses API를 선택했다면 올바른 HTTPS 주소를 입력해야 합니다."}
         if mode == "chat_completions" and not self._valid_https_url(compatible_url):
@@ -243,8 +255,10 @@ class Bridge:
             if "responses_url" in settings:
                 self._config["responses_url"] = url
             if "chat_completions_url" in settings:
+                if compatible_url != self._config.get("chat_completions_url", ""):
+                    self._config.pop("server_models", None)  # 다른 서버의 목록은 버린다
                 self._config["chat_completions_url"] = compatible_url
-            if settings.get("model") in {m for m, _ in MODELS}:
+            if settings.get("model") in self._model_ids(self._config.get("api_mode", "a1")):
                 self._config["model"] = settings["model"]
             if "stream" in settings:
                 self._config["stream"] = bool(settings["stream"])
@@ -254,6 +268,27 @@ class Bridge:
     def get_usage(self):
         return storage.usage_summary()
 
+    def refresh_models(self, settings=None):
+        """OpenAI 호환 API의 모델 목록을 서버에서 받아 저장한다. 설정 창의 '모델 목록 불러오기'."""
+        settings = settings or {}
+        key = str(settings.get("api_key") or "").strip() or self._api_key()
+        if not key:
+            return {"ok": False, "error": "API 키를 먼저 입력하세요."}
+        url = api.endpoint_url(settings.get("chat_completions_url", self._config.get("chat_completions_url", "")),
+                               api.CHAT_COMPLETIONS_PATH)
+        if not self._valid_https_url(url):
+            return {"ok": False, "error": "올바른 HTTPS Chat Completions 주소를 입력하세요."}
+        try:
+            ids = api.list_models(key, url)
+        except ApiError as e:
+            return {"ok": False, "error": f"모델 목록을 불러오지 못했습니다: {e}"}
+        with self._lock:
+            self._config["chat_completions_url"] = url
+            self._config["server_models"] = ids
+            storage.save_config(self._config)
+        return {"ok": True, "chat_completions_url": url,
+                "models": [{"id": m, "label": api.model_label(m)} for m in ids]}
+
     @staticmethod
     def _valid_https_url(value):
         try:
@@ -262,41 +297,6 @@ class Bridge:
                     and not parsed.username and not parsed.password and parsed.port != 0)
         except ValueError:
             return False
-
-    def check_for_updates(self):
-        try:
-            return updates.check_update(APP_VERSION)
-        except updates.UpdateError as e:
-            return {"available": False, "error": str(e)}
-
-    def download_update(self):
-        try:
-            path = updates.download_update(APP_VERSION, destination=storage.APP_DIR / "updates" /
-                                           updates.ASSETS.get(updates.current_platform(), ""))
-        except updates.UpdateError as e:
-            return {"ok": False, "error": str(e)}
-        platform = updates.current_platform()
-        try:
-            if platform == "windows":
-                install_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
-                                           "Programs", "PostechChat")
-                try:
-                    import winreg
-                    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                                         r"Software\Microsoft\Windows\CurrentVersion\Uninstall\PostechChat")
-                    with key:
-                        install_dir, _ = winreg.QueryValueEx(key, "InstallLocation")
-                except (ImportError, OSError):
-                    pass
-                subprocess.Popen([str(path), f"--dir={install_dir}"], cwd=str(path.parent))
-                message = "설치 프로그램을 열었습니다. 앱을 닫은 뒤 설치 프로그램에서 설치를 눌러 업데이트하세요."
-            else:
-                open_path(path)
-                message = ("Android 설치 화면에서 업데이트를 승인하세요." if platform == "android"
-                           else "디스크 이미지를 열었습니다. 앱을 Applications 폴더에 복사해 업데이트하세요.")
-        except OSError as e:
-            return {"ok": False, "error": f"업데이트 설치 파일을 열지 못했습니다: {e}"}
-        return {"ok": True, "message": message}
 
     def set_agent_mode(self, enabled):
         with self._lock:
@@ -555,7 +555,7 @@ class Bridge:
     def _thread_api_settings(self, thread):
         settings = ApiSettings.from_config(self._config)
         model = thread.get("model")
-        allowed = RESPONSES_MODELS if settings.mode == "responses" else MODELS
+        allowed = self._models(settings.mode)
         if model in {model_id for model_id, _ in allowed}:
             settings.model = model
         elif settings.model not in {model_id for model_id, _ in allowed}:

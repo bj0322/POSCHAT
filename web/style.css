@@ -143,11 +143,6 @@ svg { width: 18px; height: 18px; flex: none; }
   display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2);
   padding: 6px 10px; border-radius: 999px; cursor: pointer; user-select: none;
 }
-.update-notes {
-  max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
-  padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--code-bg);
-  color: var(--text-2); font: 12px/1.5 var(--mono);
-}
 .mode-toggle:hover { background: var(--hover); }
 .mode-toggle input { display: none; }
 .track { width: 32px; height: 18px; border-radius: 999px; background: var(--border); position: relative; transition: background .15s; }

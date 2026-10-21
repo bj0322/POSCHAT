@@ -71,6 +71,7 @@ MODELS = [
 ]
 RESPONSES_MODELS = MODELS[:5]
 DEFAULT_MODEL = MODELS[0][0]
+MODEL_LABELS = dict(MODELS)
 REASONING_EFFORT = "low"  # 에이전트는 단계마다 호출하므로 추론 토큰을 아낀다
 
 
@@ -96,11 +97,65 @@ class ApiSettings:
         mode = config.get("api_mode", "a1")
         return cls(
             mode=mode if mode in ("a1", "responses", "chat_completions") else "a1",
-            responses_url=str(config.get("responses_url", "") or "").strip(),
-            chat_completions_url=str(config.get("chat_completions_url", "") or "").strip(),
+            responses_url=endpoint_url(config.get("responses_url"), RESPONSES_PATH),
+            chat_completions_url=endpoint_url(config.get("chat_completions_url"), CHAT_COMPLETIONS_PATH),
             model=str(config.get("model") or DEFAULT_MODEL),
             stream=bool(config.get("stream", True)),
         )
+
+
+RESPONSES_PATH = "/responses"
+CHAT_COMPLETIONS_PATH = "/chat/completions"
+
+
+def endpoint_url(value, path):
+    """설정에 넣은 주소를 호출할 주소로 맞춘다.
+
+    OpenAI 호환 도구처럼 기본 주소(`.../v1`, `.../openai`)만 넣어도 path(/responses, /chat/completions)를
+    붙여 준다. 끝의 /와 실수로 넣은 /models도 정리한다.
+    """
+    url = str(value or "").strip().rstrip("/")
+    if not url:
+        return ""
+    if url.endswith("/models"):
+        url = url[: -len("/models")]
+    return url if url.endswith(path) else url + path
+
+
+def models_url(chat_completions_url):
+    """Chat Completions 주소와 같은 기본 주소의 모델 목록(GET .../models) 주소."""
+    url = endpoint_url(chat_completions_url, CHAT_COMPLETIONS_PATH)
+    return url[: -len(CHAT_COMPLETIONS_PATH)] + "/models" if url else ""
+
+
+def list_models(api_key, chat_completions_url, timeout=20):
+    """OpenAI 호환 API가 알려 주는 모델 ID 목록. 서버가 정한 순서를 지킨다."""
+    url = models_url(chat_completions_url)
+    if not url:
+        raise ApiError("Chat Completions 주소를 먼저 입력하세요.")
+    headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
+    response = _request("GET", url, headers, None, timeout, stream=False)
+    try:
+        data = response.json()
+    except ValueError as e:
+        raise ApiError(f"모델 목록 형식 오류: {response.text[:300]}") from e
+    items = data.get("data") if isinstance(data, dict) else data
+    if isinstance(items, dict):  # 게이트웨이 공통 형식 {"code", "message", "data": {"data": [...]}}
+        items = items.get("data")
+    if not isinstance(items, list):
+        raise ApiError(f"모델 목록 형식 오류: {response.text[:300]}")
+    ids = []
+    for item in items:
+        model_id = item.get("id") if isinstance(item, dict) else item
+        if isinstance(model_id, str) and model_id.strip() and model_id.strip() not in ids:
+            ids.append(model_id.strip())
+    if not ids:
+        raise ApiError("서버가 사용할 수 있는 모델을 알려 주지 않았습니다.")
+    return ids
+
+
+def model_label(model_id):
+    return MODEL_LABELS.get(model_id, model_id)
 
 
 def ask(api_key, message, timeout=180, settings=None, on_delta=None, cancelled=None, images=None):
@@ -150,7 +205,10 @@ def _ask_chat_completions(api_key, message, timeout, settings, on_delta, cancell
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     response = _post(settings.chat_completions_url, headers, payload, timeout, stream=bool(on_delta))
     if on_delta and not _is_json(response):
-        return _read_stream(response, on_delta, cancelled)
+        try:
+            return _read_stream(response, on_delta, cancelled)
+        except _StreamFormatError as e:
+            raise ApiError(f"스트리밍 응답을 해석하지 못했습니다: {e}") from e
     try:
         data = response.json()
         choice = data["choices"][0]
@@ -251,20 +309,26 @@ RAW = object()  # _events가 SSE도 JSON도 아닌 텍스트 조각에 붙이는
 
 
 def _post(url, headers, data, timeout, stream):
+    return _request("POST", url, headers, data, timeout, stream)
+
+
+def _request(method, url, headers, data, timeout, stream):
     host = urlparse(url).hostname
-    kwargs = dict(headers=headers, json=data, timeout=(15, timeout), stream=stream)
+    kwargs = dict(headers=headers, timeout=(15, timeout), stream=stream)
+    if data is not None:
+        kwargs["json"] = data
     try:
         if host in _aia_sessions:
-            response = _aia_sessions[host].post(url, **kwargs)
+            response = _aia_sessions[host].request(method, url, **kwargs)
         else:
             try:
-                response = requests.post(url, **kwargs)
+                response = requests.request(method, url, **kwargs)
             except requests.exceptions.SSLError:
                 if TRUSTSTORE or host not in AIA_HOSTS:
                     raise
                 session = requests.Session()
                 session.mount(f"https://{host}", _StrictCAAdapter(_aia_bundle(url, host)))
-                response = session.post(url, **kwargs)
+                response = session.request(method, url, **kwargs)
                 _aia_sessions[host] = session
     except requests.RequestException as e:
         raise ApiError(f"네트워크 오류: {e}") from e

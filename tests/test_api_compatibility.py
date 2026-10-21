@@ -45,6 +45,59 @@ class ChatCompletionsTests(unittest.TestCase):
         obj = {"choices": [{"delta": {"content": "안녕"}}]}
         self.assertEqual(api._chunk(None, json.dumps(obj)), ("delta", "안녕"))
 
+    @patch("api._post")
+    def test_unreadable_chat_stream_is_an_api_error(self, post):
+        response = Mock()
+        response.headers = {"Content-Type": "text/event-stream"}
+        response.iter_lines.return_value = [b"data: [DONE]", b""]
+        post.return_value = response
+        settings = api.ApiSettings(mode="chat_completions", chat_completions_url="https://api.test/v1/chat/completions")
+
+        with self.assertRaises(api.ApiError):
+            api.ask("api-key", "Hi", settings=settings, on_delta=lambda _text: None)
+
+
+class EndpointTests(unittest.TestCase):
+    def test_base_url_gets_the_call_path(self):
+        chat = api.CHAT_COMPLETIONS_PATH
+        self.assertEqual(api.endpoint_url("https://api.test/v1", chat), "https://api.test/v1/chat/completions")
+        self.assertEqual(api.endpoint_url(" https://api.test/v1/ ", chat), "https://api.test/v1/chat/completions")
+        self.assertEqual(api.endpoint_url("https://api.test/v1/models", chat), "https://api.test/v1/chat/completions")
+        self.assertEqual(api.endpoint_url("https://api.test/v1/chat/completions", chat),
+                         "https://api.test/v1/chat/completions")
+        self.assertEqual(api.endpoint_url("https://api.test/a7/openai", api.RESPONSES_PATH),
+                         "https://api.test/a7/openai/responses")
+        self.assertEqual(api.endpoint_url("", chat), "")
+
+    def test_saved_base_url_is_used_as_full_endpoint(self):
+        settings = api.ApiSettings.from_config({"api_mode": "chat_completions", "chat_completions_url": "https://api.test/v1"})
+        self.assertEqual(settings.chat_completions_url, "https://api.test/v1/chat/completions")
+
+    def test_models_url_shares_the_base_url(self):
+        self.assertEqual(api.models_url("https://api.test/v1/chat/completions"), "https://api.test/v1/models")
+        self.assertEqual(api.models_url("https://api.test/v1"), "https://api.test/v1/models")
+
+    @patch("api._request")
+    def test_lists_models_from_openai_and_gateway_formats(self, request):
+        response = Mock()
+        request.return_value = response
+        response.json.return_value = {"object": "list", "data": [{"id": "gpt-6.1-sol"}, {"id": "claude-opus-5.5"}]}
+        self.assertEqual(api.list_models("key", "https://api.test/v1"), ["gpt-6.1-sol", "claude-opus-5.5"])
+        args, _ = request.call_args
+        self.assertEqual(args[:2], ("GET", "https://api.test/v1/models"))
+        self.assertEqual(args[2]["Authorization"], "Bearer key")
+
+        response.json.return_value = {"code": "0", "data": {"data": [{"id": "gemini-3.8-flash"}, "gpt-6-astra"]}}
+        self.assertEqual(api.list_models("key", "https://api.test/v1"), ["gemini-3.8-flash", "gpt-6-astra"])
+
+        response.json.return_value = {"data": []}
+        with self.assertRaises(api.ApiError):
+            api.list_models("key", "https://api.test/v1")
+
+    def test_unknown_model_ids_are_shown_as_is(self):
+        self.assertEqual(api.model_label("claude-opus-5.5"), "Claude Opus 5.5")
+        self.assertEqual(api.model_label("new-model-x"), "new-model-x")
+
 
 if __name__ == "__main__":
     unittest.main()
