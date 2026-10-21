@@ -133,11 +133,12 @@ svg { width: 18px; height: 18px; flex: none; }
   flex: 1; font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   padding-left: 6px;
 }
-#thread-model {
+.thread-model-picker { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 12px; }
+.thread-model-picker select {
   max-width: 240px; min-width: 130px; border: 1px solid var(--border); border-radius: 8px;
   padding: 6px 8px; background: var(--bg); color: var(--text); font: 13px var(--font);
 }
-#thread-model:focus { outline: 2px solid var(--border); }
+.thread-model-picker select:focus { outline: 2px solid var(--border); }
 .mode-toggle {
   display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2);
   padding: 6px 10px; border-radius: 999px; cursor: pointer; user-select: none;
@@ -414,7 +415,8 @@ svg { width: 18px; height: 18px; flex: none; }
   #app.collapsed #sidebar { margin-left: 0; transform: translateX(-100%); box-shadow: none; }
   #app:not(.collapsed)::after { content: ""; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 30; }
   #topbar { height: 52px; padding: 0 6px; }
-  #thread-model { min-width: 90px; max-width: 145px; padding: 5px 4px; font-size: 12px; }
+  .thread-model-picker span { display: none; }
+  .thread-model-picker select { min-width: 90px; max-width: 145px; padding: 5px 4px; font-size: 12px; }
   .mode-toggle { gap: 4px; padding: 6px 4px; }
   .column { padding: 0 12px; }
   .suggestions { grid-template-columns: 1fr; }

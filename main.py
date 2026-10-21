@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 import uuid
+from urllib.parse import urlparse
 
 import webview
 
@@ -64,6 +65,9 @@ class Bridge:
     def __init__(self):
         storage.ensure_dirs()
         self._config = storage.load_config()
+        if "github_update_token" in self._config:
+            self._config.pop("github_update_token", None)
+            storage.save_config(self._config)
         self._lock = threading.RLock()
         self._window = None
         self._busy = False
@@ -91,9 +95,6 @@ class Bridge:
 
     def _api_key(self):
         return self._config.get("api_key") or os.environ.get("POSTECH_GENAI_API_KEY", "")
-
-    def _update_token(self):
-        return self._config.get("github_update_token") or os.environ.get("POSTECH_CHAT_GITHUB_TOKEN", "")
 
     def _add(self, thread_id, role, content, **extra):
         with self._lock:
@@ -138,8 +139,6 @@ class Bridge:
                 "responses_url": self._config.get("responses_url", ""),
                 "chat_completions_url": self._config.get("chat_completions_url", ""),
                 "model": self._config.get("model", DEFAULT_MODEL),
-                "update_token_source": "settings" if self._config.get("github_update_token") else (
-                    "env" if os.environ.get("POSTECH_CHAT_GITHUB_TOKEN") else None),
                 "stream": self._config.get("stream", True),
                 "notion_source": "settings" if self._config.get("notion_token") else (
                     "env" if os.environ.get("NOTION_TOKEN") or os.environ.get("NOTION_API_KEY") else None),
@@ -159,11 +158,25 @@ class Bridge:
         return storage.list_threads()
 
     def load_thread(self, thread_id):
-        return storage.load_thread(thread_id)
+        with self._lock:
+            thread = storage.load_thread(thread_id)
+            if thread is not None and thread.get("model") not in {model_id for model_id, _ in MODELS}:
+                thread["model"] = self._default_model()
+                storage.save_thread(thread, update_timestamp=False)
+            return thread
 
     def new_thread(self):
         with self._lock:
-            return storage.new_thread()
+            thread = storage.new_thread()
+            thread["model"] = self._default_model()
+            storage.save_thread(thread)
+            return thread
+
+    def _default_model(self):
+        mode = self._config.get("api_mode", "a1")
+        allowed = RESPONSES_MODELS if mode == "responses" else MODELS
+        configured = self._config.get("model", DEFAULT_MODEL)
+        return configured if configured in {model_id for model_id, _ in allowed} else allowed[0][0]
 
     def rename_thread(self, thread_id, title):
         title = (title or "").strip()
@@ -180,7 +193,8 @@ class Bridge:
         return storage.list_threads()
 
     def set_thread_model(self, thread_id, model):
-        if model not in {m for m, _ in MODELS}:
+        allowed = RESPONSES_MODELS if self._config.get("api_mode") == "responses" else MODELS
+        if model not in {model_id for model_id, _ in allowed}:
             return {"ok": False, "error": "지원하지 않는 모델입니다."}
         with self._lock:
             thread = storage.load_thread(thread_id)
@@ -193,12 +207,14 @@ class Bridge:
     # ---- 설정 ----
 
     def save_settings(self, settings):
-        url = str(settings.get("responses_url") or "").strip()
-        compatible_url = str(settings.get("chat_completions_url") or "").strip()
-        if url and not url.startswith("https://"):
-            return {"ok": False, "error": "Responses API 주소는 https://로 시작해야 합니다."}
-        if compatible_url and not compatible_url.startswith("https://"):
-            return {"ok": False, "error": "OpenAI 호환 API 주소는 https://로 시작해야 합니다."}
+        mode = settings.get("api_mode", self._config.get("api_mode", "a1"))
+        url = str(settings.get("responses_url", self._config.get("responses_url", "")) or "").strip()
+        compatible_url = str(settings.get("chat_completions_url",
+                                          self._config.get("chat_completions_url", "")) or "").strip()
+        if mode == "responses" and not self._valid_https_url(url):
+            return {"ok": False, "error": "Responses API를 선택했다면 올바른 HTTPS 주소를 입력해야 합니다."}
+        if mode == "chat_completions" and not self._valid_https_url(compatible_url):
+            return {"ok": False, "error": "OpenAI 호환 API를 선택했다면 올바른 HTTPS Chat Completions 주소를 입력해야 합니다."}
         with self._lock:
             if settings.get("api_key"):
                 self._config["api_key"] = settings["api_key"].strip()
@@ -212,10 +228,6 @@ class Bridge:
                 self._config["firecrawl_key"] = settings["firecrawl_key"].strip()
             if settings.get("clear_firecrawl"):
                 self._config["firecrawl_key"] = ""
-            if settings.get("github_update_token"):
-                self._config["github_update_token"] = settings["github_update_token"].strip()
-            if settings.get("clear_update_token"):
-                self._config["github_update_token"] = ""
             for key, lo, hi in (("history_messages", 0, 200), ("max_steps", 1, 100)):
                 if key in settings:
                     try:
@@ -242,16 +254,24 @@ class Bridge:
     def get_usage(self):
         return storage.usage_summary()
 
+    @staticmethod
+    def _valid_https_url(value):
+        try:
+            parsed = urlparse(value)
+            return (parsed.scheme == "https" and bool(parsed.hostname) and bool(parsed.path.strip("/"))
+                    and not parsed.username and not parsed.password and parsed.port != 0)
+        except ValueError:
+            return False
+
     def check_for_updates(self):
         try:
-            return updates.check_update(APP_VERSION, self._update_token())
+            return updates.check_update(APP_VERSION)
         except updates.UpdateError as e:
             return {"available": False, "error": str(e)}
 
     def download_update(self):
-        token = self._update_token()
         try:
-            path = updates.download_update(APP_VERSION, token, destination=storage.APP_DIR / "updates" /
+            path = updates.download_update(APP_VERSION, destination=storage.APP_DIR / "updates" /
                                            updates.ASSETS.get(updates.current_platform(), ""))
         except updates.UpdateError as e:
             return {"ok": False, "error": str(e)}

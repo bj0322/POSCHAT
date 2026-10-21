@@ -255,10 +255,11 @@ async function openThread(id) {
 
 function renderThreadModel() {
   const select = $("#thread-model");
-  if (!select) return;
+  const picker = $("#thread-model-picker");
+  if (!select || !picker) return;
   const mode = S.config.api_mode || "a1";
-  select.hidden = !S.thread || mode === "a1";
-  if (select.hidden) return;
+  picker.hidden = !S.thread || mode === "a1";
+  if (picker.hidden) return;
   const models = mode === "responses" ? (S.models || []).slice(0, 5) : (S.models || []);
   select.replaceChildren(...models.map((m) => h("option", { value: m.id }, m.label)));
   const selected = S.thread.model || S.config.model || (models[0] || {}).id;
@@ -773,9 +774,6 @@ function showSettings() {
     : "firecrawl MCP 서버를 쓸 때만 필요합니다.";
   const firecrawl = h("input", { type: "password", placeholder: c.firecrawl_source ? "••••••••••••" : "fc-... (선택)", autocomplete: "off" });
   const clearFirecrawl = h("input", { type: "checkbox", style: "width:auto;margin:0 6px 0 0" });
-  const updateToken = h("input", { type: "password",
-    placeholder: c.update_token_source ? "••••••••••••" : "github_pat_... (선택)", autocomplete: "off" });
-  const clearUpdateToken = h("input", { type: "checkbox", style: "width:auto;margin:0 6px 0 0" });
   const fmt = (n) => n >= 10000 ? (n / 10000).toFixed(n >= 100000 ? 0 : 1) + "만" : n.toLocaleString();
   const usageLine = (label, u) => h("div", { class: "row", style: "justify-content:space-between;font-size:13px;margin:2px 0" },
     h("span", {}, label),
@@ -801,8 +799,8 @@ function showSettings() {
     h("option", { value: "chat_completions" }, "OpenAI 호환 API — GPT·Claude·Gemini"),
   );
   mode.value = c.api_mode || "a1";
-  const url = h("input", { placeholder: "https://genai.postech.ac.kr/agent/api/a번호/openai/responses", value: c.responses_url || "" });
-  const compatibleUrl = h("input", { placeholder: "POSTECH GenAI 콘솔에 표시된 HTTPS Chat Completions 주소",
+  const url = h("input", { type: "url", placeholder: "https://.../agent/api/a번호/openai/responses", value: c.responses_url || "" });
+  const compatibleUrl = h("input", { type: "url", placeholder: "https://.../v1/chat/completions",
     value: c.chat_completions_url || "" });
   const responsesModel = h("select", {}, (S.models || []).slice(0, 5).map((m) => h("option", { value: m.id }, m.label)));
   const compatibleModel = h("select", {}, (S.models || []).map((m) => h("option", { value: m.id }, m.label)));
@@ -813,20 +811,22 @@ function showSettings() {
   const stream = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
   stream.checked = c.stream !== false;
   const responsesBox = h("div", {},
-    h("div", { class: "field" }, h("label", {}, "Responses API 주소"), url,
-      h("small", {}, "POSTECH GenAI 콘솔의 API 안내에서 openai/responses 주소(a번호 포함)를 복사해 넣으세요.")),
+    h("div", { class: "field" }, h("label", {}, "Responses API 주소 (필수)"), url,
+      h("small", {}, "필수 입력. POSTECH GenAI 콘솔에서 openai/responses로 끝나는 전체 HTTPS 주소를 복사하세요.")),
     h("div", { class: "field" }, h("label", {}, "모델"), responsesModel,
       h("small", {}, "GPT-5.1을 권장합니다. 에이전트는 단계마다 모델을 부르므로 비용을 줄이려면 GPT-5 mini를 고르세요.")),
   );
   const compatibleBox = h("div", {},
-    h("div", { class: "field" }, h("label", {}, "OpenAI 호환 Chat Completions 주소"), compatibleUrl,
+    h("div", { class: "field" }, h("label", {}, "OpenAI 호환 Chat Completions 주소 (필수)"), compatibleUrl,
       h("small", {}, "새 POSTECH GenAI API 안내에서 OpenAI 호환 Chat Completions 주소를 복사하세요. API 키는 Bearer 인증으로 전달됩니다.")),
     h("div", { class: "field" }, h("label", {}, "기본 모델"), compatibleModel,
-      h("small", {}, "모델 선택은 대화마다 바꿀 수 있으며, 공지에 나온 GPT·Claude·Gemini 모델은 이 API에서 사용할 수 있습니다.")),
+      h("small", {}, "새 대화의 기본 모델입니다. 기존 대화의 모델은 대화 상단에서 개별 선택하며 각각 저장됩니다.")),
   );
   const syncMode = () => {
     responsesBox.hidden = mode.value !== "responses";
     compatibleBox.hidden = mode.value !== "chat_completions";
+    url.required = mode.value === "responses";
+    compatibleUrl.required = mode.value === "chat_completions";
   };
   mode.addEventListener("change", syncMode);
   syncMode();
@@ -853,14 +853,8 @@ function showSettings() {
       c.firecrawl_source === "settings"
         ? h("label", { style: "display:flex;align-items:center;font-size:13px;margin-top:4px;cursor:pointer" }, clearFirecrawl, "저장된 키 지우기")
         : null),
-    h("div", { class: "field" }, h("label", {}, "비공개 저장소 업데이트 토큰"), updateToken,
-      h("small", {}, c.update_token_source === "env"
-        ? "환경 변수 POSTECH_CHAT_GITHUB_TOKEN의 토큰을 씁니다."
-        : "저장소를 공개하지 않고 업데이트를 확인하려면 bj0322/POSCHAT에 대한 fine-grained GitHub 토큰(Contents: Read-only)이 필요합니다. 토큰은 이 PC의 config.json에 저장되며 GitHub API 요청에만 사용됩니다."),
-      c.update_token_source === "settings"
-        ? h("label", { style: "display:flex;align-items:center;font-size:13px;margin-top:4px;cursor:pointer" },
-          clearUpdateToken, "저장된 업데이트 토큰 지우기")
-        : null,
+    h("div", { class: "field" }, h("label", {}, "자동 업데이트"),
+      h("small", {}, "공개 CDN에서 업데이트 정보를 확인합니다. GitHub 토큰 없이 새 버전을 확인하고 내려받습니다."),
       h("button", { class: "btn", style: "margin-top:8px", onclick: async () => {
         const result = await api().check_for_updates();
         if (result.available) {
@@ -889,6 +883,14 @@ function showSettings() {
       { label: "취소", value: null },
       {
         label: "저장", class: "primary", action: async (close) => {
+          if (mode.value === "responses" && !url.value.trim()) {
+            url.focus();
+            return toast("Responses API 주소를 입력하세요.");
+          }
+          if (mode.value === "chat_completions" && !compatibleUrl.value.trim()) {
+            compatibleUrl.focus();
+            return toast("Chat Completions 주소를 입력하세요.");
+          }
           const state = await api().save_settings({
             api_key: key.value.trim(), history_messages: hist.value, max_steps: steps.value, permission: perm.value,
             api_mode: mode.value, responses_url: url.value.trim(),
@@ -896,8 +898,6 @@ function showSettings() {
             model: mode.value === "responses" ? responsesModel.value : compatibleModel.value, stream: stream.checked,
             notion_token: notion.value.trim(), clear_notion: clearNotion.checked && !notion.value.trim(),
             firecrawl_key: firecrawl.value.trim(), clear_firecrawl: clearFirecrawl.checked && !firecrawl.value.trim(),
-            github_update_token: updateToken.value.trim(),
-            clear_update_token: clearUpdateToken.checked && !updateToken.value.trim(),
           });
           if (state.ok === false) return toast(state.error);
           applyState(state);
@@ -919,7 +919,7 @@ function offerUpdate(update, attempts = 0) {
   const body = h("div", {},
     h("p", {}, `새 버전 ${update.version}을 사용할 수 있습니다. 현재 버전은 ${S.version}입니다.`),
     update.notes ? h("pre", { class: "update-notes" }, update.notes) : null,
-    h("small", {}, "비공개 GitHub Release에서 설치 파일을 내려받습니다."));
+    h("small", {}, "공개 CDN에서 설치 파일을 내려받습니다."));
   modal({
     title: "업데이트",
     body,
@@ -1396,7 +1396,7 @@ async function init() {
   if (!state.config.key_source) showSettings();
   api().check_for_updates().then((result) => {
     if (result.available) offerUpdate(result);
-    else if (result.error && state.config.update_token_source) toast(result.error);
+    else if (result.error) toast(result.error);
   }).catch((error) => toast(`업데이트 확인에 실패했습니다: ${error.message}`));
 }
 

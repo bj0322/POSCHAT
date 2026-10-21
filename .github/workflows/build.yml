@@ -185,6 +185,18 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Validate CDN credentials
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_R2_BUCKET: ${{ secrets.CLOUDFLARE_R2_BUCKET }}
+          CLOUDFLARE_R2_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          for key in CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_R2_BUCKET CLOUDFLARE_R2_ACCESS_KEY_ID CLOUDFLARE_R2_SECRET_ACCESS_KEY; do
+            if [ -z "${!key}" ]; then echo "Missing required GitHub Actions secret: $key" >&2; exit 1; fi
+          done
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -192,3 +204,70 @@ jobs:
         run: >
           gh release create "$TAG" dist/PostechChat-Setup.exe dist/PostechChat-mac.dmg dist/PostechChat.apk
           --repo "$GITHUB_REPOSITORY" --title "POSTECH GenAI Chat $TAG" --target "$GITHUB_SHA" --generate-notes
+
+      - name: Publish public CDN updates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release || github.ref_name }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_R2_BUCKET: ${{ secrets.CLOUDFLARE_R2_BUCKET }}
+          CLOUDFLARE_R2_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          CDN_BASE_URL: https://pub-a728df363f0f4ef5a6ee3fae8245231f.r2.dev
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json name,body > dist/release.json
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          files = {
+              "windows": "PostechChat-Setup.exe",
+              "macos": "PostechChat-mac.dmg",
+              "android": "PostechChat.apk",
+          }
+          release = json.loads(Path("dist/release.json").read_text(encoding="utf-8"))
+          assets = {}
+          for platform, filename in files.items():
+              path = Path("dist") / filename
+              digest = hashlib.sha256()
+              with path.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              assets[platform] = {
+                  "file": filename,
+                  "size": path.stat().st_size,
+                  "sha256": digest.hexdigest(),
+              }
+          manifest = {
+              "version": os.environ["TAG"].removeprefix("v"),
+              "name": release["name"],
+              "notes": release.get("body", ""),
+              "assets": assets,
+          }
+          Path("dist/latest.json").write_text(
+              json.dumps(manifest, ensure_ascii=False, separators=(",", ":")),
+              encoding="utf-8",
+          )
+          PY
+
+          python -m pip install --disable-pip-version-check awscli
+          export AWS_ACCESS_KEY_ID="$CLOUDFLARE_R2_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$CLOUDFLARE_R2_SECRET_ACCESS_KEY"
+          export AWS_DEFAULT_REGION=auto
+          endpoint="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          version="${TAG#v}"
+          for name in PostechChat-Setup.exe PostechChat-mac.dmg PostechChat.apk; do
+            aws s3 cp "dist/$name" "s3://${CLOUDFLARE_R2_BUCKET}/releases/${version}/$name" \
+              --endpoint-url "$endpoint" --cache-control "public, max-age=31536000, immutable"
+          done
+          aws s3 cp dist/latest.json "s3://${CLOUDFLARE_R2_BUCKET}/latest.json" \
+            --endpoint-url "$endpoint" --content-type application/json \
+            --cache-control "no-cache, max-age=0, must-revalidate"
+          expected_version="${TAG#v}"
+          export EXPECTED_VERSION="$expected_version"
+          curl --fail --silent --show-error -H "Cache-Control: no-cache" \
+            "${CDN_BASE_URL}/latest.json?_=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" |
+            python -c 'import json, os, sys; assert json.load(sys.stdin)["version"] == os.environ["EXPECTED_VERSION"]'
