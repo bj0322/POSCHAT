@@ -834,7 +834,8 @@ class Agent:
             arguments = self.ai_memory.fill_args(spec, arguments)
         detail = json.dumps(arguments, ensure_ascii=False, indent=2)
         annotations = spec.get("annotations") or {}
-        if not annotations.get("readOnlyHint"):
+        read_only = bool(annotations.get("readOnlyHint"))
+        if not read_only:
             # 작업 폴더 안의 파일만 고치는 내장 도구는 파일 수정으로, 외부 서버와 바깥에 영향을 주는 내장 도구
             # (Notion에 쓰기, npx 실행 등 openWorldHint)는 무엇이든 할 수 있으므로 명령 실행으로 묻는다.
             kind = "edit" if server.builtin and not annotations.get("openWorldHint") else "run"
