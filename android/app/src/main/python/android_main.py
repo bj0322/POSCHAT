@@ -1,11 +1,17 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """안드로이드 앱(Chaquopy)에서 데스크톱 앱의 Python 코드(main.Bridge, agent, MCP 등)를 그대로 쓰기 위한 연결.
 
 pywebview가 하던 일을 Kotlin(MainActivity)이 대신한다.
 - JS → Python: 화면의 window.pywebview.api.<메서드>(...) 호출을 Kotlin이 call(메서드, 인자 JSON)로 넘긴다.
 - Python → JS: Bridge가 창의 evaluate_js를 부르면 host.evalJs로 WebView에 실행한다.
 - 폴더 고르기·파일 열기(os.startfile)는 host.pickFolder / host.openPath로 안드로이드 화면을 띄운다.
+- PO노트 녹음: stt가 쓰는 sounddevice 자리에 _Sounddevice를 넣는다. 마이크는 host.micStart / micStop이
+  녹음 서비스(RecordingService)로 열고, 서비스가 0.1초마다 mic_block(PCM16 bytes)을 부른다.
+  로컬 음성 인식은 앱에 넣은 sherpa-onnx C 라이브러리를 sherpa_capi로 부른다.
 
-host는 Kotlin 객체이며 evalJs(str), pickFolder() -> str | None, openPath(str) 메서드가 있다.
+host는 Kotlin 객체이며 evalJs(str), pickFolder() -> str | None, openPath(str), micStart() -> str | None,
+micStop() 메서드가 있다.
 """
 import json
 import os
@@ -16,6 +22,8 @@ from pathlib import Path
 
 _bridge = None
 _host = None
+_mic = None  # 지금 소리를 받는 _InputStream
+_mic_blocks = 0  # 녹음 서비스가 넘긴 블록 수(진단용)
 
 
 class _Window:
@@ -29,10 +37,73 @@ class _Window:
         return [str(path)] if path else None
 
 
+class _InputStream:
+    """sounddevice.InputStream 대신. 만들 때 마이크를 열고(권한 요청·녹음 서비스 시작), start() 뒤부터 소리를 넘긴다."""
+
+    def __init__(self, samplerate=16000, channels=1, dtype="float32", blocksize=None, device=None, callback=None, **_):
+        if int(samplerate) != 16000 or channels != 1:
+            raise ValueError("휴대폰 마이크는 16kHz 모노로만 엽니다.")
+        self._callback, self.active = callback, False
+        error = _host.micStart() if _host is not None else "화면이 아직 준비되지 않았습니다."
+        if error:
+            raise RuntimeError(str(error))
+        self._open = True
+
+    def start(self):
+        global _mic
+        _mic, self.active = self, True
+
+    def stop(self):
+        global _mic
+        self.active = False
+        if _mic is self:
+            _mic = None
+        if self._open:
+            self._open = False
+            if _host is not None:
+                _host.micStop()
+
+    def close(self):
+        self.stop()
+
+
+_PHONE_MIC = {"name": "휴대폰 마이크", "max_input_channels": 1, "hostapi": 0, "default_samplerate": 16000.0}
+_Sounddevice = types.SimpleNamespace(
+    InputStream=_InputStream,
+    query_devices=lambda device=None, kind=None: dict(_PHONE_MIC) if device is not None or kind else [dict(_PHONE_MIC)],
+)
+
+
+def mic_block(data):
+    """녹음 서비스가 0.1초마다 부른다: PCM16(리틀 엔디언) 모노 16kHz."""
+    global _mic_blocks
+    _mic_blocks += 1
+    stream = _mic
+    if stream is None or not stream.active:
+        return
+    import numpy as np
+    samples = np.frombuffer(bytes(data), dtype="<i2").astype(np.float32) / 32768.0
+    stream._callback(samples.reshape(-1, 1), len(samples), None, None)
+
+
+def mic_error(message):
+    """녹음이 중간에 끊겼다(마이크를 다른 앱이 가져감 등): 받은 데까지 노트를 마무리한다."""
+    if _bridge is not None and _bridge._po_note:
+        _bridge._po_push("error", note_id=_bridge._po_note, error=f"녹음이 멈췄습니다: {message}")
+        _bridge.po_stop()
+
+
+def mic_stats():
+    return json.dumps({"blocks": _mic_blocks, "active": _mic is not None})
+
+
 def _setup(files_dir, res_dir):
     """데스크톱 코드를 import하기 전에 안드로이드 환경에 맞춘다."""
     os.environ["APPDATA"] = str(files_dir)  # storage.APP_DIR = <files>/PostechChat
     sys.modules.setdefault("webview", types.SimpleNamespace(FOLDER_DIALOG=20))
+    sys.modules.setdefault("sounddevice", _Sounddevice)
+    # 데스크톱용 pip 패키지는 없다: stt가 sherpa_capi로 앱의 jniLibs에 넣은 libsherpa-onnx-c-api.so를 부른다
+    sys.modules.setdefault("sherpa_onnx", None)
     import agent
     import mcp_client
 
@@ -96,15 +167,39 @@ def selftest(files_dir, res_dir):
         finally:
             manager.shutdown()
     report["po_note"] = _po_note_check()
+    import stt
+    report["stt"] = stt.selfcheck()
+    report.update(_v110_check())
     return json.dumps(report, ensure_ascii=False)
 
 
+def _v110_check():
+    """1.10: 커넥터 서버(스레드)·연구 인덱스(trigram)·동기화 암호화가 안드로이드 묶음에서 되는지."""
+    import connectors
+    import mcp_client
+    import rag
+    import sync
+
+    out = {"crypto": sync.selfcheck()}
+    check = {"features": {k: True for k in connectors.FEATURES},
+             "connectors": {c: {"enabled": True} for c in ("github", "research", "memory", "python", "ssh")}}
+    manager = mcp_client.Manager()
+    with tempfile.TemporaryDirectory() as ws:
+        out["rag"] = rag.selfcheck(ws).split(" ")[0]
+        out["rag_mode"] = rag.fts_mode()
+        try:
+            out["connectors"] = {s.name: len(s.tools) for s in manager.ensure(check, ws)
+                                 if s.name in ("github", "research", "memory", "python", "ssh")}
+        finally:
+            manager.shutdown()
+    return out
+
+
 def _po_note_check():
-    """PO노트: 노트를 만들고 강의 자료를 올려 노트 프롬프트까지 만들 수 있는지. 녹음은 휴대폰에서 꺼져 있어야 한다."""
+    """PO노트: 노트를 만들고 강의 자료를 올려 노트 프롬프트까지 만들 수 있는지."""
     import base64
     import uuid
     import po_note
-    import stt
     try:
         note = po_note.create("selftest")
         po_note.upload_material(note["id"], uuid.uuid4().hex, "slides.md", 0,
@@ -112,6 +207,6 @@ def _po_note_check():
         po_note.append_segment(note["id"], {"start": 0, "end": 1, "text": "오늘은 베이즈 정리"})
         ok = "베이즈 정리" in po_note.build_prompts(note["id"])[0][0][1]
         po_note.delete(note["id"])
-        return "OK" if ok and not stt.available()[0] else "FAIL"
+        return "OK" if ok else "FAIL"
     except Exception as e:
         return f"FAIL {type(e).__name__}: {e}"

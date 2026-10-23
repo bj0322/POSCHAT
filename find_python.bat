@@ -1,4 +1,6 @@
 @echo off
+REM SPDX-FileCopyrightText: 2026 Beomjoon Kim
+REM SPDX-License-Identifier: AGPL-3.0-only
 rem Sets PY to a real python.exe (skips the Microsoft Store stub).
 set "PY="
 for %%P in (

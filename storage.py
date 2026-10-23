@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """대화 스레드와 설정을 %APPDATA%\\PostechChat(맥은 ~/Library/Application Support/PostechChat) 아래에 JSON으로, 메모리와 사용자 정보를 Markdown으로 저장한다."""
 import hashlib
 import json
@@ -268,6 +270,35 @@ def recent_user_messages(limit_chars=12000, exclude_prefix=("/user",)):
         out.append((title, ts, content))
         total += len(content)
     return out
+
+
+# ---- 백업 ----
+
+BACKUP_MAX_BYTES = 300 * 1024 * 1024
+
+
+def backup_user_data(label):
+    """설정·메모리·사용자 정보·MCP 설정·대화를 backups/<시각>-<label>/에 복사한다. 첨부·모델 파일은 뺀다.
+    대화가 너무 크면(300MB 초과) 대화는 빼고 나머지만. 백업 폴더 경로(없으면 None)."""
+    sources = [p for p in (CONFIG_PATH, MEMORY_PATH, PROFILE_PATH, MCP_PATH, USAGE_PATH, OLD_MEMORY_PATH) if p.is_file()]
+    threads = sorted(THREADS_DIR.glob("*.json")) if THREADS_DIR.is_dir() else []
+    if not sources and not threads:
+        return None
+    target = APP_DIR / "backups" / f"{time.strftime('%Y%m%d-%H%M%S')}-{label}"
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        for p in sources:
+            shutil.copy2(p, target / p.name)
+        if sum(p.stat().st_size for p in threads) <= BACKUP_MAX_BYTES:
+            (target / "threads").mkdir(exist_ok=True)
+            for p in threads:
+                shutil.copy2(p, target / "threads" / p.name)
+        (target / "README.txt").write_text(
+            "POSTECH GenAI Chat 백업입니다. 되돌리려면 앱을 끈 뒤 이 폴더의 파일을 데이터 폴더(이 폴더의 두 단계 위)에 "
+            "같은 이름으로 덮어쓰세요. 자세한 방법: docs/migration-1.10.md\n", encoding="utf-8")
+    except OSError:
+        return None
+    return target
 
 
 # ---- 첨부 파일: attachments/<id>/<파일 이름> ----

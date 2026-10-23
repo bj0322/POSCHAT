@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Beomjoon Kim
+// SPDX-License-Identifier: AGPL-3.0-only
 "use strict";
 
 /* ---------- 아이콘 ---------- */
@@ -24,6 +26,8 @@ const ICONS = {
   mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>',
   spark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><path d="m6.3 6.3 2.1 2.1M15.6 15.6l2.1 2.1M6.3 17.7l2.1-2.1M15.6 8.4l2.1-2.1"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
+  up_thumb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v11H4V10Z"/><path d="M7 10l4-7a2 2 0 0 1 3 2l-1 5h6a2 2 0 0 1 2 2.3l-1.4 7A2 2 0 0 1 17.6 21H7"/></svg>',
+  down_thumb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V3h3v11Z"/><path d="M17 14l-4 7a2 2 0 0 1-3-2l1-5H5a2 2 0 0 1-2-2.3l1.4-7A2 2 0 0 1 6.4 3H17"/></svg>',
   retry: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
 };
 
@@ -285,6 +289,23 @@ async function newThread() {
   await openThread(thread.id);
 }
 
+// 답변 평가(👍/👎): 대화에 저장하고 사용량·진단 탭의 모델별 비교에 쓴다
+function feedbackButton(msg, rating) {
+  const btn = h("button", { title: rating > 0 ? "좋은 답변" : "아쉬운 답변", class: msg.feedback === rating ? "active" : "",
+    html: rating > 0 ? ICONS.up_thumb : ICONS.down_thumb });
+  btn.addEventListener("click", async () => {
+    if (!S.currentId) return;
+    const next = msg.feedback === rating ? 0 : rating;
+    const res = await api().feedback(S.currentId, msg.id, next);
+    if (res.ok === false) return toast(res.error);
+    msg.feedback = next || undefined;
+    btn.parentElement.querySelectorAll("button.active").forEach((b) => b.classList.remove("active"));
+    if (next) btn.classList.add("active");
+    toast(next ? "평가를 남겼습니다" : "평가를 지웠습니다");
+  });
+  return btn;
+}
+
 function messageNode(msg) {
   if (msg.role === "user") {
     const files = msg.attachments && msg.attachments.length ? attachmentList(msg.attachments) : null;
@@ -299,6 +320,7 @@ function messageNode(msg) {
         renderMarkdown(msg.content),
         h("div", { class: "msg-actions" },
           h("button", { title: "복사", html: ICONS.copy, onclick: () => copyText(msg.content) }),
+          feedbackButton(msg, 1), feedbackButton(msg, -1),
         ),
       ),
     );
@@ -711,6 +733,8 @@ window.onBackendEvent = (ev) => {
   } else if (ev.type === "credit") {
     S.credit = ev.credit;
     document.querySelectorAll("[data-credit]").forEach((el) => { el.textContent = creditText(S.credit); });
+  } else if (ev.type === "connector" || ev.type === "hub") {
+    if (window.hubEvent) hubEvent(ev);
   } else if (ev.type === "done") {
     S.busy = false;
     S.busyThread = null;
@@ -784,11 +808,21 @@ function modal({ title, body, buttons = [], wide = false, onClose }) {
   return { close, box };
 }
 
+// 승인 종류별 안내. send·destructive·exec는 설정과 관계없이 매번 묻고 "모두 허용"을 보이지 않는다.
+const CONFIRM_TEXT = {
+  edit: ["에이전트가 다음과 같이 파일을 바꾸려고 합니다.", "이번 실행 동안 수정 모두 허용"],
+  run: ["에이전트가 작업 폴더에서 다음 명령(또는 외부 도구)을 실행하려고 합니다.", "이번 실행 동안 명령 모두 허용"],
+  write: ["에이전트가 연결된 외부 서비스에 다음 내용을 쓰려고 합니다.", "이번 실행 동안 쓰기 모두 허용"],
+  send: ["에이전트가 다른 사람에게 보이는 작업(전송·리뷰 제출)을 하려고 합니다. 받는 사람과 내용을 확인하세요.", ""],
+  destructive: ["에이전트가 지우거나 덮어쓰는 작업을 하려고 합니다. 되돌릴 수 없을 수 있습니다.", ""],
+  exec: ["에이전트가 코드 또는 원격 명령을 실행하려고 합니다. 실행 대상과 내용을 확인하세요.", ""],
+};
+
 function showConfirm(ev) {
-  const isRun = ev.kind === "run";
+  const isRun = ev.kind !== "edit";
+  const [intro, alwaysLabel] = CONFIRM_TEXT[ev.kind] || CONFIRM_TEXT.run;
   const body = h("div", {},
-    h("p", { style: "margin:0 0 10px;color:var(--text-2)" },
-      isRun ? "에이전트가 작업 폴더에서 다음 명령을 실행하려고 합니다." : "에이전트가 다음과 같이 파일을 바꾸려고 합니다."),
+    h("p", { style: "margin:0 0 10px;color:var(--text-2)" }, intro),
     isRun ? h("pre", { class: "diff" }, h("div", {}, ev.detail)) : diffOrPre(ev.detail),
   );
   let answered = false;
@@ -803,7 +837,7 @@ function showConfirm(ev) {
     wide: true,
     buttons: [
       { label: "거부", class: "danger", action: answer("deny") },
-      { label: isRun ? "이번 실행 동안 명령 모두 허용" : "이번 실행 동안 수정 모두 허용", action: answer("always") },
+      ...(ev.allow_session !== false && alwaysLabel ? [{ label: alwaysLabel, action: answer("always") }] : []),
       { label: "허용", class: "primary", action: answer("allow") },
     ],
     onClose: () => { if (!answered) api().resolve_confirm(ev.id, "deny"); },
@@ -952,8 +986,11 @@ function showSettings() {
             e.target.disabled = false;
           }
         } }, "업데이트 확인"))),
+    h("div", { class: "row guide-link" },
+      h("span", { style: "flex:1" }, "GitHub·Google 연결, 연구 라이브러리, 메모리·동기화, 자동화, 사용량·진단은 '연결·도구' 창에서 관리합니다."),
+      h("button", { class: "btn", type: "button", onclick: () => showHub() }, "연결·도구 열기")),
     h("div", { class: "field" }, h("label", {}, "에이전트 권한"), perm,
-      h("small", {}, "에이전트가 파일을 고치거나 명령을 실행하기 전에 승인을 받을지 정합니다.")),
+      h("small", {}, "에이전트가 파일을 고치거나 명령을 실행하기 전에 승인을 받을지 정합니다. 메일 전송·리뷰 제출·삭제·코드 실행은 이 설정과 관계없이 매번 묻습니다.")),
     h("div", { class: "row" },
       h("div", { class: "field", style: "flex:1" }, h("label", {}, "기억할 이전 메시지 수"), hist),
       h("div", { class: "field", style: "flex:1" }, h("label", {}, "에이전트 최대 단계 수"), steps)),
@@ -970,7 +1007,8 @@ function showSettings() {
   body.append(h("p", { style: "margin:14px 0 0;color:var(--text-3);font-size:12px" }, `POSTECH GenAI Chat 버전 ${S.version}`),
     h("p", { style: "margin:2px 0 0;color:var(--text-3);font-size:12px" }, "서비스 대표자: 김범준"),
     h("p", { style: "margin:2px 0 0;color:var(--text-3);font-size:12px" }, "문의사항은 ",
-      h("a", { href: REPO_URL, target: "_blank", style: "color:inherit" }, REPO_URL), "의 문의 메일로 보내 주세요."));
+      h("a", { href: REPO_URL, target: "_blank", style: "color:inherit" }, REPO_URL), "의 문의 메일로 보내 주세요."),
+    licenseBlock());
   modal({
     title: "설정",
     body,
@@ -1204,57 +1242,7 @@ function showSkills() {
 }
 
 function showMcp() {
-  const list = h("div", {});
-  const note = h("p", { style: "margin:6px 0 0;color:var(--text-3);font-size:13px" });
-  const STATE = { connected: "연결됨", error: "연결 실패", idle: "대기" };
-  const render = (st) => {
-    list.innerHTML = "";
-    note.textContent = st.config_error || "";
-    for (const sv of st.servers) {
-      const toggle = h("input", { type: "checkbox", style: "width:auto;margin:0", title: sv.enabled ? "끄기" : "켜기" });
-      toggle.checked = sv.enabled;
-      toggle.addEventListener("change", async () => render(await api().set_mcp_enabled(sv.name, toggle.checked)));
-      const detail = sv.state === "connected" ? "도구: " + sv.tools.join(", ")
-        : sv.error ? sv.error : (sv.command || sv.description);
-      list.append(h("div", { class: "skill-item" },
-        toggle,
-        h("div", { class: "s-main" },
-          h("b", {}, sv.name),
-          h("span", { class: "badge" }, sv.builtin ? "내장" : sv.preset ? "추천" : "외부"),
-          sv.enabled ? h("span", { class: "badge mcp-" + sv.state }, STATE[sv.state] || sv.state) : null,
-          h("p", {}, sv.description || ""),
-          detail && detail !== sv.description ? h("p", { class: sv.error ? "mcp-error" : "" }, detail) : null),
-      ));
-    }
-  };
-  const body = h("div", {},
-    h("p", { style: "margin:0 0 8px;color:var(--text-2)" },
-      "MCP 서버는 에이전트가 쓸 수 있는 도구를 더해 줍니다. 내장 서버로 Word·PowerPoint·Excel 문서를 만들고 고치고, ",
-      "논문을 찾아 읽고(paper), Notion 페이지를 다루고(notion, 설정에 토큰 필요), ",
-      "웹페이지를 읽고 검색할 수 있습니다(firecrawl, 설정에 키 필요). 파일은 작업 폴더 안의 것만 다룹니다. ",
-      "추천 서버(playwright: 브라우저 자동화)는 PC에 Node.js가 있으면 켜서 씁니다. ",
-      "다른 MCP 서버는 설정 파일(mcp.json)에 Claude Desktop과 같은 형식으로 추가합니다."),
-    list, note,
-    h("small", { style: "display:block;margin-top:10px;color:var(--text-3)" },
-      "서버는 에이전트 모드에서 처음 필요할 때 연결됩니다. 작업 폴더의 파일을 고치는 도구는 파일 수정처럼, ",
-      "외부 서버의 도구와 Notion에 쓰기·브라우저 조작처럼 바깥에 영향을 주는 도구는 명령 실행처럼 승인을 받습니다."),
-  );
-  const m = modal({
-    title: "MCP",
-    body,
-    wide: true,
-    buttons: [
-      { label: "설정 파일 열기", action: () => api().open_mcp_config() },
-      { label: "지금 연결", action: async () => {
-        if (!S.workspace.path) return toast("먼저 작업 폴더를 선택하세요");
-        toast("MCP 서버에 연결하는 중...");
-        render(await api().connect_mcp());
-      } },
-      { label: "닫기", class: "primary", value: null },
-    ],
-  });
-  api().get_mcp().then(render);
-  return m;
+  return showHub("mcp");  // 1.10: MCP 목록은 '연결·도구' 창의 한 탭이다(web/hub.js)
 }
 
 /* ---------- 사용법 가이드 (설정 → 사용법 가이드) ---------- */
@@ -1292,7 +1280,7 @@ Claude Sonnet 5.5 기준으로 1크레딧은 입력 약 250토큰, 출력 약 75
 - **로컬 AI만**: 크레딧·인터넷이 필요 없고 CPU를 조금만 씁니다.
 - **크레딧 예산 보호**: 이번 주 남은 크레딧이 정한 비율(기본 30%) 아래로 내려가면 서버를 쓰지 않고 로컬 AI로만 받아 적습니다.
 
-녹음 기능은 Windows·macOS 앱에서 쓸 수 있습니다. 휴대폰 앱에서는 노트와 전사를 보고 노트를 만들 수 있습니다.`],
+휴대폰 앱에서도 녹음할 수 있습니다. 처음 녹음할 때 마이크 권한을 묻고, 녹음하는 동안 알림이 떠 있으며 화면을 꺼도 계속 받아 적습니다(알림에서 중지).`],
   ["업데이트", `
 앱이 시작할 때 GitHub Releases에서 새 버전을 확인해 알려 줍니다. **업데이트**를 누르면 설치 파일을 받아 확인한 뒤 설치를 시작합니다(Windows는 설치 프로그램이 열리고 앱이 닫힙니다). 대화·설정은 그대로 남습니다.
 
@@ -1327,8 +1315,18 @@ Claude Sonnet 5.5 기준으로 1크레딧은 입력 약 250토큰, 출력 약 75
   ["INIT.md와 스킬", `
 - **INIT.md**: 작업 폴더 최상위의 INIT.md는 모든 대화에 프로젝트 지침으로 들어갑니다. \`/init\`으로 만들 수 있습니다.
 - **스킬**: \`<스킬이름>/SKILL.md\` 형식의 작업 지침입니다. 에이전트가 요청에 맞는 스킬을 스스로 불러오고, \`/스킬이름\`으로 직접 실행할 수도 있습니다. 앱 내장(요약, 코드 검토, 논문 읽기), 사용자 스킬 폴더(**스킬 → 새 스킬 만들기**), 작업 폴더의 \`skills\\\` 순서로 읽고, 이름이 같으면 뒤의 것이 우선합니다.`],
+  ["연결·도구 (1.10)", `
+왼쪽 아래 **연결·도구**에서 외부 서비스와 확장 기능을 관리합니다. 모두 **기본으로 꺼져 있고**, 켠 것만 에이전트가 씁니다.
+
+- **커넥터**: GitHub(저장소·코드 검색·이슈·PR·리뷰·Actions 실패 분석), Google Drive·Docs·Sheets·Slides·Gmail·Calendar(서비스마다 따로 로그인), Zotero. 상태(연결됨·인증 필요·연결 오류·비활성화·사용 권한 부족)를 보고, 로그인·재인증·연결 해제·권한 확인·도구별 승인 정책을 바꿉니다. 토큰은 OS 보안 저장소에 둡니다.
+- **연구 라이브러리**: 논문 저장·태그·BibTeX, 작업 폴더 PDF·문서 인덱싱과 쪽·섹션이 붙은 원문 검색.
+- **메모리·동기화**: 프로젝트(결정·진행 상태·TODO)·연구 기억, 에이전트 인계, 기기 사이 암호화 동기화(직접 켤 때만).
+- **에이전트 자동화**: Python·Jupyter 실행, SSH 원격 실행(PC 앱만, 매번 승인).
+- **사용량·진단**: 모델별 호출·오류율·지연·토큰·크레딧 추정, 도구 성공률, 답변 평가(👍/👎), 자동 평가.
+
+**승인**: 쓰기는 설정의 '에이전트 권한'을 따르지만, **메일 전송·PR 리뷰 제출·삭제·코드 실행은 자동 허용으로 설정해도 매번 묻습니다.** 외부 서비스·문서에서 온 내용은 '외부 데이터'로 표시되어 그 안의 지시를 따르지 않습니다.`],
   ["MCP 도구", `
-왼쪽 아래 **MCP**에서 서버를 켜고 끕니다. 에이전트 모드에서 켜진 서버의 도구를 씁니다.
+**연결·도구 → MCP 서버**에서 서버를 켜고 끕니다. 에이전트 모드에서 켜진 서버의 도구를 씁니다.
 
 - **내장 서버**(설치 필요 없음): word·powerpoint·excel(문서 만들기·고치기), paper(논문 찾기·섹션별 읽기), notion(설정에 Notion 토큰 필요), firecrawl(웹페이지 읽기·웹 검색, 설정에 Firecrawl 키 필요).
 - **추천 서버**: playwright(브라우저 자동화). PC에 Node.js가 있어야 합니다.
@@ -1355,8 +1353,44 @@ Claude Code·Codex·Cursor·Gemini CLI 같은 코딩 에이전트에서 하던 �
 
 ChatGPT·claude.ai 같은 웹 채팅 서비스의 기억은 이어받을 수 없습니다.`],
   ["데이터와 개인정보", `
-대화·설정·메모리·첨부 파일·PO노트는 이 기기의 데이터 폴더(설정 창 아래쪽 **데이터 폴더 → 열기**)에만 저장됩니다. 질문할 때 대화 내용, 첨부 내용, 메모리, 내 정보, INIT.md가 POSTECH GenAI API로 전달됩니다. PO노트는 로컬 AI로 받아 적으면 녹음이 PC 밖으로 나가지 않고, POSTECH 서버로 받아 적으면 말 구간의 소리가 POSTECH GenAI로 전달됩니다. 녹음 소리 자체는 저장하지 않습니다. API 키는 설정 파일(config.json)에 저장됩니다.`],
+대화·설정·메모리·첨부 파일·PO노트는 이 기기의 데이터 폴더(설정 창 아래쪽 **데이터 폴더 → 열기**)에만 저장됩니다(동기화를 직접 켜면 암호화해 고른 저장소에도 둡니다). 질문할 때 대화 내용, 첨부 내용, 메모리, 내 정보, INIT.md가 POSTECH GenAI API로 전달됩니다. PO노트는 로컬 AI로 받아 적으면 녹음이 PC 밖으로 나가지 않고, POSTECH 서버로 받아 적으면 말 구간의 소리가 POSTECH GenAI로 전달됩니다. 녹음 소리 자체는 저장하지 않습니다. POSTECH API 키·Notion·Firecrawl 키는 설정 파일(config.json)에, 1.10의 커넥터 토큰(GitHub·Google·Zotero 등)은 OS 보안 저장소(없으면 이 사용자만 읽는 앱 파일)에 저장됩니다. 사용량·진단 기록에는 질문·답변 내용이 없습니다.`],
 ];
+
+// 설정 맨 아래: 라이선스(AGPL-3.0-only)와 이 버전의 소스코드·제3자 라이선스
+function licenseBlock() {
+  const small = "margin:2px 0 0;color:var(--text-3);font-size:12px";
+  const source = h("a", { href: `${REPO_URL}/tree/v${S.version}`, target: "_blank", class: "btn", style: "text-decoration:none;color:inherit" }, "소스 코드 보기");
+  const box = h("div", { class: "license-block", style: "margin-top:12px" },
+    h("p", { style: small }, "POSCHAT"),
+    h("p", { style: small }, "Copyright © 2026 Beomjoon Kim"),
+    h("p", { style: small }, "GNU Affero General Public License v3.0 only (AGPL-3.0-only)"),
+    h("div", { class: "row", style: "margin-top:6px;gap:6px;flex-wrap:wrap" },
+      h("button", { class: "btn", type: "button", onclick: () => showLicense("license") }, "라이선스 보기"),
+      source,
+      h("button", { class: "btn", type: "button", onclick: () => showLicense("third") }, "제3자 라이선스")));
+  api().license_info().then((info) => { source.href = info.source_url; }).catch(() => {});
+  return box;
+}
+
+async function showLicense(kind) {
+  let info;
+  try {
+    info = await api().license_info();
+  } catch (e) {
+    return toast("라이선스 정보를 불러오지 못했습니다: " + e.message);
+  }
+  const pre = (text) => h("pre", { class: "license-text", style: "white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:60vh;overflow:auto" },
+    text || "(앱에 들어 있는 파일을 찾지 못했습니다. 저장소의 파일을 보세요.)");
+  if (kind === "license") {
+    return modal({ title: `${info.license} (${info.spdx})`, wide: true, body: h("div", {},
+      h("p", {}, `${info.name} ${info.version} · ${info.copyright}`), pre(info.license_text)), buttons: [{ label: "닫기", value: null }] });
+  }
+  const body = h("div", {},
+    h("p", {}, "이 앱에 들어 있는 제3자 구성 요소는 각자의 라이선스를 따릅니다. 이 버전의 소스: ",
+      h("a", { href: info.source_url, target: "_blank" }, info.source_url), " (", h("a", { href: info.source_archive, target: "_blank" }, "zip"), ")"),
+    ...info.third_party.map((item, i) => h("details", { open: i === 0 }, h("summary", {}, item.name), pre(item.text))));
+  modal({ title: "제3자 라이선스", wide: true, body, buttons: [{ label: "닫기", value: null }] });
+}
 
 function showGuide() {
   const body = h("div", { class: "guide" },
@@ -1505,7 +1539,7 @@ function bindUI() {
   $("#btn-workspace").addEventListener("click", chooseWorkspace);
   $("#ws-chip").addEventListener("click", chooseWorkspace);
   $("#btn-skills").addEventListener("click", showSkills);
-  $("#btn-mcp").addEventListener("click", showMcp);
+  $("#btn-mcp").addEventListener("click", () => showHub());
   $("#btn-memory").addEventListener("click", async () => { S.memory = await api().list_memory(); showMemory(); });
   $("#btn-profile").addEventListener("click", () => showNoteEditor("profile"));
   $("#btn-settings").addEventListener("click", showSettings);

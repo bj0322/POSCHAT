@@ -1,3 +1,8 @@
+// SPDX-FileCopyrightText: 2026 Beomjoon Kim
+// SPDX-License-Identifier: AGPL-3.0-only
+import java.net.URI
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -18,10 +23,60 @@ val syncSharedPython by tasks.registering(Sync::class) {
         include(
             "agent.py", "ai_memory.py", "api.py", "attachments.py", "certs.py", "documents.py", "main.py",
             "mcp_client.py", "office_mcp.py", "paper_mcp.py", "notion_mcp.py", "firecrawl_mcp.py",
-            "po_note.py", "storage.py", "stt.py", "updates.py", "version.py",
+            "po_note.py", "sherpa_capi.py", "storage.py", "stt.py", "updates.py", "version.py",
+            // 1.10: 커넥터·연결·도구 창
+            "connectors.py", "oauth.py", "privacy.py", "secret_store.py", "workspace_api.py",
+            "github_mcp.py", "google_mcp.py",
+            // 1.10: 연구 워크스페이스
+            "research_library.py", "research_mcp.py", "rag.py", "vector_store.py",
+            // 1.10: 통합 메모리·인계·동기화
+            "memory_store.py", "memory_mcp.py", "handoff.py", "sync.py",
+            // 1.10: 에이전트 자동화(안드로이드에서는 쓸 수 없음으로 표시)·관측
+            "runner_mcp.py", "telemetry.py", "evals.py",
         )
     }
     into(sharedPythonDir)
+}
+
+// PO노트 녹음의 로컬 음성 인식: sherpa-onnx 공식 AAR에서 C API 라이브러리와 ONNX Runtime만 꺼내 앱에 넣는다
+// (Kotlin API는 신뢰도(토큰 확률)를 주지 않아서 Python sherpa_capi가 C API를 직접 부른다). 버전은 sherpa_capi.VERSION과 같아야 한다.
+val sherpaVersion = "1.13.8"
+val sherpaAarSha256 = "633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96"
+val sherpaAar = layout.buildDirectory.file("downloads/sherpa-onnx-$sherpaVersion.aar")
+val sherpaJniDir = layout.buildDirectory.dir("generated/sherpaJniLibs")
+
+fun sha256(file: File): String = MessageDigest.getInstance("SHA-256")
+    .digest(file.readBytes()).joinToString("") { b -> "%02x".format(b) }
+
+val downloadSherpaOnnx by tasks.registering {
+    val target = sherpaAar
+    outputs.file(target)
+    doLast {
+        val file = target.get().asFile
+        if (file.isFile && sha256(file) == sherpaAarSha256) return@doLast
+        file.parentFile.mkdirs()
+        val url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaVersion/sherpa-onnx-$sherpaVersion.aar"
+        val part = File(file.path + ".part")
+        URI(url).toURL().openStream().use { input -> part.outputStream().use { output -> input.copyTo(output) } }
+        val actual = sha256(part)
+        if (actual != sherpaAarSha256) {
+            part.delete()
+            throw GradleException("sherpa-onnx AAR SHA-256 불일치: $actual")
+        }
+        part.renameTo(file)
+    }
+}
+
+val syncSherpaJniLibs by tasks.registering(Sync::class) {
+    dependsOn(downloadSherpaOnnx)
+    from(sherpaAar.map { zipTree(it) }) {
+        for (abi in listOf("arm64-v8a", "x86_64")) {  // defaultConfig.ndk.abiFilters와 같게
+            include("jni/$abi/libsherpa-onnx-c-api.so", "jni/$abi/libonnxruntime.so")
+        }
+        eachFile { path = path.removePrefix("jni/") }
+        includeEmptyDirs = false
+    }
+    into(sherpaJniDir)
 }
 
 val syncSharedAssets by tasks.registering(Sync::class) {
@@ -83,6 +138,7 @@ android {
     }
 
     sourceSets["main"].assets.srcDir(sharedAssetsDir)
+    sourceSets["main"].jniLibs.srcDir(sherpaJniDir)
 
     lint {
         checkReleaseBuilds = false  // CI 시간을 줄인다. 동작 검증은 에뮬레이터 계측 테스트가 한다
@@ -103,11 +159,12 @@ chaquopy {
     }
 }
 
-tasks.named("preBuild") { dependsOn(syncSharedPython, syncSharedAssets) }
+tasks.named("preBuild") { dependsOn(syncSharedPython, syncSharedAssets, syncSherpaJniLibs) }
 // Chaquopy·AGP의 소스 병합 작업이 복사보다 먼저 돌지 않게 한다.
 tasks.configureEach {
     if (name.contains("Python", ignoreCase = true) && name.startsWith("merge")) dependsOn(syncSharedPython)
     if (name.endsWith("Assets") && name.startsWith("merge")) dependsOn(syncSharedAssets)
+    if (name.endsWith("JniLibFolders") && name.startsWith("merge")) dependsOn(syncSherpaJniLibs)
 }
 
 dependencies {
@@ -118,4 +175,5 @@ dependencies {
     androidTestImplementation("androidx.test:core:1.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
 }

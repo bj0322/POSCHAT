@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """채팅창에 첨부한 파일(이미지·문서·텍스트).
 
 화면은 고른 파일을 조각(base64)으로 나눠 upload_chunk로 보내고, 마지막 조각에서 파일 종류를 확인한다.

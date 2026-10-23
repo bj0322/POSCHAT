@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """내장 MCP 서버 notion: Notion 페이지·데이터베이스를 찾고, 읽고, 쓴다(Notion 공식 API, 무료).
 
 설정 창에 넣은 Notion 통합 토큰(config.json의 notion_token) 또는 NOTION_TOKEN 환경 변수를 쓴다.

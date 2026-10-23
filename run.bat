@@ -1,4 +1,6 @@
 @echo off
+REM SPDX-FileCopyrightText: 2026 Beomjoon Kim
+REM SPDX-License-Identifier: AGPL-3.0-only
 rem Run from source (for development). End users should use release\PostechChat-Setup.exe.
 cd /d "%~dp0"
 call "%~dp0find_python.bat" || exit /b 1

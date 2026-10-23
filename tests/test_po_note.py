@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 import base64
 import queue
 import tempfile
@@ -257,6 +259,26 @@ class RefinementStorageTests(unittest.TestCase):
         self.assertEqual([(x["id"], x["text"], x["src"]) for x in items], [(0, "고친 0", "server"), (2, "초안2", "local")])
         items = po_note.apply_refinement(note_id, [0, 2], "합친 글")
         self.assertEqual([(x["start"], x["end"], x["text"]) for x in items], [(0, 14, "합친 글")])
+
+
+class LevelTests(unittest.TestCase):
+    def test_quiet_audio_is_raised_but_loud_audio_is_left_alone(self):
+        try:
+            import numpy as np
+        except ImportError:
+            self.skipTest("numpy 없음")
+        quiet = (np.sin(np.arange(16000) / 5) * 0.01).astype(np.float32)
+        raised = stt.level(quiet)
+        self.assertAlmostEqual(float(np.sqrt(np.mean(raised ** 2))), stt.LEVEL_TARGET_RMS, places=3)
+        loud = (np.sin(np.arange(16000) / 5) * 0.5).astype(np.float32)
+        self.assertIs(stt.level(loud).dtype, np.dtype(np.float32))
+        self.assertTrue(np.array_equal(stt.level(loud), loud))
+        hiss = np.full(1600, 1e-5, dtype=np.float32)  # 거의 무음은 최대 배율까지만
+        self.assertAlmostEqual(float(stt.level(hiss)[0]), 1e-5 * stt.LEVEL_MAX_GAIN, places=7)
+        spiky = np.zeros(16000, dtype=np.float32)
+        spiky[0] = 0.9  # RMS는 작지만 큰 값 하나: 키워도 ±1을 넘지 않는다
+        self.assertLessEqual(float(np.abs(stt.level(spiky)).max()), 1.0)
+        self.assertEqual(len(stt.level(np.zeros(0, dtype=np.float32))), 0)
 
 
 class ResamplerTests(unittest.TestCase):

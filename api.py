@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """POSTECH GenAI API 호출.
 
 세 가지 방식을 지원한다.
@@ -16,6 +18,7 @@ import json
 import re
 import ssl
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse, urlsplit, urlunsplit
@@ -92,6 +95,9 @@ class ApiError(Exception):
 # 호출이 끝날 때마다 on_usage(mode, model, usage)를 부른다. usage는 서버가 알려 준 토큰 수
 # {"input_tokens", "output_tokens"} 또는 None. 앱(main.py)이 storage.record_usage로 설정한다.
 on_usage = None
+# 성공·실패와 관계없이 호출마다 on_trace(info, prompt, reply)를 부른다(관측: telemetry.on_llm_call).
+# info: {"mode", "model", "ms", "ok", "error", "input_tokens", "output_tokens", "stream", "retries"}
+on_trace = None
 
 
 @dataclass
@@ -329,6 +335,48 @@ def ask(api_key, message, timeout=180, settings=None, on_delta=None, cancelled=N
     """
     settings = settings or ApiSettings()
     stream = bool(on_delta) and settings.stream
+    started, retries = time.monotonic(), [0]
+    try:
+        text, usage = _ask_any(api_key, message, timeout, settings, on_delta, cancelled, images, stream, retries)
+    except ApiError as e:
+        _trace(settings, started, stream, retries[0], None, error=_error_class(e), prompt=message)
+        raise
+    _trace(settings, started, stream, retries[0], usage, prompt=message, reply=text)
+    if on_usage:
+        try:
+            on_usage(settings.mode, settings.model if settings.mode != "a1" else "a1", usage)
+        except Exception:
+            pass  # 사용량 기록 실패로 답변을 잃지 않는다
+    return text
+
+
+def _error_class(error):
+    """관측용 오류 분류(오류 문구 자체는 남기지 않는다)."""
+    text = str(error)
+    for code in ("401", "403", "404", "429", "500", "502", "503", "504"):
+        if code in text:
+            return f"http_{code}"
+    if "시간" in text or "timeout" in text.lower():
+        return "timeout"
+    if "연결" in text or "connect" in text.lower():
+        return "connection"
+    return "api_error"
+
+
+def _trace(settings, started, stream, retries, usage, error="", prompt=None, reply=None):
+    if not on_trace:
+        return
+    info = {"mode": settings.mode, "model": settings.model if settings.mode != "a1" else "a1",
+            "ms": int((time.monotonic() - started) * 1000), "ok": not error, "error": error,
+            "input_tokens": (usage or {}).get("input_tokens"), "output_tokens": (usage or {}).get("output_tokens"),
+            "stream": stream, "retries": retries}
+    try:
+        on_trace(info, prompt, reply)
+    except Exception:
+        pass  # 관측 기록 실패로 답변을 잃지 않는다
+
+
+def _ask_any(api_key, message, timeout, settings, on_delta, cancelled, images, stream, retries):
     if settings.mode == "responses":
         text, usage = _ask_responses(api_key, message, timeout, settings, on_delta if stream else None, cancelled,
                                      images)
@@ -341,15 +389,10 @@ def ask(api_key, message, timeout=180, settings=None, on_delta=None, cancelled=N
             try:
                 text, usage = _ask_a1(api_key, message, timeout, on_delta, cancelled)
             except _StreamFormatError:
-                pass  # 서버가 알 수 없는 형식으로 보냈다: 한 번에 받는 방식으로 다시 요청한다
+                retries[0] += 1  # 서버가 알 수 없는 형식으로 보냈다: 한 번에 받는 방식으로 다시 요청한다
         if text is None:
             text, usage = _ask_a1(api_key, message, timeout, None, cancelled)
-    if on_usage:
-        try:
-            on_usage(settings.mode, settings.model if settings.mode != "a1" else "a1", usage)
-        except Exception:
-            pass  # 사용량 기록 실패로 답변을 잃지 않는다
-    return text
+    return text, usage
 
 
 def _ask_chat_completions(api_key, message, timeout, settings, on_delta, cancelled, images=None):

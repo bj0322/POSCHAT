@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """POSTECH GenAI Chat — pywebview 데스크톱 앱 진입점.
 
 화면은 web/ 아래의 HTML/CSS/JS이고, JS는 window.pywebview.api.<메서드>로 Bridge를 호출한다.
@@ -17,11 +19,14 @@ import webview
 
 import api
 import attachments
+import connectors
 import mcp_client
 import po_note
 import storage
 import stt
+import telemetry
 import updates
+from workspace_api import WorkspaceApi
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
 from api import DEFAULT_MODEL, MODELS, RESPONSES_MODELS, ApiError, ApiSettings
 from version import APP_VERSION
@@ -64,8 +69,27 @@ def _extend_mac_path():
     os.environ["PATH"] = os.pathsep.join(current + [d for d in extra if d not in current])
 
 
-class Bridge:
-    """JS에서 호출하는 API. 밑줄로 시작하는 이름은 JS에 노출되지 않는다."""
+def _installed_package_licenses():
+    """설치된 Python 패키지가 함께 싣는 라이선스 파일(dist-info)."""
+    from importlib import metadata
+    items, seen = [], set()
+    for dist in metadata.distributions():
+        name = dist.metadata.get("Name") or "?"
+        if name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        for f in dist.files or []:
+            if f.name.upper().startswith(("LICENSE", "LICENCE", "COPYING", "NOTICE")) or "licenses" in f.parts[:-1]:
+                try:
+                    text = Path(f.locate()).read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    continue
+                items.append({"name": f"python/{name}-{dist.version}/{f.name}", "text": text[:200_000]})
+    return sorted(items, key=lambda x: x["name"].lower())
+
+
+class Bridge(WorkspaceApi):
+    """JS에서 호출하는 API. 밑줄로 시작하는 이름은 JS에 노출되지 않는다. '연결·도구' 창의 API는 WorkspaceApi에 있다."""
 
     def __init__(self):
         storage.ensure_dirs()
@@ -79,7 +103,7 @@ class Bridge:
         self._run_id = 0
         self._cancel = threading.Event()
         self._pending = {}            # confirm id -> [Event, decision]
-        self._session_allow = set()   # "edit" / "run" — 이번 실행 동안 항상 허용
+        self._session_allow = set()   # "edit" / "run" / "write" — 이번 실행(메시지 하나) 동안 항상 허용
         self._mcp = mcp_client.Manager()
         self._credit = None           # 응답 헤더로 받은 최근 크레딧 {"usage", "limit", "interval"}
         self._po_session = None       # 녹음 중인 stt.LiveSession
@@ -92,8 +116,16 @@ class Bridge:
         self._updating = False        # 업데이트 파일을 내려받는 중
         api.on_usage = storage.record_usage
         api.on_credit = self._on_credit
+        # 관측(사용량·진단 탭): 내용 없이 메타데이터만 이 기기에 기록한다. Langfuse 내보내기는 켰을 때만.
+        telemetry.config_getter = lambda: self._config
+        api.on_trace = telemetry.on_llm_call
+        connectors.on_event = telemetry.on_tool_call
+        telemetry.prune()
         storage.cleanup_staged()
+        connectors.prune_audit()
         self._migrate_config()
+        self._sync_schedule(10)  # 동기화를 켰으면 시작하고 조금 뒤 한 번
+        self._export_schedule(60)
 
     def _migrate_config(self):
         """1.9: a1/gpt가 서버 오류만 돌려주므로 OpenAI 호환 API(POSTECH 주소 내장)로 한 번 옮긴다. 잘못된 Claude 모델 ID도 고친다."""
@@ -106,6 +138,12 @@ class Bridge:
         model = api.normalize_model(self._config.get("model"))
         if self._config.get("model") and model != self._config["model"]:
             self._config["model"] = model
+            changed = True
+        if not self._config.get("migrated_1_10"):
+            # 1.10은 기존 파일의 형식을 바꾸지 않지만, 처음 실행할 때 1.9의 사용자 데이터를 한 번 백업해 둔다(되돌리기용).
+            backup = storage.backup_user_data("before-1.10")
+            self._config["migrated_1_10"] = True
+            self._config["backup_1_10"] = str(backup) if backup else ""
             changed = True
         if changed:
             storage.save_config(self._config)
@@ -121,12 +159,15 @@ class Bridge:
     # ---- 내부 도우미 ----
 
     def _push(self, event):
-        if self._window is None:
+        if getattr(self, "_window", None) is None:
             return
         try:
             self._window.evaluate_js(f"window.onBackendEvent({json.dumps(event, ensure_ascii=False)})")
         except Exception:
             pass  # 창이 닫히는 중
+
+    def _open_url(self, url):
+        open_path(url)  # Windows os.startfile·macOS open·안드로이드 host.openPath 모두 https 주소를 브라우저로 연다
 
     def _workspace(self):
         ws = self._config.get("workspace", "")
@@ -275,6 +316,7 @@ class Bridge:
         if mode == "chat_completions" and compatible_url and not self._valid_https_url(compatible_url):
             return {"ok": False, "error": "OpenAI 호환 API를 선택했다면 올바른 HTTPS Chat Completions 주소를 입력해야 합니다."}
         with self._lock:
+            before = self._sync_settings()
             if settings.get("api_key"):
                 self._config["api_key"] = settings["api_key"].strip()
             if settings.get("clear_key"):
@@ -315,6 +357,7 @@ class Bridge:
                 self._config["stream"] = bool(settings["stream"])
             if "update_check" in settings:
                 self._config["update_check"] = bool(settings["update_check"])
+            self._stamp_settings(before)
             storage.save_config(self._config)
         return self.get_state()
 
@@ -472,7 +515,11 @@ class Bridge:
     # ---- MCP ----
 
     def get_mcp(self):
-        return self._mcp.status(self._config, self._workspace())
+        status = self._mcp.status(self._config, self._workspace())
+        policies = self._config.get("mcp_policy") or {}
+        for server in status["servers"]:
+            server["policy"] = (policies.get(server["name"]) or {}).get("mode", "")
+        return status
 
     def connect_mcp(self):
         """켜진 MCP 서버를 지금 연결해 본다(MCP 창의 '연결' 버튼)."""
@@ -524,6 +571,33 @@ class Bridge:
         with self._lock:
             self._config["update_skip"] = str(version)
             storage.save_config(self._config)
+
+    def license_info(self):
+        """설정의 라이선스 정보: 라이선스 전문, 제3자 고지, 이 버전에 대응하는 소스코드 주소."""
+        root = resource_dir()
+
+        def read(path):
+            try:
+                return path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                return ""
+
+        third = [{"name": "THIRD_PARTY_NOTICES.md", "text": read(root / "THIRD_PARTY_NOTICES.md")}]
+        licenses = root / "licenses"  # 화면 라이브러리 원문 + 데스크톱 빌드가 넣은 python/<패키지>/
+        third += [{"name": f.relative_to(licenses).as_posix(), "text": read(f)}
+                  for f in sorted(licenses.rglob("*")) if f.is_file()]
+        if not (licenses / "python").is_dir():
+            third += _installed_package_licenses()  # 안드로이드(Chaquopy)·소스 실행: 설치된 패키지 정보에서 읽는다
+        tag = f"v{APP_VERSION}"
+        return {
+            "name": "POSCHAT", "version": APP_VERSION,
+            "copyright": "Copyright © 2026 Beomjoon Kim",
+            "license": "GNU Affero General Public License v3.0 only", "spdx": "AGPL-3.0-only",
+            "license_text": read(root / "LICENSE"), "third_party": third,
+            # 이 앱 버전과 같은 커밋(릴리스 태그)의 소스. Releases가 같은 태그로 만든 소스 아카이브도 함께 준다
+            "source_url": f"https://github.com/{updates.REPOSITORY}/tree/{tag}",
+            "source_archive": f"https://github.com/{updates.REPOSITORY}/archive/refs/tags/{tag}.zip",
+        }
 
     def open_release_page(self):
         import webbrowser
@@ -624,6 +698,7 @@ class Bridge:
 
     def po_save_settings(self, settings):
         with self._lock:
+            before = self._sync_settings()
             if settings.get("engine") in ("auto", "local", "server"):
                 self._config["po_engine"] = settings["engine"]
             if settings.get("model") in stt.LOCAL_MODELS:
@@ -634,6 +709,7 @@ class Bridge:
                 self._config["po_device"] = settings["device"] if isinstance(settings["device"], int) else ""
             if settings.get("reserve") in PO_RESERVES:
                 self._config["po_reserve"] = settings["reserve"]
+            self._stamp_settings(before)
             storage.save_config(self._config)
         return self.po_state()
 
@@ -954,6 +1030,7 @@ class Bridge:
             self._run_id += 1
             run_id = self._run_id
             self._cancel.clear()
+            self._session_allow.clear()  # 1.10: "이번 실행 동안 모두 허용"은 실행이 끝나면 사라진다
 
         threading.Thread(target=self._work, daemon=True,
                          args=(run_id, thread_id, history, task, bool(agent_mode), forced, api_key, workspace,
@@ -1006,24 +1083,34 @@ class Bridge:
             on_delta=on_delta,
             ai_memory_state=thread.get("ai_memory"),
             on_ai_memory_state=save_ai_memory_state,
+            policy=connectors.Policy(dict(self._config)),
         )
+        started, outcome = time.monotonic(), "done"
         try:
             if command == "profile":
                 answer = agent.update_profile(task, attached)
             else:
                 answer = agent.run(history, task, forced, attached)
             if alive():
-                self._add(thread_id, "assistant", answer)
+                self._add(thread_id, "assistant", answer, model=agent.api_settings.model)
+            else:
+                outcome = "cancelled"
         except ApiError as e:
+            outcome = "error"
             if alive():
                 self._add(thread_id, "error", str(e))
         except Exception as e:
+            outcome = "error"
             if alive():
                 self._add(thread_id, "error", f"{type(e).__name__}: {e}")
         finally:
+            telemetry.record("agent_run", mode="agent" if agent_mode and workspace else "chat",
+                             model=agent.api_settings.model, ms=int((time.monotonic() - started) * 1000),
+                             outcome=outcome, steps=agent.steps, tools=len(agent.tools_run))
             if run_id == self._run_id:
                 self._busy = False
                 self._push({"type": "done", "thread_id": thread_id, "workspace": self._workspace_info()})
+            self._sync_schedule(20)  # 대화가 끝나면 잠시 뒤 동기화(켰을 때만)
 
     def _thread_api_settings(self, thread):
         settings = ApiSettings.from_config(self._config)
@@ -1036,20 +1123,26 @@ class Bridge:
         return settings
 
     def _confirm(self, thread_id, kind, title, detail, alive):
+        """kind: edit(파일 수정)·run(명령·외부 도구)·write(커넥터 쓰기)는 설정으로 자동 허용할 수 있고,
+        send(전송)·destructive(삭제)·exec(코드 실행)는 설정과 관계없이 매번 묻는다."""
         permission = self._config.get("permission", "ask")
-        if permission == "auto_all" or (permission == "auto_edit" and kind == "edit") or kind in self._session_allow:
+        always_ask = kind in connectors.ALWAYS_ASK
+        if not always_ask and (permission == "auto_all" or (permission == "auto_edit" and kind == "edit")
+                               or kind in self._session_allow):
             return True
         if not alive():
             return False
         cid = uuid.uuid4().hex
         entry = [threading.Event(), "deny"]
         self._pending[cid] = entry
-        self._push({"type": "confirm", "id": cid, "thread_id": thread_id, "kind": kind, "title": title, "detail": detail})
+        self._push({"type": "confirm", "id": cid, "thread_id": thread_id, "kind": kind, "title": title, "detail": detail,
+                    "allow_session": not always_ask})
         entry[0].wait()
         self._pending.pop(cid, None)
         if entry[1] == "always":
-            self._session_allow.add(kind)
-            return True
+            if not always_ask:
+                self._session_allow.add(kind)
+            return alive()
         return entry[1] == "allow" and alive()
 
     def resolve_confirm(self, cid, decision):
@@ -1082,16 +1175,31 @@ def selftest():
     except ImportError as e:
         lines.append(f"documents: FAIL {e}")
     lines.append(f"attachments: {attachments.selfcheck()}")
+    import secret_store
+    lines.append(f"secrets: {secret_store.backend_name()}")
     lines.append(f"stt: {stt.selfcheck()}")
     import tempfile
+    import rag
+    import sync
+    lines.append(f"crypto: {sync.selfcheck()}")
     manager = mcp_client.Manager()
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        lines.append(f"rag: {rag.selfcheck(tmp)}")
         try:
             servers = manager.ensure(config, tmp)
             status = manager.status(config, tmp)["servers"]
             lines.append("mcp: " + ", ".join(
                 f"{s['name']} OK({len(s['tools'])})" if s["state"] == "connected" else f"{s['name']} {s['state'].upper()} {s['error']}"
                 for s in status if s["enabled"]) + f" [{len(servers)} connected]")
+            # 1.10 커넥터 서버가 함께 묶였는지(설정과 관계없이 켜서 띄워 본다)
+            check = {"features": {k: True for k in connectors.FEATURES},
+                     "connectors": {c: {"enabled": True} for c in ("github", "research", "memory", "python", "ssh")}}
+            manager.ensure(check, tmp)
+            status = {s["name"]: s for s in manager.status(check, tmp)["servers"]}
+            lines.append("connectors: " + ", ".join(
+                f"{n} OK({len(status[n]['tools'])})" if status.get(n, {}).get("state") == "connected"
+                else f"{n} {status.get(n, {}).get('state', 'missing').upper()} {status.get(n, {}).get('error', '')}"
+                for n in ("github", "research", "memory", "python", "ssh")))
         finally:
             manager.shutdown()  # 서버가 임시 폴더를 쓰고 있으면 지울 수 없으므로 먼저 끈다
     try:

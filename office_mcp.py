@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """내장 MCP 서버: Word(.docx)·PowerPoint(.pptx)·Excel(.xlsx) 문서를 만들고 고친다.
 
 앱이 `PostechChat.exe --mcp-server word`(소스 실행은 `python office_mcp.py word`)로 띄우고,
@@ -19,6 +21,8 @@ SERVER_VERSION = "1.0.0"
 
 # 앱 프로세스 안의 스레드로 돌릴 때(안드로이드) 작업 폴더. None이면 현재 폴더(하위 프로세스로 실행할 때의 cwd).
 ROOT = None
+# initialize 때 받은 클라이언트 정보({"name", "version"}). memory 서버가 POSCHAT이 아닌 클라이언트를 거부하는 데 쓴다.
+CLIENT_INFO = {}
 
 
 class ToolFailure(Exception):
@@ -556,12 +560,23 @@ SERVERS = {
 
 
 def all_servers():
-    """내장 서버 이름 -> 도구 정의. 다른 서버 모듈은 이 모듈을 가져다 쓰므로 여기서 늦게 가져온다."""
+    """내장 서버 이름 -> 도구 정의. 다른 서버 모듈은 이 모듈을 가져다 쓰므로 여기서 늦게 가져온다.
+
+    github·google 등은 커넥터(connectors.py)를 켰을 때만 mcp_client가 띄운다.
+    """
     import firecrawl_mcp
+    import github_mcp
+    import google_mcp
     import notion_mcp
     import paper_mcp
+    import memory_mcp
+    import research_mcp
+    import runner_mcp
 
-    return {**SERVERS, "paper": paper_mcp.TOOLS, "notion": notion_mcp.TOOLS, "firecrawl": firecrawl_mcp.TOOLS}
+    return {**SERVERS, "paper": paper_mcp.TOOLS, "notion": notion_mcp.TOOLS, "firecrawl": firecrawl_mcp.TOOLS,
+            "github": github_mcp.TOOLS, **google_mcp.SERVERS,
+            "research": research_mcp.TOOLS, "zotero": research_mcp.ZOTERO_TOOLS, "memory": memory_mcp.TOOLS,
+            "python": runner_mcp.PYTHON_TOOLS, "ssh": runner_mcp.SSH_TOOLS}
 
 
 # ---- MCP 표준 입출력 서버 ----
@@ -583,6 +598,8 @@ def _std_streams():
 def _handle(name, tools, msg):
     method, params = msg.get("method"), msg.get("params") or {}
     if method == "initialize":
+        global CLIENT_INFO
+        CLIENT_INFO = params.get("clientInfo") if isinstance(params.get("clientInfo"), dict) else {}
         version = params.get("protocolVersion")
         return {
             "protocolVersion": version if version in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0],

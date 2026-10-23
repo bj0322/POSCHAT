@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """내장 MCP 서버 firecrawl: 웹페이지를 마크다운으로 읽고, 웹을 검색하고, 사이트를 훑는다(Firecrawl API v2).
 
 설정 창에 넣은 Firecrawl API 키(config.json의 firecrawl_key) 또는 FIRECRAWL_API_KEY 환경 변수를 쓴다.

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Beomjoon Kim
+// SPDX-License-Identifier: AGPL-3.0-only
 package io.github.bj0322.poschat
 
 import androidx.test.core.app.ActivityScenario
@@ -44,6 +46,15 @@ class AppSmokeTest {
         assertTrue(report.getJSONArray("skills").toString().contains("summarize"))
         assertEquals("OK", report.getString("attachments"))
         assertEquals("OK", report.getString("po_note"))
+        assertTrue(report.getString("stt"), report.getString("stt").startsWith("OK"))  // 녹음·로컬 인식 라이브러리
+        // 1.10: 커넥터 서버는 스레드로 돌고, 데스크톱 전용(python·ssh)은 뜨지 않는다
+        val connectors = report.getJSONObject("connectors")
+        assertEquals(19, connectors.getInt("github"))
+        assertEquals(12, connectors.getInt("research"))
+        assertEquals(8, connectors.getInt("memory"))
+        assertTrue(!connectors.has("python") && !connectors.has("ssh"))
+        assertEquals("OK", report.getString("rag"))
+        assertEquals("OK", report.getString("crypto"))
     }
 
     @Test

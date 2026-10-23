@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """PO노트의 실시간 음성 인식(STT).
 
 마이크 소리를 16kHz로 받아 음성 구간 검출(VAD)로 말 한 마디씩 끊고, 끊은 구간을 글자로 바꾼다.
@@ -9,8 +11,9 @@
 - 하이브리드(자동 방식의 기본): 로컬 AI가 바로 받아 적고, 약 2분치 구간 가운데 로컬 신뢰도가 낮은 구간이 있을 때만
   서버가 음성과 초안을 대조해 고친다. 1시간에 0~약 420크레딧. 이번 주 남은 크레딧이 예산 아래면 로컬만 쓴다.
 
-마이크·모델 라이브러리(sounddevice, sherpa-onnx, numpy)는 데스크톱 앱에만 들어 있다. 안드로이드처럼 없으면
-available()이 이유를 돌려주고, 녹음 기능만 꺼진다.
+데스크톱 앱은 sounddevice(PortAudio)·sherpa-onnx pip 패키지·numpy를 쓴다. 안드로이드 앱은 sherpa-onnx의 C 라이브러리를
+sherpa_capi(ctypes)로 부르고, android_main이 sounddevice 대신 휴대폰 마이크(녹음 서비스)를 연결한다.
+라이브러리가 없으면 available()이 이유를 돌려주고, 녹음 기능만 꺼진다.
 """
 import hashlib
 import io
@@ -25,6 +28,10 @@ import storage
 
 SAMPLE_RATE = 16000
 NUM_THREADS = 2          # 강의 내내 돌아도 노트북이 버벅이지 않도록 스레드를 적게 쓴다
+# 작은 소리 키우기: 한국어 Zipformer는 작은 소리(강의실 뒤쪽, 자동 음량이 없는 휴대폰 입력)에 빈 글을 낸다.
+# 구간의 RMS가 이보다 작으면 이만큼까지 키운다(최대 LEVEL_MAX_GAIN배). FLEURS 한국어 60개에서 CER 46%→11%.
+LEVEL_TARGET_RMS = 0.05
+LEVEL_MAX_GAIN = 30.0
 PREROLL = 0.3            # VAD가 말 첫 음절을 잘라 먹지 않도록 구간 앞에 붙이는 시간(초)
 MODELS_DIR = storage.APP_DIR / "stt_models"
 
@@ -78,16 +85,27 @@ class SttError(Exception):
 _available = None
 
 
+def sherpa():
+    """sherpa-onnx. 데스크톱은 pip 패키지, 안드로이드(패키지 없음)는 같은 이름을 흉내 내는 C API 바인딩(sherpa_capi)."""
+    try:
+        import sherpa_onnx
+        return sherpa_onnx
+    except ImportError:
+        import sherpa_capi
+        sherpa_capi.load()
+        return sherpa_capi
+
+
 def available():
     """(녹음할 수 있는지, 안 되면 이유). 마이크·인식 라이브러리를 한 번만 불러 본다."""
     global _available
     if _available is None:
         try:
             import numpy  # noqa: F401
-            import sherpa_onnx  # noqa: F401
-            import sounddevice  # noqa: F401  PortAudio를 불러온다
+            sherpa()
+            import sounddevice  # noqa: F401  PortAudio를 불러온다(안드로이드는 android_main의 마이크 연결)
             _available = (True, "")
-        except (ImportError, OSError) as e:
+        except Exception as e:  # ImportError, OSError, sherpa_capi.CapiError(버전·라이브러리 없음)
             _available = (False, f"이 기기의 앱에는 녹음·음성 인식 기능이 들어 있지 않습니다({type(e).__name__}).")
     return _available
 
@@ -97,7 +115,7 @@ def selfcheck():
     ok, reason = available()
     if not ok:
         return f"FAIL {reason}"
-    import sherpa_onnx
+    sherpa_onnx = sherpa()
     try:
         devices = len(input_devices())
     except Exception as e:  # CI 러너처럼 오디오 장치가 없어도 라이브러리만 있으면 된다
@@ -184,13 +202,23 @@ def delete_model(key):
 
 # ---- 인식 엔진 ----
 
+def level(samples):
+    """작은 소리만 LEVEL_TARGET_RMS까지 키운다(줄이지는 않고, 잘리지 않게 ±1로 묶는다)."""
+    import numpy as np
+    samples = np.asarray(samples, dtype=np.float32)
+    rms = float(np.sqrt(np.mean(np.square(samples)))) if len(samples) else 0.0
+    if rms <= 0 or rms >= LEVEL_TARGET_RMS:
+        return samples
+    return np.clip(samples * min(LEVEL_MAX_GAIN, LEVEL_TARGET_RMS / rms), -1.0, 1.0).astype(np.float32)
+
+
 class LocalEngine:
     """이 기기에서 인식한다(sherpa-onnx)."""
 
     batch_seconds = 0  # 말 구간마다 바로 인식한다
 
     def __init__(self, key, language="auto"):
-        import sherpa_onnx
+        sherpa_onnx = sherpa()
         if not model_installed(key):
             raise SttError("로컬 음성 인식 모델을 먼저 내려받으세요.")
         m, d = LOCAL_MODELS[key], _model_dir(key)
@@ -214,7 +242,7 @@ class LocalEngine:
         """(글, 신뢰도). 신뢰도는 토큰 확률의 평균(0~1)이고, 모델이 알려 주지 않으면(SenseVoice) None."""
         import numpy as np
         stream = self._rec.create_stream()
-        stream.accept_waveform(SAMPLE_RATE, samples)
+        stream.accept_waveform(SAMPLE_RATE, level(samples))
         self._rec.decode_stream(stream)
         result = stream.result
         probs = list(getattr(result, "ys_log_probs", None) or [])
@@ -282,7 +310,7 @@ class Segmenter:
 
     def __init__(self):
         import numpy as np
-        import sherpa_onnx
+        sherpa_onnx = sherpa()
         if not vad_installed():
             raise SttError("음성 구간 검출 모델을 먼저 내려받으세요.")
         cfg = sherpa_onnx.VadModelConfig()
@@ -408,9 +436,11 @@ class LiveSession:
         device = self._device if self._device not in ("", None) else None
         try:
             self._stream, rate = self._open(sd, device, SAMPLE_RATE), SAMPLE_RATE
-        except Exception:
+        except Exception as first:
             try:
                 rate = int(sd.query_devices(device, "input")["default_samplerate"])
+                if rate == SAMPLE_RATE:
+                    raise first  # 같은 빠르기로 다시 열어 봐야 소용없다(안드로이드: 권한 거부)
                 self._stream = self._open(sd, device, rate)
             except Exception as e:
                 raise SttError(f"마이크를 열지 못했습니다. 마이크 연결과 권한을 확인하세요: {e}") from e
