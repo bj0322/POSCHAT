@@ -103,7 +103,9 @@ class PoNoteRecordingTest {
             call("po_save_settings", JSONObject(mapOf("engine" to "local", "model" to "ko")))
             val state = JSONObject(call("po_state"))
             assertTrue(state.toString(), state.getBoolean("available"))
-            val noteId = JSONObject(call("po_create", "recording test")).getString("id")
+            val created = JSONObject(call("po_create", "recording test"))  // {"ok": true, "result": 노트}
+            assertTrue(created.toString(), created.getBoolean("ok"))
+            val noteId = created.getJSONObject("result").getString("id")
             val started = JSONObject(call("po_start", noteId))
             assertTrue(started.toString(), started.getBoolean("ok"))
             Thread.sleep(3000)
