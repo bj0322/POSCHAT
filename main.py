@@ -118,6 +118,12 @@ class Bridge(WorkspaceApi):
         if self._config.get("model") and model != self._config["model"]:
             self._config["model"] = model
             changed = True
+        if not self._config.get("migrated_1_10"):
+            # 1.10은 기존 파일의 형식을 바꾸지 않지만, 처음 실행할 때 1.9의 사용자 데이터를 한 번 백업해 둔다(되돌리기용).
+            backup = storage.backup_user_data("before-1.10")
+            self._config["migrated_1_10"] = True
+            self._config["backup_1_10"] = str(backup) if backup else ""
+            changed = True
         if changed:
             storage.save_config(self._config)
 
@@ -1125,14 +1131,27 @@ def selftest():
     lines.append(f"secrets: {secret_store.backend_name()}")
     lines.append(f"stt: {stt.selfcheck()}")
     import tempfile
+    import rag
+    import sync
+    lines.append(f"crypto: {sync.selfcheck()}")
     manager = mcp_client.Manager()
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        lines.append(f"rag: {rag.selfcheck(tmp)}")
         try:
             servers = manager.ensure(config, tmp)
             status = manager.status(config, tmp)["servers"]
             lines.append("mcp: " + ", ".join(
                 f"{s['name']} OK({len(s['tools'])})" if s["state"] == "connected" else f"{s['name']} {s['state'].upper()} {s['error']}"
                 for s in status if s["enabled"]) + f" [{len(servers)} connected]")
+            # 1.10 커넥터 서버가 함께 묶였는지(설정과 관계없이 켜서 띄워 본다)
+            check = {"features": {k: True for k in connectors.FEATURES},
+                     "connectors": {c: {"enabled": True} for c in ("github", "research", "memory", "python", "ssh")}}
+            manager.ensure(check, tmp)
+            status = {s["name"]: s for s in manager.status(check, tmp)["servers"]}
+            lines.append("connectors: " + ", ".join(
+                f"{n} OK({len(status[n]['tools'])})" if status.get(n, {}).get("state") == "connected"
+                else f"{n} {status.get(n, {}).get('state', 'missing').upper()} {status.get(n, {}).get('error', '')}"
+                for n in ("github", "research", "memory", "python", "ssh")))
         finally:
             manager.shutdown()  # 서버가 임시 폴더를 쓰고 있으면 지울 수 없으므로 먼저 끈다
     try:

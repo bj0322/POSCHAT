@@ -433,3 +433,16 @@ def status(collections=None):
             f"(SELECT COUNT(*) FROM chunks c WHERE c.doc_id = d.doc_id) AS chunks FROM documents d {where} "
             f"ORDER BY d.indexed_at DESC", args)]
         return {"fts": _meta(con, "fts"), "documents": docs, "chunks": sum(d["chunks"] for d in docs)}
+
+
+def selfcheck(tmp_dir):
+    """설치된 앱 진단: 문서를 인덱싱하고 한국어로 찾은 뒤 지운다(검색 방식도 알려 준다)."""
+    try:
+        p = Path(tmp_dir) / "rag-selftest.md"
+        p.write_text("# 확인\n어텐션은 쿼리와 키의 내적으로 가중치를 구한다.\n", encoding="utf-8")
+        index_file(p, "selftest")
+        hits = search("어텐션 내적", ["selftest"])
+        remove_document(doc_id("selftest", p.resolve()))
+        return f"OK ({fts_mode()})" if hits else "FAIL no hits"
+    except Exception as e:
+        return f"FAIL {type(e).__name__}: {e}"

@@ -78,7 +78,7 @@ jobs:
           Get-Content $report
           $text = Get-Content $report -Raw
           $version = python -c "from version import APP_VERSION; print(APP_VERSION)"
-          foreach ($want in "version: $version", "web: True", "documents: OK", "attachments: OK", "word OK", "powerpoint OK", "excel OK", "paper OK", "notion OK", "firecrawl OK", "stt: OK") {
+          foreach ($want in "version: $version", "web: True", "documents: OK", "attachments: OK", "word OK", "powerpoint OK", "excel OK", "paper OK", "notion OK", "firecrawl OK", "stt: OK", "crypto: OK", "rag: OK", "github OK(19)", "research OK(12)", "memory OK(8)", "python OK(3)", "ssh OK(2)") {
             if (-not $text.Contains($want)) { Write-Error "selftest에 '$want'이(가) 없습니다."; exit 1 }
           }
 
@@ -123,7 +123,7 @@ jobs:
           report="$HOME/Library/Application Support/PostechChat/selftest.txt"
           cat "$report"
           version=$(python -c "from version import APP_VERSION; print(APP_VERSION)")
-          for want in "version: $version" "web: True" "documents: OK" "attachments: OK" "word OK" "powerpoint OK" "excel OK" "paper OK" "notion OK" "firecrawl OK" "stt: OK"; do
+          for want in "version: $version" "web: True" "documents: OK" "attachments: OK" "word OK" "powerpoint OK" "excel OK" "paper OK" "notion OK" "firecrawl OK" "stt: OK" "crypto: OK" "rag: OK" "github OK(19)" "research OK(12)" "memory OK(8)" "python OK(3)" "ssh OK(2)"; do
             grep -qF "$want" "$report" || { echo "selftest에 '$want'이(가) 없습니다."; exit 1; }
           done
           codesign --verify --deep --strict "$app"

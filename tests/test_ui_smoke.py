@@ -19,9 +19,11 @@ class UiSmokeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import ui_harness
-        from support import isolated_app_dir
+        from support import isolated_app_dir, preserved_hooks
 
         cls.saved_env = {k: os.environ.get(k) for k in ("APPDATA", "POSTECH_CHAT_SECRETS")}
+        cls.hooks = preserved_hooks()
+        cls.hooks.__enter__()
         cls.isolation = isolated_app_dir()
         data_dir = cls.isolation.__enter__()  # 다른 테스트가 storage를 먼저 불러왔어도 임시 폴더를 쓴다
         cls.bridge, cls.events = ui_harness.make_bridge(data_dir)
@@ -42,6 +44,7 @@ class UiSmokeTests(unittest.TestCase):
             else:
                 os.environ[k] = v
         cls.isolation.__exit__(None, None, None)
+        cls.hooks.__exit__(None, None, None)
 
     def shot(self, page, name):
         if self.shots:

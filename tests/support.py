@@ -79,3 +79,16 @@ class FakeHttp:
             if m == method and part in url:
                 return response(self.calls[-1]) if callable(response) else response
         raise AssertionError(f"예상하지 못한 요청: {method} {url}")
+
+
+@contextlib.contextmanager
+def preserved_hooks():
+    """Bridge()가 바꾸는 모듈 전역 훅(api.on_usage 등)을 테스트가 끝나면 되돌린다."""
+    import api
+    import telemetry
+
+    saved = (api.on_usage, api.on_credit, api.on_trace, connectors.on_event, telemetry.config_getter)
+    try:
+        yield
+    finally:
+        api.on_usage, api.on_credit, api.on_trace, connectors.on_event, telemetry.config_getter = saved

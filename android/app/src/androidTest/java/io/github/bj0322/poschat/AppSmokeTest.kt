@@ -44,6 +44,14 @@ class AppSmokeTest {
         assertTrue(report.getJSONArray("skills").toString().contains("summarize"))
         assertEquals("OK", report.getString("attachments"))
         assertEquals("OK", report.getString("po_note"))
+        // 1.10: 커넥터 서버는 스레드로 돌고, 데스크톱 전용(python·ssh)은 뜨지 않는다
+        val connectors = report.getJSONObject("connectors")
+        assertEquals(19, connectors.getInt("github"))
+        assertEquals(12, connectors.getInt("research"))
+        assertEquals(8, connectors.getInt("memory"))
+        assertTrue(!connectors.has("python") && !connectors.has("ssh"))
+        assertEquals("OK", report.getString("rag"))
+        assertEquals("OK", report.getString("crypto"))
     }
 
     @Test

@@ -110,7 +110,8 @@ class SettingsTests(unittest.TestCase):
         self.assertNotIn("server_models", bridge._config)
 
     @patch.object(app_main.storage, "save_config")
-    def test_old_a1_default_moves_to_the_openai_compatible_api_once(self, save_config):
+    @patch.object(app_main.storage, "backup_user_data", return_value=None)  # 1.10 첫 실행 백업은 test_migration에서
+    def test_old_a1_default_moves_to_the_openai_compatible_api_once(self, _backup, save_config):
         bridge = self.bridge({"api_mode": "a1", "model": "claude-sonnet-5.5"})
         bridge._migrate_config()
         self.assertEqual(bridge._config["api_mode"], "chat_completions")

@@ -653,3 +653,15 @@ def wipe(backend):
     backend.wipe()
     forget_key()
     state_path().unlink(missing_ok=True)
+
+
+def selfcheck():
+    """설치된 앱 진단: 암호화 라이브러리와 키 유도·암복호화가 되는지."""
+    ok, reason = available()
+    if not ok:
+        return f"FAIL {reason}"
+    try:
+        cipher = Cipher(hashlib.scrypt(b"selftest-pass", salt=b"0" * 16, n=2 ** 10, r=8, p=1, dklen=32))
+        return "OK" if cipher.decrypt(cipher.encrypt({"x": "확인"})) == {"x": "확인"} else "FAIL roundtrip"
+    except Exception as e:
+        return f"FAIL {type(e).__name__}: {e}"
