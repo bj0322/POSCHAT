@@ -34,6 +34,7 @@ class UiSmokeTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
+        cls.server.server_close()
         cls.bridge._mcp.shutdown()
         for k, v in cls.saved_env.items():
             if v is None:
@@ -98,6 +99,33 @@ class UiSmokeTests(unittest.TestCase):
                 for name in ("word", "paper", "notion", "github"):
                     self.assertIn(name, text)
                 self.shot(page, "hub-mcp")
+                self.assertEqual(errors, [])
+            finally:
+                browser.close()
+
+    def test_research_tab_indexes_the_workspace_and_cites_sources(self):
+        from playwright.sync_api import sync_playwright
+
+        ws = os.path.join(os.environ["APPDATA"], "ws")  # make_bridge가 데이터 폴더(임시)로 바꿔 둔 값
+        os.makedirs(ws, exist_ok=True)
+        with open(os.path.join(ws, "notes.md"), "w", encoding="utf-8") as f:
+            f.write("# 실험 기록\n학습률을 0.001로 낮췄더니 손실이 안정되었다.\n")
+        self.bridge._config["workspace"] = ws
+        with sync_playwright() as p:
+            browser, page, errors = self.open(p)
+            try:
+                page.evaluate("showHub('research')")
+                page.wait_for_selector(".hub-panel .feature-toggle")
+                page.locator(".hub-panel .feature-toggle input").first.check()
+                page.wait_for_selector("text=에이전트 도구 켜기")
+                page.click("text=작업 폴더 인덱싱")
+                page.wait_for_selector("text=인덱싱 완료", timeout=20000)
+                box = page.locator("input[placeholder^='인덱스에서 찾기']")
+                box.fill("학습률 손실")
+                box.press("Enter")
+                page.wait_for_selector(".rag-hit")
+                self.assertIn("[1] 원문 · notes.md §실험 기록", page.locator(".rag-hit").first.inner_text())
+                self.shot(page, "hub-research")
                 self.assertEqual(errors, [])
             finally:
                 browser.close()

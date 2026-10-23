@@ -243,3 +243,172 @@ class WorkspaceApi:
 
     def connector_log(self, cid=None, limit=100):
         return connectors.read_audit(limit=max(1, min(500, int(limit or 100))), connector=cid or None)
+
+    # ---- 연구 라이브러리 (Phase 2) ----
+
+    def _research_call(self, fn, *args, **kwargs):
+        from office_mcp import ToolFailure
+
+        import research_library
+
+        try:
+            return {"ok": True, "result": fn(*args, **kwargs)}
+        except (ToolFailure, research_library.LibraryError, ValueError, OSError) as e:
+            return {"ok": False, "error": str(e)}
+
+    def research_state(self, query="", tag=""):
+        import rag
+        import research_library
+
+        ws = self._workspace()
+        collections = ["library"] + ([rag.workspace_collection(ws)] if ws else [])
+        try:
+            index = rag.status(collections)
+        except Exception as e:  # 손상된 인덱스 파일 등
+            index = {"fts": "?", "documents": [], "chunks": 0, "error": str(e)}
+        vector = dict(self._config.get("vector") or {})
+        return {
+            "feature": connectors.feature_enabled(self._config, "research"),
+            "enabled": connectors.is_enabled(self._config, "research"),
+            "papers": research_library.search(query or "", tag or None, None, limit=500),
+            "total": len(research_library.load()["papers"]),
+            "tags": research_library.tags(),
+            "index": {**index, "documents": index["documents"][:200]},
+            "workspace": ws, "indexing": bool(getattr(self, "_indexing", False)),
+            "vector": {**vector, "has_qdrant_key": secret_store.has("vector:qdrant_key"),
+                       "has_embedding_key": secret_store.has("vector:embedding_key")},
+            "zotero": connectors.status(self._config, "zotero")["state"],
+        }
+
+    def research_add(self, identifier, tags=None):
+        import research_library
+        import research_mcp
+
+        identifier = str(identifier or "").strip()
+        if not identifier:
+            return {"ok": False, "error": "arXiv 번호·DOI·논문 주소를 입력하세요."}
+        if identifier.lower().endswith(".pdf") and not identifier.lower().startswith("http"):
+            return {"ok": False, "error": "PDF는 에이전트에게 'research.library_add로 이 PDF를 더해 줘'라고 요청하세요."}
+        res = self._research_call(research_mcp.lookup, identifier)
+        if not res["ok"]:
+            return res
+        meta = res["result"]
+        if tags:
+            meta["tags"] = tags
+        return self._research_call(lambda: research_library.add(meta)[0])
+
+    def research_update(self, pid, fields):
+        import research_library
+
+        fields = {k: v for k, v in (fields or {}).items() if k in ("tags", "collections", "notes", "title", "year", "venue")}
+        return self._research_call(research_library.update, pid, **fields)
+
+    def research_remove(self, pid):
+        import research_library
+
+        return self._research_call(research_library.remove, pid)
+
+    def research_bibtex(self, ids=None, tag=None, save=False):
+        import research_library
+
+        papers = ([research_library.get(i) for i in ids] if ids else research_library.search("", tag or None, None, 100000))
+        if not papers:
+            return {"ok": False, "error": "내보낼 논문이 없습니다."}
+        text = research_library.to_bibtex(papers)
+        out = {"ok": True, "bibtex": text, "count": len(papers)}
+        if save:
+            path = research_library.research_dir() / "library.bib"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+            out["path"] = str(path)
+            self._open_url(str(path.parent))
+        return out
+
+    def research_index(self):
+        """작업 폴더 문서를 백그라운드에서 인덱싱한다. 진행은 {"type": "hub", "kind": "index_*"} 이벤트."""
+        ws = self._workspace()
+        if not ws:
+            return {"ok": False, "error": "먼저 작업 폴더를 선택하세요."}
+        if getattr(self, "_indexing", False):
+            return {"ok": False, "error": "이미 인덱싱하고 있습니다."}
+        self._indexing = True
+        threading.Thread(target=self._index_work, args=(ws,), daemon=True).start()
+        return {"ok": True}
+
+    def _index_work(self, ws):
+        import time as _time
+
+        import rag
+        import vector_store
+
+        last = [0.0]
+
+        def progress(done, total, name):
+            if _time.monotonic() - last[0] >= 0.3 or done == total:
+                last[0] = _time.monotonic()
+                self._push({"type": "hub", "kind": "index_progress", "done": done, "total": total, "name": name})
+
+        try:
+            vectors = vector_store.from_config(self._config)
+            summary = rag.index_folder(ws, rag.workspace_collection(ws), on_progress=progress, vectors=vectors)
+            self._push({"type": "hub", "kind": "index_done", "summary": summary})
+        except Exception as e:
+            self._push({"type": "hub", "kind": "index_error", "error": f"{type(e).__name__}: {e}"})
+        finally:
+            self._indexing = False
+
+    def research_search(self, query, limit=8):
+        import rag
+        import vector_store
+
+        ws = self._workspace()
+        collections = ["library"] + ([rag.workspace_collection(ws)] if ws else [])
+        try:
+            results = rag.search(query, collections, limit=int(limit or 8), vectors=vector_store.from_config(self._config))
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, "results": [{**r, "cite": rag.cite(r, ws or None)} for r in results]}
+
+    def research_remove_document(self, doc_id):
+        import rag
+        import vector_store
+
+        rag.remove_document(str(doc_id), vector_store.from_config(self._config))
+        return {"ok": True}
+
+    def set_vector_config(self, settings):
+        from urllib.parse import urlparse
+
+        settings = settings or {}
+
+        def ok_url(url):
+            u = urlparse(url)
+            local = u.hostname in ("127.0.0.1", "localhost", "::1")
+            return bool(u.hostname) and (u.scheme == "https" or (u.scheme == "http" and local))
+
+        cfg = {"enabled": bool(settings.get("enabled")),
+               "qdrant_url": str(settings.get("qdrant_url") or "").strip(),
+               "collection": str(settings.get("collection") or "poschat").strip() or "poschat",
+               "embedding_url": str(settings.get("embedding_url") or "").strip(),
+               "embedding_model": str(settings.get("embedding_model") or "").strip()}
+        for key in ("qdrant_url", "embedding_url"):
+            if cfg[key] and not ok_url(cfg[key]):
+                return {"ok": False, "error": "주소는 https:// 이거나 이 PC(http://127.0.0.1)여야 합니다."}
+        if cfg["enabled"] and not (cfg["qdrant_url"] and cfg["embedding_url"] and cfg["embedding_model"]):
+            return {"ok": False, "error": "벡터 검색을 켜려면 Qdrant 주소, 임베딩 API 주소와 모델이 모두 필요합니다."}
+        with self._lock:
+            self._config["vector"] = cfg
+            storage.save_config(self._config)
+        for name in ("qdrant_key", "embedding_key"):
+            if settings.get(name):
+                secret_store.set(f"vector:{name}", str(settings[name]).strip())
+            if settings.get(f"clear_{name}"):
+                secret_store.delete(f"vector:{name}")
+        return {"ok": True, **self.research_state()}
+
+    def zotero_import_now(self, full=False):
+        import research_mcp
+
+        if not connectors.has_credential("zotero"):
+            return {"ok": False, "error": "먼저 커넥터 탭에서 Zotero API 키를 넣으세요."}
+        return self._research_call(research_mcp.zotero_import, None, bool(full))

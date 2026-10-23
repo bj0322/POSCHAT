@@ -22,6 +22,8 @@ val syncSharedPython by tasks.registering(Sync::class) {
             // 1.10: 커넥터·연결·도구 창
             "connectors.py", "oauth.py", "privacy.py", "secret_store.py", "workspace_api.py",
             "github_mcp.py", "google_mcp.py",
+            // 1.10: 연구 워크스페이스
+            "research_library.py", "research_mcp.py", "rag.py", "vector_store.py",
         )
     }
     into(sharedPythonDir)

@@ -1,7 +1,9 @@
 """내장 MCP 서버 paper: 논문을 찾고, 정보를 보고, 섹션별로 나눠 읽는다.
 
 arXiv API(키 없음)로 찾고 PDF를 받으며, Semantic Scholar API(키 없이도 됨, 요청이 몰리면 잠시 거절)로
-arXiv 밖의 논문·인용·한 줄 요약(TLDR)을 얻는다. SEMANTIC_SCHOLAR_API_KEY 환경 변수가 있으면 그 키를 쓴다.
+arXiv 밖의 논문·인용·한 줄 요약(TLDR)을 얻는다. SEMANTIC_SCHOLAR_API_KEY 환경 변수나 커넥터 → 연구 라이브러리에
+넣은 키가 있으면 그 키를 쓴다. search의 source=crossref·openalex는 Crossref·OpenAlex(둘 다 키 없음)에서 찾고,
+source=all은 네 곳의 결과를 DOI → arXiv 번호 → 정규화한 제목 순으로 같은 논문끼리 합친다.
 PDF는 임시 폴더에 받아 두고 pypdf로 글자를 뽑아 섹션 제목을 찾는다. 작업 폴더에 쓰는 도구는 download뿐이다.
 """
 import hashlib
@@ -17,6 +19,8 @@ from office_mcp import BOOL, INT, READ_ONLY, STR, ToolFailure, _new_file, _path,
 
 ARXIV_API = "https://export.arxiv.org/api/query"
 S2_API = "https://api.semanticscholar.org/graph/v1"
+CROSSREF_API = "https://api.crossref.org/works"
+OPENALEX_API = "https://api.openalex.org/works"
 S2_FIELDS = "title,authors,year,venue,abstract,citationCount,referenceCount,tldr,openAccessPdf,externalIds,url"
 MAX_PDF_BYTES = 50 * 1024 * 1024
 DEFAULT_CHARS = 12000
@@ -122,8 +126,9 @@ def _arxiv_query(query):
 def _s2(path, params=None, quiet=False):
     """Semantic Scholar GET. quiet이면 실패해도 None을 돌려준다(부가 정보에 쓸 때)."""
     headers = {}
-    if os.environ.get("SEMANTIC_SCHOLAR_API_KEY"):
-        headers["x-api-key"] = os.environ["SEMANTIC_SCHOLAR_API_KEY"]
+    key = os.environ.get("SEMANTIC_SCHOLAR_API_KEY") or _s2_key()
+    if key:
+        headers["x-api-key"] = key
     for attempt in range(3):
         try:
             r = http("GET", S2_API + path, params=params, headers=headers, timeout=20)
@@ -145,6 +150,15 @@ def _s2(path, params=None, quiet=False):
         raise ToolFailure("Semantic Scholar가 요청이 많다며 거절했습니다(429). 잠시 뒤 다시 시도하거나 "
                           "source를 arxiv로 바꾸세요. 자주 쓰면 무료 API 키를 받아 SEMANTIC_SCHOLAR_API_KEY 환경 변수로 넣으세요.")
     raise ToolFailure(f"Semantic Scholar 요청에 실패했습니다(HTTP {r.status_code}).")
+
+
+def _s2_key():
+    try:
+        import secret_store
+
+        return secret_store.get("connector:research:s2_key")
+    except Exception:
+        return ""
 
 
 def _s2_id(kind, value):
@@ -172,6 +186,166 @@ def _s2_line(i, p):
     return f"{head}\n   {' · '.join(m for m in meta if m)}\n   paper: {ref}" + ("  [공개 PDF 있음]" if pdf or ids.get("ArXiv") else "")
 
 
+# ---- 여러 곳의 검색 결과를 한 형식으로 ----
+# {"title", "authors", "year", "venue", "doi", "arxiv", "url", "abstract", "citations", "sources"}
+
+def _norm_title(title):
+    return re.sub(r"[^0-9a-z가-힣]+", "", str(title or "").lower())
+
+
+def _clean_doi(doi):
+    doi = str(doi or "").strip()
+    doi = re.sub(r"^(https?://(dx\.)?doi\.org/|doi:)", "", doi, flags=re.I)
+    return doi.lower()
+
+
+def _record(**fields):
+    rec = {"title": "", "authors": [], "year": "", "venue": "", "doi": "", "arxiv": "", "url": "", "abstract": "",
+           "citations": None, "sources": []}
+    rec.update({k: v for k, v in fields.items() if v not in (None, "", [])})
+    rec["doi"] = _clean_doi(rec["doi"])
+    m = re.fullmatch(r"10\.48550/arxiv\.(.+)", rec["doi"])
+    if m and not rec["arxiv"]:
+        rec["arxiv"] = m.group(1)
+    rec["arxiv"] = re.sub(r"v\d+$", "", str(rec["arxiv"] or ""))
+    rec["year"] = str(rec["year"] or "")[:4]
+    return rec
+
+
+def _from_arxiv(e):
+    return _record(title=e["title"], authors=e["authors"], year=e["year"], venue=e.get("journal") or "arXiv",
+                   doi=e.get("doi"), arxiv=e["arxiv"], url=f"https://arxiv.org/abs/{e['arxiv']}", abstract=e["abstract"],
+                   sources=["arXiv"])
+
+
+def _from_s2(p):
+    ids = p.get("externalIds") or {}
+    return _record(title=p.get("title"), authors=[a.get("name") for a in p.get("authors") or []], year=p.get("year"),
+                   venue=p.get("venue"), doi=ids.get("DOI"), arxiv=ids.get("ArXiv"), url=p.get("url"),
+                   abstract=p.get("abstract"), citations=p.get("citationCount"), sources=["Semantic Scholar"])
+
+
+def _from_crossref(item):
+    authors = [" ".join(x for x in (a.get("given"), a.get("family")) if x) or a.get("name", "") for a in item.get("author") or []]
+    parts = ((item.get("issued") or {}).get("date-parts") or [[None]])[0]
+    abstract = re.sub(r"<[^>]+>", "", item.get("abstract") or "").strip()
+    return _record(title=" ".join((item.get("title") or [""])[0].split()), authors=authors,
+                   year=parts[0] if parts else "", venue=(item.get("container-title") or [""])[0], doi=item.get("DOI"),
+                   url=item.get("URL"), abstract=abstract, citations=item.get("is-referenced-by-count"), sources=["Crossref"])
+
+
+def _openalex_abstract(index):
+    if not isinstance(index, dict):
+        return ""
+    words = sorted((pos, word) for word, positions in index.items() for pos in positions)
+    return " ".join(w for _, w in words)
+
+
+def _from_openalex(w):
+    arxiv = ""
+    for loc in w.get("locations") or []:
+        m = ARXIV_ID_RE.search(str(loc.get("landing_page_url") or "")) if "arxiv.org" in str(loc.get("landing_page_url")) else None
+        if m:
+            arxiv = m.group(1)
+            break
+    source = ((w.get("primary_location") or {}).get("source") or {}).get("display_name")
+    return _record(title=w.get("title") or w.get("display_name"),
+                   authors=[(a.get("author") or {}).get("display_name") for a in w.get("authorships") or []],
+                   year=w.get("publication_year"), venue=source, doi=w.get("doi"), arxiv=arxiv,
+                   url=w.get("doi") or w.get("id"), abstract=_openalex_abstract(w.get("abstract_inverted_index")),
+                   citations=w.get("cited_by_count"), sources=["OpenAlex"])
+
+
+def _crossref_search(query, limit):
+    r = http("GET", CROSSREF_API, params={"query.bibliographic": query, "rows": limit,
+                                          "select": "DOI,title,author,issued,container-title,abstract,is-referenced-by-count,URL"},
+             timeout=30)
+    if r.status_code != 200:
+        raise ToolFailure(f"Crossref 검색에 실패했습니다(HTTP {r.status_code}).")
+    return [_from_crossref(i) for i in (r.json().get("message") or {}).get("items") or [] if i.get("title")]
+
+
+def _openalex_search(query, limit):
+    r = http("GET", OPENALEX_API, params={"search": query, "per-page": limit}, timeout=30)
+    if r.status_code != 200:
+        raise ToolFailure(f"OpenAlex 검색에 실패했습니다(HTTP {r.status_code}).")
+    return [_from_openalex(w) for w in r.json().get("results") or [] if w.get("title") or w.get("display_name")]
+
+
+def merge_records(records):
+    """같은 논문(DOI → arXiv 번호 → 정규화한 제목 순)을 하나로 합친다. 먼저 나온 값을 지키고 빈 칸을 채운다."""
+    merged, index = [], {}
+    for rec in records:
+        keys = [k for k in (("doi", rec["doi"]), ("arxiv", rec["arxiv"]), ("title", _norm_title(rec["title"]))) if k[1]]
+        target = next((index[k] for k in keys if k in index), None)
+        if target is None:
+            target = dict(rec, authors=list(rec["authors"]), sources=list(rec["sources"]))
+            merged.append(target)
+        else:
+            for field in ("title", "year", "venue", "doi", "arxiv", "url", "abstract"):
+                if not target[field] and rec[field]:
+                    target[field] = rec[field]
+            if not target["authors"]:
+                target["authors"] = list(rec["authors"])
+            if rec["citations"] is not None:
+                target["citations"] = max(target["citations"] or 0, rec["citations"])
+            target["sources"] += [s for s in rec["sources"] if s not in target["sources"]]
+        for k in (("doi", target["doi"]), ("arxiv", target["arxiv"]), ("title", _norm_title(target["title"]))):
+            if k[1]:
+                index[k] = target
+    return merged
+
+
+def _paper_ref(rec):
+    return f"arXiv:{rec['arxiv']}" if rec["arxiv"] else (f"DOI:{rec['doi']}" if rec["doi"] else rec["url"])
+
+
+def format_records(records, title):
+    lines = [title, ""]
+    for i, rec in enumerate(records, 1):
+        meta = [_authors(rec["authors"], 4)]
+        if rec["venue"]:
+            meta.append(rec["venue"])
+        if rec["citations"] is not None:
+            meta.append(f"인용 {rec['citations']}회")
+        lines.append(f"{i}. {rec['title'] or '(제목 없음)'} ({rec['year'] or '연도 미상'})")
+        lines.append(f"   {' · '.join(m for m in meta if m)}")
+        ids = [f"DOI: {rec['doi']}" if rec["doi"] else "", f"arXiv: {rec['arxiv']}" if rec["arxiv"] else ""]
+        lines.append(f"   {' · '.join(x for x in ids if x) or 'ID 없음'}" + (f" · {rec['url']}" if rec["url"] else ""))
+        if rec["abstract"]:
+            lines.append(f"   초록: {rec['abstract'][:300]}{'…' if len(rec['abstract']) > 300 else ''}")
+        lines.append(f"   출처: {', '.join(rec['sources'])} · paper: {_paper_ref(rec)}")
+    lines.append("\n자세히 보려면 info, 본문은 read에 paper 값을 넘기세요.")
+    return "\n".join(lines)
+
+
+def search_all(query, limit):
+    """arXiv·Semantic Scholar·Crossref·OpenAlex를 함께 찾아 합친다. 실패한 곳은 건너뛰고 알린다."""
+    found, failed = [], []
+    calls = [
+        ("arXiv", lambda: [_from_arxiv(e) for e in _arxiv_entries({"search_query": _arxiv_query(query), "max_results": limit})]),
+        ("Semantic Scholar", lambda: [_from_s2(p) for p in (_s2("/paper/search", {
+            "query": query, "limit": limit,
+            "fields": "title,authors,year,venue,abstract,citationCount,externalIds,url"}) or {}).get("data") or []]),
+        ("Crossref", lambda: _crossref_search(query, limit)),
+        ("OpenAlex", lambda: _openalex_search(query, limit)),
+    ]
+    for name, call in calls:
+        try:
+            found.append(call())
+        except ToolFailure as e:
+            failed.append(f"{name}: {e}")
+    # 각 출처의 순위를 섞어 앞쪽 결과가 고루 보이게 한다
+    interleaved = [rec for group in zip_longest_all(found) for rec in group]
+    return merge_records(interleaved), failed
+
+
+def zip_longest_all(groups):
+    longest = max((len(g) for g in groups), default=0)
+    for i in range(longest):
+        yield [g[i] for g in groups if i < len(g)]
+
+
 # ---- 도구: search / info / related ----
 
 def search(query, limit=8, source="arxiv", sort="relevance"):
@@ -179,6 +353,20 @@ def search(query, limit=8, source="arxiv", sort="relevance"):
     if not query:
         raise ToolFailure("query가 비어 있습니다.")
     limit = max(1, min(25, int(limit or 8)))
+    if source == "all":
+        records, failed = search_all(query, limit)
+        if not records:
+            return f"'{query}'에 맞는 논문이 없습니다." + (f" (실패: {'; '.join(failed)})" if failed else "")
+        text = format_records(records[:limit * 2], f"통합 검색 '{query}' — {len(records)}편(중복을 합친 결과)")
+        return text + (f"\n\n일부 출처는 실패했습니다: {'; '.join(failed)}" if failed else "")
+    if source == "crossref":
+        records = merge_records(_crossref_search(query, limit))
+        return format_records(records, f"Crossref 검색 '{query}' ({len(records)}건)") if records else \
+            f"Crossref에서 '{query}'에 맞는 논문이 없습니다."
+    if source == "openalex":
+        records = merge_records(_openalex_search(query, limit))
+        return format_records(records, f"OpenAlex 검색 '{query}' ({len(records)}건)") if records else \
+            f"OpenAlex에서 '{query}'에 맞는 논문이 없습니다."
     if source in ("scholar", "semantic_scholar", "s2"):
         data = _s2("/paper/search", {"query": query, "limit": limit,
                                      "fields": "title,authors,year,venue,citationCount,externalIds,openAccessPdf"})
@@ -495,7 +683,8 @@ PAPER_HELP = "paper: arXiv 번호(예: 1706.03762)·arXiv/DOI/논문 URL·DOI(10
 
 TOOLS = {
     "search": (search, "논문을 찾습니다. source: arxiv(기본, 최신 프리프린트) | scholar(Semantic Scholar, 학회·저널 논문 포함, "
-                       "인용 수). sort(arxiv만): relevance|date. 결과의 paper 값을 다른 도구에 넘기세요.",
+                       "인용 수) | crossref | openalex | all(네 곳을 함께 찾아 DOI·arXiv 번호·제목으로 중복을 합침). "
+                       "sort(arxiv만): relevance|date. 결과의 paper 값을 다른 도구에 넘기세요.",
                _schema({"query": STR, "limit": INT, "source": STR, "sort": STR}, ["query"]), READ_ONLY),
     "info": (info, "논문의 제목·저자·게재처·인용 수·링크·한 줄 요약(TLDR)·초록을 봅니다. 읽기 전에 개요를 잡을 때 쓰세요. " + PAPER_HELP,
              _schema({"paper": STR}, ["paper"]), READ_ONLY),

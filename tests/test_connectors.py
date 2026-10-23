@@ -6,6 +6,7 @@ import threading
 import time
 import types
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import requests
@@ -194,6 +195,25 @@ class PolicyTests(unittest.TestCase):
         self.assertTrue(p.decide(github, tool("get_file")).confirm)
         self.assertTrue(p.decide(github, tool("search_code")).denied)
         self.assertFalse(p.visible(github, tool("search_code")))
+
+
+class RegistryTests(unittest.TestCase):
+    def test_every_connector_tool_has_an_app_defined_kind(self):
+        import office_mcp
+
+        servers = office_mcp.all_servers()
+        for cid, c in connectors.CONNECTORS.items():
+            self.assertIn(c.server, servers, cid)
+            self.assertEqual(set(servers[c.server]), set(connectors.TOOL_KINDS[c.server]), c.server)
+            self.assertTrue(set(connectors.TOOL_KINDS[c.server].values()) <= set(connectors.KINDS), c.server)
+            self.assertNotIn(c.server, mcp_client.BUILTIN_SERVERS)  # 커넥터 서버는 기본으로 켜지지 않는다
+
+    def test_android_build_ships_every_module(self):
+        gradle = (Path(__file__).resolve().parent.parent / "android" / "app" / "build.gradle.kts").read_text()
+        root = Path(__file__).resolve().parent.parent
+        modules = {p.name for p in root.glob("*.py") if p.name not in ("build_installer.py",)}
+        missing = [m for m in sorted(modules) if f'"{m}"' not in gradle]
+        self.assertEqual(missing, [], "android/app/build.gradle.kts의 syncSharedPython에 더하세요")
 
 
 class GatewayTests(unittest.TestCase):

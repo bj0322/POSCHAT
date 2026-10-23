@@ -14,7 +14,7 @@ const CONN_STATE = {
   insufficient_scope: ["사용 권한 부족", "st-warn"],
   unavailable: ["이 기기에서 사용 불가", ""],
 };
-const KIND_LABEL = { read: "읽기", write: "쓰기", send: "전송", destructive: "삭제", exec: "실행" };
+const KIND_LABEL = { read: "읽기", edit: "이 기기 수정", write: "쓰기", send: "전송", destructive: "삭제", exec: "실행" };
 const ALWAYS_ASK = new Set(["send", "destructive", "exec"]);
 
 // replaceChildren은 null을 "null" 글자로 넣으므로 빈 항목을 빼고 채운다
@@ -291,9 +291,139 @@ async function renderMcpPanel(panel, st) {
 HUB_TABS.push({ id: "connectors", label: "커넥터", render: renderConnectors },
   { id: "mcp", label: "MCP 서버", render: (panel) => renderMcpPanel(panel) });
 
+/* ---------- 연구 라이브러리 탭 (Phase 2) ---------- */
+
+const RESEARCH = { query: "", tag: "", progress: null };
+
+function paperItem(p) {
+  const authors = (p.authors || []).slice(0, 4).join(", ") + ((p.authors || []).length > 4 ? ` 외 ${p.authors.length - 4}명` : "");
+  const ids = [p.doi ? `DOI ${p.doi}` : "", p.arxiv ? `arXiv ${p.arxiv}` : "", p.pdf ? `PDF ${p.pdf}` : ""].filter(Boolean).join(" · ");
+  const edit = (field, label, join) => async () => {
+    const current = Array.isArray(p[field]) ? p[field].join(", ") : (p[field] || "");
+    const value = prompt(label, current);
+    if (value == null) return;
+    const res = await hubCall(api().research_update(p.id, { [field]: join ? value.split(",").map((t) => t.trim()).filter(Boolean) : value }));
+    if (res) renderHub();
+  };
+  return h("div", { class: "skill-item paper-item" },
+    h("div", { class: "s-main" },
+      h("b", { class: "paper-title" }, p.title || "(제목 없음)"), h("span", { class: "badge" }, p.year || "연도 미상"),
+      p.citations != null ? h("span", { class: "badge" }, `인용 ${p.citations}`) : null,
+      h("p", {}, [authors, p.venue].filter(Boolean).join(" · ")),
+      ids ? h("p", { class: "mono small" }, ids) : null,
+      (p.tags || []).length ? h("p", {}, (p.tags || []).map((t) => h("span", { class: "badge tag", onclick: () => { RESEARCH.tag = t; renderHub(); } }, `#${t}`))) : null,
+      p.notes ? h("p", { class: "muted" }, `메모: ${p.notes}`) : null,
+      h("div", { class: "row wrap paper-actions" },
+        h("button", { class: "link-btn", onclick: edit("tags", "태그(쉼표로 구분)", true) }, "태그"),
+        h("button", { class: "link-btn", onclick: edit("notes", "메모") }, "메모"),
+        h("button", { class: "link-btn", onclick: async () => {
+          const res = await hubCall(api().research_bibtex([p.id]));
+          if (res) showBibtex(res);
+        } }, "BibTeX"),
+        h("button", { class: "link-btn danger", onclick: async () => {
+          if (!confirm(`'${p.title}'을(를) 라이브러리에서 지울까요?`)) return;
+          if (await hubCall(api().research_remove(p.id), "지웠습니다")) renderHub();
+        } }, "지우기"))));
+}
+
+function showBibtex(res) {
+  const pre = h("pre", { class: "diff bib" }, h("div", {}, res.bibtex));
+  modal({
+    title: `BibTeX (${res.count}편)`, body: pre, wide: true,
+    buttons: [{ label: "복사", action: () => copyText(res.bibtex) },
+      { label: "파일로 저장", action: async () => { const r = await hubCall(api().research_bibtex(null, RESEARCH.tag || null, true)); if (r) toast(`저장했습니다: ${r.path}`); } },
+      { label: "닫기", class: "primary" }],
+  });
+}
+
+async function renderResearch(panel) {
+  const st = await api().research_state(RESEARCH.query, RESEARCH.tag);
+  const add = h("input", { type: "text", placeholder: "arXiv 번호(1706.03762)·DOI·논문 주소" });
+  const addTags = h("input", { type: "text", placeholder: "태그(선택, 쉼표로 구분)" });
+  const addBtn = h("button", { class: "btn", onclick: async () => {
+    addBtn.disabled = true;
+    try {
+      const tags = addTags.value.split(",").map((t) => t.trim()).filter(Boolean);
+      if (await hubCall(api().research_add(add.value.trim(), tags), "라이브러리에 더했습니다")) renderHub();
+    } finally { addBtn.disabled = false; }
+  } }, "더하기");
+  const search = h("input", { type: "search", placeholder: "제목·저자·초록·메모 검색", value: RESEARCH.query });
+  search.addEventListener("keydown", (e) => { if (e.key === "Enter") { RESEARCH.query = search.value.trim(); renderHub(); } });
+  const tags = Object.entries(st.tags || {});
+  const docs = st.index.documents || [];
+  const progress = h("small", { class: "muted block" }, RESEARCH.progress || (st.indexing ? "인덱싱 중..." : ""));
+  RESEARCH.progressNode = progress;
+  const ragQuery = h("input", { type: "search", placeholder: "인덱스에서 찾기(출처가 붙은 원문 조각)" });
+  const ragOut = h("div", {});
+  ragQuery.addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter" || !ragQuery.value.trim()) return;
+    const res = await hubCall(api().research_search(ragQuery.value.trim()));
+    if (!res) return;
+    fill(ragOut, res.results.length ? res.results.map((r) => h("div", { class: "rag-hit" },
+      h("small", { class: "mono" }, r.cite), h("p", {}, r.text.length > 400 ? r.text.slice(0, 400) + "…" : r.text)))
+      : [h("small", { class: "muted" }, "맞는 내용이 없습니다.")]);
+  });
+  const v = st.vector || {};
+  const vEnabled = checkbox(v.enabled, () => {});
+  const vUrl = h("input", { type: "url", value: v.qdrant_url || "", placeholder: "http://127.0.0.1:6333" });
+  const vColl = h("input", { type: "text", value: v.collection || "poschat" });
+  const vEmbUrl = h("input", { type: "url", value: v.embedding_url || "", placeholder: "https://.../v1/embeddings" });
+  const vModel = h("input", { type: "text", value: v.embedding_model || "", placeholder: "임베딩 모델 ID" });
+  const vQKey = h("input", { type: "password", placeholder: v.has_qdrant_key ? "저장됨" : "Qdrant API 키(선택)" });
+  const vEKey = h("input", { type: "password", placeholder: v.has_embedding_key ? "저장됨" : "임베딩 API 키" });
+  fill(panel,
+    h("p", { class: "hub-intro" }, "논문을 모아 태그로 분류하고 BibTeX으로 내보내며, 작업 폴더의 PDF·문서를 인덱싱해 쪽·섹션이 붙은 원문으로 찾습니다. ",
+      "에이전트는 커넥터 '연구 라이브러리'를 켜면 research 도구(더하기·추천·인용 관계·문서 검색)를 씁니다. 모든 데이터는 이 기기에만 저장됩니다."),
+    featureToggle({ research: { label: "연구 워크스페이스", enabled: st.feature } }, "research"),
+    st.feature && !st.enabled ? h("div", { class: "row wrap" }, h("small", { class: "muted" }, "에이전트 도구(research 서버)가 꺼져 있습니다."),
+      h("button", { class: "btn", onclick: async () => { if (await hubCall(api().set_connector_enabled("research", true), "켰습니다")) renderHub(); } }, "에이전트 도구 켜기")) : null,
+    h("section", { class: "hub-group" }, h("h3", {}, `논문 라이브러리 (${st.total}편)`),
+      h("div", { class: "row wrap" }, add, addTags, addBtn),
+      h("div", { class: "row wrap", style: "margin-top:8px" }, search,
+        h("button", { class: "btn", onclick: async () => { const r = await hubCall(api().research_bibtex(null, RESEARCH.tag || null)); if (r) showBibtex(r); } },
+          RESEARCH.tag ? `#${RESEARCH.tag} BibTeX` : "전체 BibTeX"),
+        st.zotero !== "disabled" ? h("button", { class: "btn", onclick: async () => {
+          toast("Zotero에서 가져오는 중...");
+          const r = await hubCall(api().zotero_import_now(false));
+          if (r) { toast(r.result); renderHub(); }
+        } }, "Zotero에서 가져오기") : null),
+      tags.length ? h("p", { class: "tag-row" }, h("span", { class: "badge tag" + (RESEARCH.tag ? "" : " active"), onclick: () => { RESEARCH.tag = ""; renderHub(); } }, "전체"),
+        tags.map(([t, n]) => h("span", { class: "badge tag" + (RESEARCH.tag === t ? " active" : ""), onclick: () => { RESEARCH.tag = t; renderHub(); } }, `#${t} ${n}`))) : null,
+      st.papers.length ? st.papers.map(paperItem) : h("small", { class: "muted block" }, st.total ? "맞는 논문이 없습니다." : "아직 논문이 없습니다. 위에서 arXiv 번호나 DOI로 더해 보세요.")),
+    h("section", { class: "hub-group" }, h("h3", {}, `문서 인덱스 (문서 ${docs.length}개, 청크 ${st.index.chunks}개, 검색 방식 ${st.index.fts}${v.enabled ? " + 벡터" : ""})`),
+      h("div", { class: "row wrap" },
+        h("small", { class: "muted", style: "flex:1" }, st.workspace ? `작업 폴더: ${st.workspace}` : "작업 폴더를 고르면 그 폴더의 문서를 인덱싱합니다."),
+        h("button", { class: "btn", disabled: !st.workspace || st.indexing, onclick: async () => {
+          RESEARCH.progress = "인덱싱을 시작합니다...";
+          if (await hubCall(api().research_index())) renderHub();
+        } }, "작업 폴더 인덱싱")),
+      progress,
+      st.index.error ? h("p", { class: "mcp-error" }, st.index.error) : null,
+      docs.length ? hubDetails("rag-docs", `인덱싱한 문서 ${docs.length}개`, h("table", { class: "help-table log-table" }, docs.map((d) => h("tr", {},
+        h("td", { class: "mono" }, d.path.split(/[\\/]/).pop()), h("td", {}, d.collection === "library" ? "라이브러리" : "작업 폴더"),
+        h("td", {}, `${d.pages || "-"}쪽 · 청크 ${d.chunks}`),
+        h("td", {}, h("button", { class: "link-btn danger", onclick: async () => { if (await hubCall(api().research_remove_document(d.doc_id))) renderHub(); } }, "빼기")))))) : null,
+      h("div", { class: "row" }, ragQuery), ragOut,
+      hubDetails("vector", "벡터 검색(선택: Qdrant + 임베딩 API)",
+        h("small", { class: "muted block" }, "켜면 인덱싱할 때 문서 조각을 임베딩 API로 보내 벡터를 만들고 Qdrant에 저장해, 키워드 검색과 섞어(RRF) 찾습니다. ",
+          "문서 내용이 그 서버로 전송되므로 직접 운영하거나 신뢰하는 서버만 쓰세요. 끄면 키워드 검색만 씁니다."),
+        h("label", { class: "feature-toggle" }, vEnabled, h("span", {}, "벡터 검색 켜기")),
+        h("div", { class: "field" }, h("label", {}, "Qdrant 주소 · 컬렉션"), h("div", { class: "row wrap" }, vUrl, vColl)),
+        h("div", { class: "field" }, h("label", {}, "임베딩 API(OpenAI 호환 /embeddings) 주소 · 모델"), h("div", { class: "row wrap" }, vEmbUrl, vModel)),
+        h("div", { class: "field" }, h("label", {}, "키"), h("div", { class: "row wrap" }, vQKey, vEKey)),
+        h("button", { class: "btn", onclick: async () => {
+          const r = await hubCall(api().set_vector_config({ enabled: vEnabled.checked, qdrant_url: vUrl.value.trim(), collection: vColl.value.trim(),
+            embedding_url: vEmbUrl.value.trim(), embedding_model: vModel.value.trim(), qdrant_key: vQKey.value.trim(), embedding_key: vEKey.value.trim() }), "저장했습니다");
+          if (r) renderHub();
+        } }, "저장"))));
+}
+
+HUB_TABS.push({ id: "research", label: "연구 라이브러리", render: renderResearch });
+
 /* ---------- 백엔드 이벤트 ---------- */
 
 function hubEvent(ev) {
+  if (ev.type === "hub") return hubPanelEvent(ev);
   if (ev.type !== "connector") return;
   if (ev.kind === "device_code") {
     modal({
@@ -314,5 +444,22 @@ function hubEvent(ev) {
   } else if (ev.kind === "login_error") {
     toast(ev.error);
     renderHub();
+  }
+}
+
+function hubPanelEvent(ev) {
+  if (ev.kind === "index_progress") {
+    RESEARCH.progress = `인덱싱 중... ${ev.done}/${ev.total} ${ev.name}`;
+    if (RESEARCH.progressNode) RESEARCH.progressNode.textContent = RESEARCH.progress;
+  } else if (ev.kind === "index_done") {
+    const s = ev.summary;
+    RESEARCH.progress = `인덱싱 완료: 새로 ${s.indexed}개, 그대로 ${s.unchanged}개, 지움 ${s.removed}개, 청크 ${s.chunks}개` +
+      (s.failed.length ? ` · 실패 ${s.failed.length}개 (${s.failed.slice(0, 3).join("; ")})` : "");
+    if (HUB.tab === "research") renderHub();
+  } else if (ev.kind === "index_error") {
+    RESEARCH.progress = `인덱싱 실패: ${ev.error}`;
+    if (HUB.tab === "research") renderHub();
+  } else if (window.hubExtraEvent) {
+    hubExtraEvent(ev);
   }
 }

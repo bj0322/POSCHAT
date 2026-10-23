@@ -565,9 +565,11 @@ def all_servers():
     import google_mcp
     import notion_mcp
     import paper_mcp
+    import research_mcp
 
     return {**SERVERS, "paper": paper_mcp.TOOLS, "notion": notion_mcp.TOOLS, "firecrawl": firecrawl_mcp.TOOLS,
-            "github": github_mcp.TOOLS, **google_mcp.SERVERS}
+            "github": github_mcp.TOOLS, **google_mcp.SERVERS,
+            "research": research_mcp.TOOLS, "zotero": research_mcp.ZOTERO_TOOLS}
 
 
 # ---- MCP 표준 입출력 서버 ----
