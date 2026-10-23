@@ -556,12 +556,18 @@ SERVERS = {
 
 
 def all_servers():
-    """내장 서버 이름 -> 도구 정의. 다른 서버 모듈은 이 모듈을 가져다 쓰므로 여기서 늦게 가져온다."""
+    """내장 서버 이름 -> 도구 정의. 다른 서버 모듈은 이 모듈을 가져다 쓰므로 여기서 늦게 가져온다.
+
+    github·google 등은 커넥터(connectors.py)를 켰을 때만 mcp_client가 띄운다.
+    """
     import firecrawl_mcp
+    import github_mcp
+    import google_mcp
     import notion_mcp
     import paper_mcp
 
-    return {**SERVERS, "paper": paper_mcp.TOOLS, "notion": notion_mcp.TOOLS, "firecrawl": firecrawl_mcp.TOOLS}
+    return {**SERVERS, "paper": paper_mcp.TOOLS, "notion": notion_mcp.TOOLS, "firecrawl": firecrawl_mcp.TOOLS,
+            "github": github_mcp.TOOLS, **google_mcp.SERVERS}
 
 
 # ---- MCP 표준 입출력 서버 ----
