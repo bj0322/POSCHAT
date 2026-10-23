@@ -27,6 +27,8 @@ const ICONS = {
   retry: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
 };
 
+const REPO_URL = "https://github.com/bj0322/POSCHAT";
+
 /* ---------- 상태 ---------- */
 const S = {
   threads: [],
@@ -704,6 +706,8 @@ window.onBackendEvent = (ev) => {
     showConfirm(ev);
   } else if (ev.type === "po") {
     if (window.poEvent) poEvent(ev);
+  } else if (ev.type === "update") {
+    updateEvent(ev);
   } else if (ev.type === "credit") {
     S.credit = ev.credit;
     document.querySelectorAll("[data-credit]").forEach((el) => { el.textContent = creditText(S.credit); });
@@ -889,6 +893,8 @@ function showSettings() {
   } }, "모델 목록 불러오기");
   const stream = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
   stream.checked = c.stream !== false;
+  const autoUpdate = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
+  autoUpdate.checked = c.update_check !== false;
   const responsesBox = h("div", {},
     h("div", { class: "field" }, h("label", {}, "Responses API 주소 (필수)"), url,
       h("small", {}, "필수 입력. POSTECH GenAI 콘솔에서 openai/responses로 끝나는 전체 HTTPS 주소를 복사하세요.")),
@@ -932,6 +938,20 @@ function showSettings() {
       c.firecrawl_source === "settings"
         ? h("label", { style: "display:flex;align-items:center;font-size:13px;margin-top:4px;cursor:pointer" }, clearFirecrawl, "저장된 키 지우기")
         : null),
+    h("div", { class: "field" }, h("label", {}, "업데이트"),
+      h("label", { style: "display:flex;align-items:center;font-weight:400;cursor:pointer" }, autoUpdate, "시작할 때 새 버전 확인"),
+      h("div", { class: "row", style: "margin-top:6px" },
+        h("small", { style: "flex:1;margin:0" }, `지금 버전 ${S.version}. 새 버전은 GitHub Releases에서 받아 설치합니다.`),
+        h("button", { class: "btn", type: "button", onclick: async (e) => {
+          e.target.disabled = true;
+          try {
+            const result = await api().check_for_updates(true);
+            if (result.available) offerUpdate(result);
+            else toast(result.error || `최신 버전(${S.version})을 쓰고 있습니다`);
+          } finally {
+            e.target.disabled = false;
+          }
+        } }, "업데이트 확인"))),
     h("div", { class: "field" }, h("label", {}, "에이전트 권한"), perm,
       h("small", {}, "에이전트가 파일을 고치거나 명령을 실행하기 전에 승인을 받을지 정합니다.")),
     h("div", { class: "row" },
@@ -947,7 +967,10 @@ function showSettings() {
       h("div", { class: "row" }, h("small", { style: "flex:1;margin:0;word-break:break-all" }, S.dataDir),
         h("button", { class: "btn", onclick: () => api().open_folder("data") }, "열기"))),
   );
-  body.append(h("p", { style: "margin:14px 0 0;color:var(--text-3);font-size:12px" }, `POSTECH GenAI Chat 버전 ${S.version}`));
+  body.append(h("p", { style: "margin:14px 0 0;color:var(--text-3);font-size:12px" }, `POSTECH GenAI Chat 버전 ${S.version}`),
+    h("p", { style: "margin:2px 0 0;color:var(--text-3);font-size:12px" }, "서비스 대표자: 김범준"),
+    h("p", { style: "margin:2px 0 0;color:var(--text-3);font-size:12px" }, "문의사항은 ",
+      h("a", { href: REPO_URL, target: "_blank", style: "color:inherit" }, REPO_URL), "의 문의 메일로 보내 주세요."));
   modal({
     title: "설정",
     body,
@@ -964,6 +987,7 @@ function showSettings() {
             api_mode: mode.value, responses_url: url.value.trim(),
             chat_completions_url: compatibleUrl.value.trim(), server_models: serverModels,
             model: mode.value === "responses" ? responsesModel.value : compatibleModel.value, stream: stream.checked,
+            update_check: autoUpdate.checked,
             notion_token: notion.value.trim(), clear_notion: clearNotion.checked && !notion.value.trim(),
             firecrawl_key: firecrawl.value.trim(), clear_firecrawl: clearFirecrawl.checked && !firecrawl.value.trim(),
           });
@@ -976,6 +1000,60 @@ function showSettings() {
     ],
   });
   setTimeout(() => key.focus(), 50);
+}
+
+/* ---------- 업데이트 ---------- */
+const UPD = { modal: null, bar: null, text: null };
+
+function offerUpdate(update, attempts = 0) {
+  // 다른 창(설정 등)이 열려 있으면 닫힐 때까지 기다렸다가 연다
+  if ($("#modal-root .modal") && !$("#modal-root .modal .update-notes")) {
+    if (attempts < 120) setTimeout(() => offerUpdate(update, attempts + 1), 500);
+    return;
+  }
+  const body = h("div", {},
+    h("p", { style: "margin:0 0 10px" }, `새 버전 ${update.version}을 쓸 수 있습니다. 지금 버전은 ${update.current || S.version}입니다.`),
+    update.notes ? h("div", { class: "update-notes" }, renderMarkdown(update.notes)) : null,
+    h("small", { style: "display:block;margin-top:10px;color:var(--text-3)" },
+      update.can_install ? "GitHub Releases에서 설치 파일을 받아 크기·SHA-256을 확인한 뒤 설치를 시작합니다. 대화·설정은 그대로 남습니다."
+        : "이 기기에서는 자동으로 설치할 수 없습니다. Releases 페이지에서 받아 설치하세요."));
+  modal({
+    title: "업데이트",
+    body,
+    buttons: [
+      { label: "이 버전 건너뛰기", action: (close) => { api().skip_update(update.version); close(); } },
+      { label: "나중에", value: null },
+      update.can_install
+        ? { label: "업데이트", class: "primary", action: (close) => { close(); startUpdate(update); } }
+        : { label: "Releases 열기", class: "primary", action: (close) => { api().open_release_page(); close(); } },
+    ],
+  });
+}
+
+async function startUpdate(update) {
+  UPD.bar = h("i", { style: "width:0%" });
+  UPD.text = h("p", { style: "margin:0 0 10px;color:var(--text-2)" }, `${update.version} 설치 파일을 내려받는 중…`);
+  UPD.modal = modal({ title: "업데이트", body: h("div", {}, UPD.text, h("div", { class: "po-meter po-progress" }, UPD.bar)),
+    onClose: () => { UPD.modal = null; } });
+  const res = await api().download_update();
+  if (res.ok === false) {
+    UPD.modal?.close();
+    toast(res.error);
+  }
+}
+
+function updateEvent(ev) {
+  if (ev.kind === "progress") {
+    if (UPD.bar) UPD.bar.style.width = `${Math.round(ev.done / ev.total * 100)}%`;
+    if (UPD.text) UPD.text.textContent = `설치 파일을 내려받는 중… ${fmtSize(ev.done)} / ${fmtSize(ev.total)}`;
+  } else if (ev.kind === "installing" || ev.kind === "opened") {
+    if (UPD.text) UPD.text.textContent = ev.message;
+    if (UPD.bar) UPD.bar.style.width = "100%";
+    if (ev.kind === "opened") setTimeout(() => UPD.modal?.close(), 6000);
+  } else if (ev.kind === "error") {
+    UPD.modal?.close();
+    toast(`업데이트하지 못했습니다: ${ev.error}`);
+  }
 }
 
 function showMemory() {
@@ -1215,6 +1293,10 @@ Claude Sonnet 5.5 기준으로 1크레딧은 입력 약 250토큰, 출력 약 75
 - **크레딧 예산 보호**: 이번 주 남은 크레딧이 정한 비율(기본 30%) 아래로 내려가면 서버를 쓰지 않고 로컬 AI로만 받아 적습니다.
 
 녹음 기능은 Windows·macOS 앱에서 쓸 수 있습니다. 휴대폰 앱에서는 노트와 전사를 보고 노트를 만들 수 있습니다.`],
+  ["업데이트", `
+앱이 시작할 때 GitHub Releases에서 새 버전을 확인해 알려 줍니다. **업데이트**를 누르면 설치 파일을 받아 확인한 뒤 설치를 시작합니다(Windows는 설치 프로그램이 열리고 앱이 닫힙니다). 대화·설정은 그대로 남습니다.
+
+**설정 → 업데이트**에서 시작할 때 확인을 끄거나 지금 확인할 수 있습니다.`],
   ["파일 첨부", `
 입력창의 **+** 버튼, 파일 끌어다 놓기, 이미지 붙여 넣기(Ctrl+V, 맥은 ⌘+V)로 첨부합니다. 파일은 하나에 20MB, 한 번에 10개까지입니다.
 
@@ -1459,6 +1541,8 @@ async function init() {
   else await newThread();
   updateSend();
   if (!state.config.key_source) showSettings();
+  // 새 버전 확인(설정에서 끌 수 있고 6시간에 한 번). 실패해도 사용에 지장이 없으므로 알리지 않는다.
+  api().check_for_updates(false).then((r) => { if (r.available) offerUpdate(r); }).catch(() => {});
 }
 
 if (window.pywebview && window.pywebview.api) init();
