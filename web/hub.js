@@ -1,0 +1,318 @@
+"use strict";
+
+/* ---------- 연결·도구 창: 커넥터 · MCP 서버 (이후 Phase의 탭도 여기에 더한다) ----------
+   app.js의 h(), modal(), api(), toast(), renderMarkdown(), copyText()를 쓴다. */
+
+const HUB = { tab: "connectors", modal: null, panel: null, tabs: null, open: new Set() };
+const HUB_TABS = [];  // [{ id, label, render(panel) }] — 아래에서 차례로 더한다
+
+const CONN_STATE = {
+  connected: ["연결됨", "st-ok"],
+  needs_auth: ["인증 필요", "st-warn"],
+  error: ["연결 오류", "st-err"],
+  disabled: ["비활성화", ""],
+  insufficient_scope: ["사용 권한 부족", "st-warn"],
+  unavailable: ["이 기기에서 사용 불가", ""],
+};
+const KIND_LABEL = { read: "읽기", write: "쓰기", send: "전송", destructive: "삭제", exec: "실행" };
+const ALWAYS_ASK = new Set(["send", "destructive", "exec"]);
+
+// replaceChildren은 null을 "null" 글자로 넣으므로 빈 항목을 빼고 채운다
+function fill(node, ...children) {
+  node.replaceChildren(...children.flat().filter((c) => c != null && c !== false));
+  return node;
+}
+
+function showHub(tab) {
+  if (tab) HUB.tab = tab;
+  HUB.tabs = h("div", { class: "hub-tabs", role: "tablist" });
+  HUB.panel = h("div", { class: "hub-panel" });
+  HUB.modal = modal({
+    title: "연결·도구",
+    body: h("div", {}, HUB.tabs, HUB.panel),
+    wide: true,
+    buttons: [{ label: "닫기", class: "primary", value: null }],
+    onClose: () => { HUB.modal = null; HUB.rendered = null; },
+  });
+  renderHub();
+  return HUB.modal;
+}
+
+function renderHub() {
+  if (!HUB.modal) return;
+  if (!HUB_TABS.some((t) => t.id === HUB.tab)) HUB.tab = HUB_TABS[0].id;
+  HUB.tabs.replaceChildren(...HUB_TABS.map((t) => h("button", {
+    class: "hub-tab" + (t.id === HUB.tab ? " active" : ""), role: "tab", "aria-selected": String(t.id === HUB.tab),
+    onclick: () => { HUB.tab = t.id; renderHub(); },
+  }, t.label)));
+  const tab = HUB_TABS.find((t) => t.id === HUB.tab);
+  // 같은 탭을 다시 그릴 때는 새 내용이 올 때까지 이전 내용을 둔다(깜빡임·스크롤 위치 튐 방지)
+  if (HUB.rendered !== tab.id) fill(HUB.panel, h("small", { class: "muted" }, "불러오는 중..."));
+  HUB.rendered = tab.id;
+  Promise.resolve(tab.render(HUB.panel)).catch((e) => {
+    fill(HUB.panel, h("p", { class: "mcp-error" }, `불러오지 못했습니다: ${e.message || e}`));
+  });
+}
+
+// 이 탭이 다시 그려질 때 펼쳐 둔 항목을 유지한다
+function hubDetails(key, summary, ...children) {
+  const d = h("details", { class: "hub-details", open: HUB.open.has(key) }, h("summary", {}, summary), ...children);
+  d.addEventListener("toggle", () => (d.open ? HUB.open.add(key) : HUB.open.delete(key)));
+  return d;
+}
+
+function checkbox(checked, onchange, title) {
+  const box = h("input", { type: "checkbox", class: "inline-check", title });
+  box.checked = !!checked;
+  box.addEventListener("change", () => onchange(box.checked, box));
+  return box;
+}
+
+async function hubCall(promise, okText) {
+  const res = await promise;
+  if (res && res.ok === false) {
+    toast(res.error || "실패했습니다");
+    return null;
+  }
+  if (okText) toast(okText);
+  if (res && res.message) toast(res.message);
+  return res;
+}
+
+function featureToggle(features, name, note) {
+  const f = (features || {})[name];
+  if (!f) return null;
+  return h("label", { class: "feature-toggle" },
+    checkbox(f.enabled, async (on) => {
+      await hubCall(api().set_feature(name, on), on ? `${f.label}을(를) 켰습니다` : `${f.label}을(를) 껐습니다`);
+      renderHub();
+    }),
+    h("span", {}, h("b", {}, f.label), note ? h("small", {}, note) : null));
+}
+
+/* ---------- 커넥터 탭 ---------- */
+
+function stateBadge(c) {
+  const [label, cls] = CONN_STATE[c.state] || [c.state, ""];
+  return h("span", { class: "badge " + cls }, label);
+}
+
+function secretRow(c, f) {
+  const input = h("input", { type: "password", autocomplete: "off",
+    placeholder: f.has ? `저장됨 ${f.masked}` : (f.placeholder || "") });
+  return h("div", { class: "field" }, h("label", {}, f.label),
+    h("div", { class: "row" }, input,
+      h("button", { class: "btn", onclick: async () => {
+        if (!input.value.trim()) return toast("값을 입력하세요");
+        if (await hubCall(api().set_connector_secret(c.id, f.name, input.value.trim()), "저장했습니다")) renderHub();
+      } }, "저장")),
+    f.help ? h("small", {}, f.help) : null);
+}
+
+function optionRow(c, f) {
+  if (f.name === "readonly") {
+    return h("label", { class: "feature-toggle" },
+      checkbox(String(f.value) === "true", async (on) => {
+        if (await hubCall(api().set_connector_option(c.id, "readonly", on ? "true" : ""),
+          on ? "읽기 전용으로 바꿨습니다. 다시 로그인하면 읽기 권한만 요청합니다." : "쓰기 권한을 쓰려면 다시 로그인하세요.")) renderHub();
+      }),
+      h("span", {}, f.label));
+  }
+  const input = h("input", { type: "text", value: f.value || "", placeholder: f.placeholder || "" });
+  return h("div", { class: "field" }, h("label", {}, f.label),
+    h("div", { class: "row" }, input, h("button", { class: "btn", onclick: async () => {
+      if (await hubCall(api().set_connector_option(c.id, f.name, input.value.trim()), "저장했습니다")) renderHub();
+    } }, "저장")), f.help ? h("small", {}, f.help) : null);
+}
+
+function toolPolicyTable(c) {
+  const rows = c.tools.map((t) => {
+    const sel = h("select", { class: "policy-select", title: "이 도구의 승인 정책" },
+      h("option", { value: "" }, "기본"),
+      h("option", { value: "allow", disabled: ALWAYS_ASK.has(t.kind) }, "묻지 않고 허용"),
+      h("option", { value: "ask" }, "항상 묻기"),
+      h("option", { value: "deny" }, "차단(모델에게 숨김)"));
+    sel.value = t.policy || "";
+    sel.addEventListener("change", async () => {
+      if (await hubCall(api().set_connector_policy(c.id, t.name, sel.value))) toast("정책을 바꿨습니다");
+    });
+    return h("tr", {}, h("td", { class: "mono" }, t.name),
+      h("td", {}, h("span", { class: `badge kind-${t.kind}` }, KIND_LABEL[t.kind] || t.kind)), h("td", {}, sel));
+  });
+  return h("div", {},
+    h("small", { class: "muted" }, "기본: 읽기는 묻지 않고, 쓰기는 '에이전트 권한' 설정을 따르며, 전송·삭제·실행은 설정과 관계없이 매번 묻습니다."),
+    h("table", { class: "help-table policy-table" }, rows));
+}
+
+async function showConnectorLog(c, box) {
+  const rows = await api().connector_log(c.id, 30);
+  if (!rows.length) return fill(box, h("small", { class: "muted" }, "아직 호출 기록이 없습니다."));
+  fill(box, h("table", { class: "help-table log-table" }, rows.map((r) => h("tr", {},
+    h("td", {}, new Date(r.ts * 1000).toLocaleString()),
+    h("td", { class: "mono" }, r.tool),
+    h("td", {}, r.ok ? "성공" : (r.approval === "denied" ? "거부됨" : r.approval === "blocked" ? "차단됨" : "실패")),
+    h("td", {}, `${r.ms}ms`),
+    h("td", { class: "muted" }, r.error || "")))),
+  h("small", { class: "muted" }, "기록에는 인자 요약만 남고(비밀·긴 내용·메일 주소는 가림) 결과 내용은 남지 않습니다. 30일 보관."));
+}
+
+function connectorCard(c, data) {
+  const toggle = checkbox(c.enabled, async (on, box) => {
+    box.disabled = true;
+    const res = await hubCall(api().set_connector_enabled(c.id, on), on ? `${c.name}을(를) 켰습니다` : `${c.name}을(를) 껐습니다`);
+    if (res) renderHub();
+    else box.disabled = false;
+  }, c.enabled ? "끄기" : "켜기");
+  if (c.state === "unavailable") toggle.disabled = true;
+  const actions = h("div", { class: "row wrap" });
+  const oauthReady = c.auth === "oauth" || (c.device_flow && (data.oauth_clients[c.provider] || {}).client_id);
+  if (oauthReady) {
+    actions.append(h("button", { class: "btn", onclick: async () => {
+      if (await hubCall(api().connector_login(c.id))) toast("브라우저에서 로그인을 마치세요");
+    } }, c.has_oauth_token ? "다시 로그인" : (c.auth === "oauth" ? "로그인" : "OAuth로 로그인")));
+  }
+  actions.append(
+    h("button", { class: "btn", onclick: async () => {
+      toast("확인하는 중...");
+      const res = await hubCall(api().connector_verify(c.id));
+      if (res) {
+        const v = res.verified || {};
+        toast(v.state === "connected" ? `연결됨${v.account ? ": " + v.account : ""}` : (v.detail || "확인하지 못했습니다"));
+        renderHub();
+      }
+    } }, "연결 확인"),
+    h("button", { class: "btn danger", onclick: async () => {
+      if (!confirm(`${c.name} 연결을 해제할까요? 이 기기에 저장된 인증 정보를 지웁니다.`)) return;
+      if (await hubCall(api().connector_logout(c.id))) renderHub();
+    } }, "연결 해제"));
+  const logBox = h("div", {});
+  const detail = c.detail && c.state !== "disabled" ? h("p", { class: c.state === "error" ? "mcp-error" : "" }, c.detail) : null;
+  const missing = (c.missing_scopes || []).length
+    ? h("p", { class: "mcp-error" }, "허용받지 못한 권한: " + c.missing_scopes.map((s) => s.split("/").pop()).join(", ")) : null;
+  return h("div", { class: "conn-card" },
+    h("div", { class: "skill-item" }, toggle,
+      h("div", { class: "s-main" },
+        h("b", {}, c.name), stateBadge(c), c.desktop_only ? h("span", { class: "badge" }, "데스크톱 전용") : null,
+        c.account ? h("span", { class: "badge" }, c.account) : null,
+        h("p", {}, c.description), detail, missing)),
+    hubDetails(`conn:${c.id}`, "연결 설정 · 권한 · 기록",
+      c.setup ? h("div", { class: "conn-setup" }, renderMarkdown(c.setup)) : null,
+      ...c.secrets.map((f) => secretRow(c, f)),
+      c.device_flow ? oauthClientRow("github", data, "GitHub OAuth App의 Client ID (선택, Device Flow 사용 설정 필요)", false) : null,
+      ...c.options.map((f) => optionRow(c, f)),
+      c.scopes.length ? h("div", { class: "field" }, h("label", {}, c.auth === "oauth" ? "요청하는 권한(scope)" : "토큰에 필요한 권한"),
+        h("ul", { class: "scope-list" }, c.scopes.map((s) => h("li", { class: "mono" }, s)))) : null,
+      actions,
+      h("div", { class: "field" }, h("label", {}, `도구 ${c.tools.length}개와 승인 정책`), toolPolicyTable(c)),
+      h("div", { class: "field" }, h("label", {}, "최근 호출 기록"),
+        h("button", { class: "btn", onclick: () => showConnectorLog(c, logBox) }, "불러오기"), logBox)));
+}
+
+function oauthClientRow(provider, data, label, withSecret = true) {
+  const client = data.oauth_clients[provider] || {};
+  const id = h("input", { type: "text", value: client.client_id || "", placeholder: "클라이언트 ID", autocomplete: "off" });
+  const secret = withSecret ? h("input", { type: "password", autocomplete: "off",
+    placeholder: client.has_secret ? "저장됨 — 바꾸려면 새로 입력" : "클라이언트 보안 비밀번호" }) : null;
+  return h("div", { class: "field" }, h("label", {}, label),
+    h("div", { class: "row wrap" }, id, secret,
+      h("button", { class: "btn", onclick: async () => {
+        if (await hubCall(api().set_oauth_client(provider, id.value.trim(), secret ? secret.value.trim() : null), "저장했습니다")) renderHub();
+      } }, "저장"),
+      client.client_id ? h("button", { class: "btn danger", onclick: async () => {
+        if (await hubCall(api().set_oauth_client(provider, "", null, true), "지웠습니다")) renderHub();
+      } }, "지우기") : null));
+}
+
+async function renderConnectors(panel) {
+  const data = await api().get_connectors();
+  const groups = {};
+  for (const c of data.connectors) (groups[c.group] = groups[c.group] || []).push(c);
+  const backend = data.secret_backend.startsWith("os:") ? "OS 보안 저장소(Windows 자격 증명 관리자·macOS 키체인)"
+    : data.android ? "앱 전용 저장소(안드로이드 샌드박스)" : "앱 전용 파일(secrets.json, 이 사용자만 읽기 가능)";
+  fill(panel, 
+    h("p", { class: "hub-intro" }, "외부 서비스를 연결하면 에이전트 모드에서 그 서비스의 도구를 씁니다. 커넥터는 기본으로 꺼져 있고, ",
+      "켠 커넥터의 도구만 모델에게 보입니다. 쓰기는 승인을 받고, 메일 전송·리뷰 제출 같은 작업은 매번 묻습니다."),
+    featureToggle(data.features, "connectors", "끄면 모든 커넥터를 한 번에 멈춥니다(설정은 남습니다)."),
+    h("small", { class: "muted block" }, `인증 정보 저장 위치: ${backend}. 토큰은 설정 파일·동기화·로그에 들어가지 않습니다.`),
+    ...Object.entries(groups).map(([group, items]) => h("section", { class: "hub-group" },
+      h("h3", {}, group),
+      group === "Google Workspace" ? hubDetails("google-client", "Google OAuth 클라이언트 (처음 한 번)",
+        h("div", { class: "conn-setup" }, renderMarkdown(items[0].setup)),
+        oauthClientRow("google", data, "데스크톱 앱 OAuth 클라이언트")) : null,
+      ...items.map((c) => connectorCard(c, data)))));
+}
+
+/* ---------- MCP 서버 탭 (1.9의 MCP 창) ---------- */
+
+async function renderMcpPanel(panel, st) {
+  st = st || await api().get_mcp();
+  const STATE = { connected: "연결됨", error: "연결 실패", idle: "대기" };
+  const list = h("div", {});
+  for (const sv of st.servers) {
+    const toggle = checkbox(sv.enabled, async (on) => renderMcpPanel(panel, await api().set_mcp_enabled(sv.name, on)),
+      sv.enabled ? "끄기" : "켜기");
+    if (sv.connector) toggle.disabled = true;  // 커넥터 서버는 커넥터 탭에서 켜고 끈다
+    const detail = sv.state === "connected" ? "도구: " + sv.tools.join(", ")
+      : sv.error ? sv.error : (sv.command || sv.description);
+    const strict = !sv.builtin ? h("label", { class: "inline-label" },
+      checkbox(sv.policy === "ask_all", async (on) => renderMcpPanel(panel, await api().set_server_policy(sv.name, on ? "ask_all" : ""))),
+      "읽기 도구도 항상 묻기") : null;
+    list.append(h("div", { class: "skill-item" }, toggle,
+      h("div", { class: "s-main" },
+        h("b", {}, sv.name),
+        h("span", { class: "badge" }, sv.connector ? "커넥터" : sv.builtin ? "내장" : sv.preset ? "추천" : "외부"),
+        sv.enabled ? h("span", { class: "badge mcp-" + sv.state }, STATE[sv.state] || sv.state) : null,
+        h("p", {}, sv.description || ""),
+        detail && detail !== sv.description ? h("p", { class: sv.error ? "mcp-error" : "" }, detail) : null,
+        strict)));
+  }
+  fill(panel, 
+    h("p", { class: "hub-intro" },
+      "MCP 서버는 에이전트가 쓸 수 있는 도구를 더해 줍니다. 내장 서버로 Word·PowerPoint·Excel 문서를 만들고 고치고, ",
+      "논문을 찾아 읽고(paper), Notion 페이지를 다루고(notion, 설정에 토큰 필요), ",
+      "웹페이지를 읽고 검색할 수 있습니다(firecrawl, 설정에 키 필요). 파일은 작업 폴더 안의 것만 다룹니다. ",
+      "추천 서버(playwright: 브라우저 자동화)는 PC에 Node.js가 있으면 켜서 씁니다. ",
+      "다른 MCP 서버는 설정 파일(mcp.json)에 Claude Desktop과 같은 형식으로 추가합니다. 커넥터의 서버는 커넥터 탭에서 켭니다."),
+    list,
+    st.config_error ? h("p", { class: "mcp-error" }, st.config_error) : null,
+    h("div", { class: "row wrap", style: "margin-top:10px" },
+      h("button", { class: "btn", onclick: () => api().open_mcp_config() }, "설정 파일 열기"),
+      h("button", { class: "btn", onclick: async () => {
+        if (!S.workspace.path) return toast("먼저 작업 폴더를 선택하세요");
+        toast("MCP 서버에 연결하는 중...");
+        renderMcpPanel(panel, await api().connect_mcp());
+      } }, "지금 연결")),
+    h("small", { class: "muted block" },
+      "서버는 에이전트 모드에서 처음 필요할 때 연결됩니다. 작업 폴더의 파일을 고치는 도구는 파일 수정처럼, ",
+      "외부 서버의 도구와 Notion에 쓰기·브라우저 조작처럼 바깥에 영향을 주는 도구는 명령 실행처럼 승인을 받습니다. ",
+      "외부 서버의 도구 결과는 '외부 데이터'로 표시되어 모델이 그 안의 지시를 따르지 않도록 합니다."));
+}
+
+HUB_TABS.push({ id: "connectors", label: "커넥터", render: renderConnectors },
+  { id: "mcp", label: "MCP 서버", render: (panel) => renderMcpPanel(panel) });
+
+/* ---------- 백엔드 이벤트 ---------- */
+
+function hubEvent(ev) {
+  if (ev.type !== "connector") return;
+  if (ev.kind === "device_code") {
+    modal({
+      title: "GitHub 로그인",
+      body: h("div", {},
+        h("p", {}, "브라우저에서 열린 GitHub 페이지에 아래 코드를 입력하세요."),
+        h("div", { class: "device-code" }, ev.user_code),
+        h("p", {}, h("a", { href: ev.url, target: "_blank" }, ev.url))),
+      buttons: [{ label: "코드 복사", action: () => copyText(ev.user_code) },
+        { label: "취소", action: (close) => { api().connector_cancel_login(ev.id); close(); } },
+        { label: "닫기", class: "primary" }],
+    });
+  } else if (ev.kind === "login_url") {
+    toast("브라우저에서 로그인을 마치세요. 창이 열리지 않으면 연결 설정에서 다시 시도하세요.");
+  } else if (ev.kind === "login_done") {
+    toast(ev.status && ev.status.state === "connected" ? "연결했습니다" : (ev.status.detail || "로그인했습니다"));
+    renderHub();
+  } else if (ev.kind === "login_error") {
+    toast(ev.error);
+    renderHub();
+  }
+}

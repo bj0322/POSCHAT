@@ -227,9 +227,17 @@ class MainActivity : ComponentActivity() {
             return pickedFolder
         }
 
-        /** 데스크톱의 os.startfile: 파일은 알맞은 앱으로 열고, 폴더는 경로를 알려 준다. */
+        /** 데스크톱의 os.startfile: https 주소(OAuth 로그인 등)는 브라우저로, 파일은 알맞은 앱으로 열고, 폴더는 경로를 알려 준다. */
         fun openPath(path: String) {
             runOnUiThread {
+                if (path.startsWith("https://") || path.startsWith("http://127.0.0.1:")) {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(path)))
+                    } catch (e: ActivityNotFoundException) {
+                        toast("브라우저를 열 수 없습니다: $path")
+                    }
+                    return@runOnUiThread
+                }
                 val file = File(path)
                 when {
                     file.isDirectory -> toast("폴더 위치: $path")

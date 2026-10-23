@@ -711,6 +711,8 @@ window.onBackendEvent = (ev) => {
   } else if (ev.type === "credit") {
     S.credit = ev.credit;
     document.querySelectorAll("[data-credit]").forEach((el) => { el.textContent = creditText(S.credit); });
+  } else if (ev.type === "connector" || ev.type === "hub") {
+    if (window.hubEvent) hubEvent(ev);
   } else if (ev.type === "done") {
     S.busy = false;
     S.busyThread = null;
@@ -784,11 +786,21 @@ function modal({ title, body, buttons = [], wide = false, onClose }) {
   return { close, box };
 }
 
+// 승인 종류별 안내. send·destructive·exec는 설정과 관계없이 매번 묻고 "모두 허용"을 보이지 않는다.
+const CONFIRM_TEXT = {
+  edit: ["에이전트가 다음과 같이 파일을 바꾸려고 합니다.", "이번 실행 동안 수정 모두 허용"],
+  run: ["에이전트가 작업 폴더에서 다음 명령(또는 외부 도구)을 실행하려고 합니다.", "이번 실행 동안 명령 모두 허용"],
+  write: ["에이전트가 연결된 외부 서비스에 다음 내용을 쓰려고 합니다.", "이번 실행 동안 쓰기 모두 허용"],
+  send: ["에이전트가 다른 사람에게 보이는 작업(전송·리뷰 제출)을 하려고 합니다. 받는 사람과 내용을 확인하세요.", ""],
+  destructive: ["에이전트가 지우거나 덮어쓰는 작업을 하려고 합니다. 되돌릴 수 없을 수 있습니다.", ""],
+  exec: ["에이전트가 코드 또는 원격 명령을 실행하려고 합니다. 실행 대상과 내용을 확인하세요.", ""],
+};
+
 function showConfirm(ev) {
-  const isRun = ev.kind === "run";
+  const isRun = ev.kind !== "edit";
+  const [intro, alwaysLabel] = CONFIRM_TEXT[ev.kind] || CONFIRM_TEXT.run;
   const body = h("div", {},
-    h("p", { style: "margin:0 0 10px;color:var(--text-2)" },
-      isRun ? "에이전트가 작업 폴더에서 다음 명령을 실행하려고 합니다." : "에이전트가 다음과 같이 파일을 바꾸려고 합니다."),
+    h("p", { style: "margin:0 0 10px;color:var(--text-2)" }, intro),
     isRun ? h("pre", { class: "diff" }, h("div", {}, ev.detail)) : diffOrPre(ev.detail),
   );
   let answered = false;
@@ -803,7 +815,7 @@ function showConfirm(ev) {
     wide: true,
     buttons: [
       { label: "거부", class: "danger", action: answer("deny") },
-      { label: isRun ? "이번 실행 동안 명령 모두 허용" : "이번 실행 동안 수정 모두 허용", action: answer("always") },
+      ...(ev.allow_session !== false && alwaysLabel ? [{ label: alwaysLabel, action: answer("always") }] : []),
       { label: "허용", class: "primary", action: answer("allow") },
     ],
     onClose: () => { if (!answered) api().resolve_confirm(ev.id, "deny"); },
@@ -1204,57 +1216,7 @@ function showSkills() {
 }
 
 function showMcp() {
-  const list = h("div", {});
-  const note = h("p", { style: "margin:6px 0 0;color:var(--text-3);font-size:13px" });
-  const STATE = { connected: "연결됨", error: "연결 실패", idle: "대기" };
-  const render = (st) => {
-    list.innerHTML = "";
-    note.textContent = st.config_error || "";
-    for (const sv of st.servers) {
-      const toggle = h("input", { type: "checkbox", style: "width:auto;margin:0", title: sv.enabled ? "끄기" : "켜기" });
-      toggle.checked = sv.enabled;
-      toggle.addEventListener("change", async () => render(await api().set_mcp_enabled(sv.name, toggle.checked)));
-      const detail = sv.state === "connected" ? "도구: " + sv.tools.join(", ")
-        : sv.error ? sv.error : (sv.command || sv.description);
-      list.append(h("div", { class: "skill-item" },
-        toggle,
-        h("div", { class: "s-main" },
-          h("b", {}, sv.name),
-          h("span", { class: "badge" }, sv.builtin ? "내장" : sv.preset ? "추천" : "외부"),
-          sv.enabled ? h("span", { class: "badge mcp-" + sv.state }, STATE[sv.state] || sv.state) : null,
-          h("p", {}, sv.description || ""),
-          detail && detail !== sv.description ? h("p", { class: sv.error ? "mcp-error" : "" }, detail) : null),
-      ));
-    }
-  };
-  const body = h("div", {},
-    h("p", { style: "margin:0 0 8px;color:var(--text-2)" },
-      "MCP 서버는 에이전트가 쓸 수 있는 도구를 더해 줍니다. 내장 서버로 Word·PowerPoint·Excel 문서를 만들고 고치고, ",
-      "논문을 찾아 읽고(paper), Notion 페이지를 다루고(notion, 설정에 토큰 필요), ",
-      "웹페이지를 읽고 검색할 수 있습니다(firecrawl, 설정에 키 필요). 파일은 작업 폴더 안의 것만 다룹니다. ",
-      "추천 서버(playwright: 브라우저 자동화)는 PC에 Node.js가 있으면 켜서 씁니다. ",
-      "다른 MCP 서버는 설정 파일(mcp.json)에 Claude Desktop과 같은 형식으로 추가합니다."),
-    list, note,
-    h("small", { style: "display:block;margin-top:10px;color:var(--text-3)" },
-      "서버는 에이전트 모드에서 처음 필요할 때 연결됩니다. 작업 폴더의 파일을 고치는 도구는 파일 수정처럼, ",
-      "외부 서버의 도구와 Notion에 쓰기·브라우저 조작처럼 바깥에 영향을 주는 도구는 명령 실행처럼 승인을 받습니다."),
-  );
-  const m = modal({
-    title: "MCP",
-    body,
-    wide: true,
-    buttons: [
-      { label: "설정 파일 열기", action: () => api().open_mcp_config() },
-      { label: "지금 연결", action: async () => {
-        if (!S.workspace.path) return toast("먼저 작업 폴더를 선택하세요");
-        toast("MCP 서버에 연결하는 중...");
-        render(await api().connect_mcp());
-      } },
-      { label: "닫기", class: "primary", value: null },
-    ],
-  });
-  api().get_mcp().then(render);
-  return m;
+  return showHub("mcp");  // 1.10: MCP 목록은 '연결·도구' 창의 한 탭이다(web/hub.js)
 }
 
 /* ---------- 사용법 가이드 (설정 → 사용법 가이드) ---------- */
@@ -1505,7 +1467,7 @@ function bindUI() {
   $("#btn-workspace").addEventListener("click", chooseWorkspace);
   $("#ws-chip").addEventListener("click", chooseWorkspace);
   $("#btn-skills").addEventListener("click", showSkills);
-  $("#btn-mcp").addEventListener("click", showMcp);
+  $("#btn-mcp").addEventListener("click", () => showHub());
   $("#btn-memory").addEventListener("click", async () => { S.memory = await api().list_memory(); showMemory(); });
   $("#btn-profile").addEventListener("click", () => showNoteEditor("profile"));
   $("#btn-settings").addEventListener("click", showSettings);
