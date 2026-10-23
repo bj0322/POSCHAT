@@ -11,8 +11,8 @@ class ChatCompletionsTests(unittest.TestCase):
         self.assertTrue({
             "gpt-6.1-sol",
             "gpt-6-astra",
-            "claude-opus-5.5",
-            "claude-sonnet-5.5",
+            "claude-opus-5-5",
+            "claude-sonnet-5-5",
             "gemini-3.8-flash",
         }.issubset(model_ids))
 
@@ -28,7 +28,7 @@ class ChatCompletionsTests(unittest.TestCase):
         settings = api.ApiSettings(
             mode="chat_completions",
             chat_completions_url="https://genai.postech.ac.kr/v1/chat/completions",
-            model="claude-sonnet-5.5",
+            model="claude-sonnet-5-5",
             stream=False,
         )
 
@@ -38,7 +38,7 @@ class ChatCompletionsTests(unittest.TestCase):
         args, kwargs = post.call_args
         self.assertEqual(args[0], settings.chat_completions_url)
         self.assertEqual(args[1]["Authorization"], "Bearer api-key")
-        self.assertEqual(args[2]["model"], "claude-sonnet-5.5")
+        self.assertEqual(args[2]["model"], "claude-sonnet-5-5")
         self.assertEqual(args[2]["messages"], [{"role": "user", "content": "Hi"}])
 
     def test_reads_openai_chat_stream_chunks(self):
@@ -69,6 +69,15 @@ class EndpointTests(unittest.TestCase):
                          "https://api.test/a7/openai/responses")
         self.assertEqual(api.endpoint_url("", chat), "")
 
+    def test_query_string_stays_after_the_path(self):
+        chat = api.CHAT_COMPLETIONS_PATH
+        azure = "https://x.openai.azure.com/openai/deployments/d/chat/completions?api-version=2024-10-21"
+        self.assertEqual(api.endpoint_url(azure, chat), azure)
+        self.assertEqual(api.endpoint_url("https://api.test/v1/?key=1", chat), "https://api.test/v1/chat/completions?key=1")
+        self.assertEqual(api.models_url(azure), "https://x.openai.azure.com/openai/deployments/d/models?api-version=2024-10-21")
+        settings = api.ApiSettings.from_config({"chat_completions_url": azure})
+        self.assertEqual(settings.chat_completions_url, azure)
+
     def test_saved_base_url_is_used_as_full_endpoint(self):
         settings = api.ApiSettings.from_config({"api_mode": "chat_completions", "chat_completions_url": "https://api.test/v1"})
         self.assertEqual(settings.chat_completions_url, "https://api.test/v1/chat/completions")
@@ -81,8 +90,8 @@ class EndpointTests(unittest.TestCase):
     def test_lists_models_from_openai_and_gateway_formats(self, request):
         response = Mock()
         request.return_value = response
-        response.json.return_value = {"object": "list", "data": [{"id": "gpt-6.1-sol"}, {"id": "claude-opus-5.5"}]}
-        self.assertEqual(api.list_models("key", "https://api.test/v1"), ["gpt-6.1-sol", "claude-opus-5.5"])
+        response.json.return_value = {"object": "list", "data": [{"id": "gpt-6.1-sol"}, {"id": "claude-opus-5-5"}]}
+        self.assertEqual(api.list_models("key", "https://api.test/v1"), ["gpt-6.1-sol", "claude-opus-5-5"])
         args, _ = request.call_args
         self.assertEqual(args[:2], ("GET", "https://api.test/v1/models"))
         self.assertEqual(args[2]["Authorization"], "Bearer key")
@@ -94,8 +103,28 @@ class EndpointTests(unittest.TestCase):
         with self.assertRaises(api.ApiError):
             api.list_models("key", "https://api.test/v1")
 
+    def test_openai_compatible_calls_send_the_gateway_key_header(self):
+        headers = api._auth_headers("k")
+        self.assertEqual(headers["x-api-key"], "k")  # POSTECH 게이트웨이는 Bearer만으로는 'Token validation failed'
+        self.assertEqual(headers["Authorization"], "Bearer k")
+
+    def test_a1_error_marker_is_an_api_error(self):
+        with self.assertRaisesRegex(api.ApiError, "10000"):
+            api._check_a1_error('<div cls="error" attr="10000"></div>')
+        api._check_a1_error("정상 답변")
+
+    def test_refined_transcript_lines_follow_the_draft_numbers(self):
+        self.assertEqual(api.parse_numbered("1| 첫 문장\n2| 둘째\n3|", 3), ["첫 문장", "둘째", ""])
+        self.assertEqual(api.parse_numbered("1| 첫 문장\n3| 끝", 3), "첫 문장 끝")  # 번호가 빠지면 이어 쓴 글
+
+    def test_credit_headers(self):
+        info = api._credit({"x-role-ratelimit-credit-usage": "175", "x-role-ratelimit-credit-limit": "15000",
+                            "x-role-ratelimit-credit-limit-interval": "WEEKLY"})
+        self.assertEqual(info, {"usage": 175.0, "limit": 15000.0, "interval": "WEEKLY"})
+        self.assertIsNone(api._credit({}))
+
     def test_unknown_model_ids_are_shown_as_is(self):
-        self.assertEqual(api.model_label("claude-opus-5.5"), "Claude Opus 5.5")
+        self.assertEqual(api.model_label("claude-opus-5-5"), "Claude Opus 5.5")
         self.assertEqual(api.model_label("new-model-x"), "new-model-x")
 
 

@@ -17,12 +17,15 @@ import webview
 import api
 import attachments
 import mcp_client
+import po_note
 import storage
+import stt
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
 from api import DEFAULT_MODEL, MODELS, RESPONSES_MODELS, ApiError, ApiSettings
 from version import APP_VERSION
 
 APP_TITLE = "POSTECH GenAI Chat"
+PO_RESERVES = (0, 10, 20, 30, 50)  # PO노트 크레딧 예산 보호: 이번 주 한도의 몇 %를 남겨 둘지(0은 끄기)
 
 SKILL_TEMPLATE = """---
 name: {name}
@@ -75,8 +78,41 @@ class Bridge:
         self._pending = {}            # confirm id -> [Event, decision]
         self._session_allow = set()   # "edit" / "run" — 이번 실행 동안 항상 허용
         self._mcp = mcp_client.Manager()
+        self._credit = None           # 응답 헤더로 받은 최근 크레딧 {"usage", "limit", "interval"}
+        self._po_session = None       # 녹음 중인 stt.LiveSession
+        self._po_note = None          # 녹음 중인 노트 ID
+        self._po_stopping = False
+        self._po_download = None      # 내려받는 중인 모델 {"key", "done", "total"}
+        self._po_cancel_download = threading.Event()
+        self._po_generating = None    # 노트를 만드는 중인 노트 ID
+        self._po_label = ""           # 녹음 중인 인식 방식 이름
         api.on_usage = storage.record_usage
+        api.on_credit = self._on_credit
         storage.cleanup_staged()
+        self._migrate_config()
+
+    def _migrate_config(self):
+        """1.9: a1/gpt가 서버 오류만 돌려주므로 OpenAI 호환 API(POSTECH 주소 내장)로 한 번 옮긴다. 잘못된 Claude 모델 ID도 고친다."""
+        changed = False
+        if not self._config.get("migrated_1_9"):
+            if self._config.get("api_mode", "a1") == "a1":
+                self._config["api_mode"] = api.DEFAULT_MODE
+            self._config["migrated_1_9"] = True
+            changed = True
+        model = api.normalize_model(self._config.get("model"))
+        if self._config.get("model") and model != self._config["model"]:
+            self._config["model"] = model
+            changed = True
+        if changed:
+            storage.save_config(self._config)
+
+    def _mode(self):
+        mode = self._config.get("api_mode", api.DEFAULT_MODE)
+        return mode if mode in ("a1", "responses", "chat_completions") else api.DEFAULT_MODE
+
+    def _on_credit(self, info):
+        self._credit = info
+        self._push({"type": "credit", "credit": info})
 
     # ---- 내부 도우미 ----
 
@@ -134,7 +170,7 @@ class Bridge:
                 "permission": self._config.get("permission", "ask"),
                 "share_threads": self._config.get("share_threads", True),
                 "key_source": key_source,
-                "api_mode": self._config.get("api_mode", "a1"),
+                "api_mode": self._mode(),
                 "responses_url": self._config.get("responses_url", ""),
                 "chat_completions_url": self._config.get("chat_completions_url", ""),
                 "model": self._config.get("model", DEFAULT_MODEL),
@@ -151,6 +187,9 @@ class Bridge:
             "models_source": "server" if self._config.get("server_models") else "builtin",
             "memory": storage.load_memory(),
             "attach_limits": {"max_bytes": attachments.MAX_BYTES, "max_files": attachments.MAX_FILES},
+            "default_chat_completions_url": api.DEFAULT_CHAT_COMPLETIONS_URL,
+            "credit": self._credit,
+            "po_available": stt.available()[0],
         }
 
     # ---- 스레드 ----
@@ -161,7 +200,10 @@ class Bridge:
     def load_thread(self, thread_id):
         with self._lock:
             thread = storage.load_thread(thread_id)
-            if thread is not None and thread.get("model") not in self._model_ids(self._config.get("api_mode", "a1")):
+            if thread is not None and api.normalize_model(thread.get("model")) != thread.get("model"):
+                thread["model"] = api.normalize_model(thread.get("model"))
+                storage.save_thread(thread, update_timestamp=False)
+            if thread is not None and thread.get("model") not in self._model_ids(self._mode()):
                 thread["model"] = self._default_model()
                 storage.save_thread(thread, update_timestamp=False)
             return thread
@@ -184,7 +226,7 @@ class Bridge:
         return {model_id for model_id, _ in self._models(mode)}
 
     def _default_model(self):
-        mode = self._config.get("api_mode", "a1")
+        mode = self._mode()
         allowed = self._models(mode)
         configured = self._config.get("model", DEFAULT_MODEL)
         return configured if configured in {model_id for model_id, _ in allowed} else allowed[0][0]
@@ -204,7 +246,7 @@ class Bridge:
         return storage.list_threads()
 
     def set_thread_model(self, thread_id, model):
-        if model not in self._model_ids(self._config.get("api_mode", "a1")):
+        if model not in self._model_ids(self._mode()):
             return {"ok": False, "error": "지원하지 않는 모델입니다."}
         with self._lock:
             thread = storage.load_thread(thread_id)
@@ -217,7 +259,7 @@ class Bridge:
     # ---- 설정 ----
 
     def save_settings(self, settings):
-        mode = settings.get("api_mode", self._config.get("api_mode", "a1"))
+        mode = settings.get("api_mode", self._mode())
         url = api.endpoint_url(settings.get("responses_url", self._config.get("responses_url", "")),
                                api.RESPONSES_PATH)
         compatible_url = api.endpoint_url(settings.get("chat_completions_url",
@@ -225,7 +267,7 @@ class Bridge:
                                           api.CHAT_COMPLETIONS_PATH)
         if mode == "responses" and not self._valid_https_url(url):
             return {"ok": False, "error": "Responses API를 선택했다면 올바른 HTTPS 주소를 입력해야 합니다."}
-        if mode == "chat_completions" and not self._valid_https_url(compatible_url):
+        if mode == "chat_completions" and compatible_url and not self._valid_https_url(compatible_url):
             return {"ok": False, "error": "OpenAI 호환 API를 선택했다면 올바른 HTTPS Chat Completions 주소를 입력해야 합니다."}
         with self._lock:
             if settings.get("api_key"):
@@ -258,7 +300,11 @@ class Bridge:
                 if compatible_url != self._config.get("chat_completions_url", ""):
                     self._config.pop("server_models", None)  # 다른 서버의 목록은 버린다
                 self._config["chat_completions_url"] = compatible_url
-            if settings.get("model") in self._model_ids(self._config.get("api_mode", "a1")):
+            # 설정 창에서 '모델 목록 불러오기'로 받은 목록은 저장을 눌러야 반영한다(취소하면 버린다).
+            server_models = self._clean_models(settings.get("server_models"))
+            if server_models:
+                self._config["server_models"] = server_models
+            if settings.get("model") in self._model_ids(self._mode()):
                 self._config["model"] = settings["model"]
             if "stream" in settings:
                 self._config["stream"] = bool(settings["stream"])
@@ -268,24 +314,34 @@ class Bridge:
     def get_usage(self):
         return storage.usage_summary()
 
+    @staticmethod
+    def _clean_models(models):
+        if not isinstance(models, list):
+            return []
+        out = []
+        for m in models:
+            m = m.strip() if isinstance(m, str) else ""
+            if m and m not in out:
+                out.append(m)
+        return out[:500]
+
     def refresh_models(self, settings=None):
-        """OpenAI 호환 API의 모델 목록을 서버에서 받아 저장한다. 설정 창의 '모델 목록 불러오기'."""
+        """OpenAI 호환 API의 모델 목록을 서버에서 받아 돌려준다. 설정 창의 '모델 목록 불러오기'.
+
+        여기서는 저장하지 않는다. 설정 창이 저장할 때 server_models로 함께 보낸다.
+        """
         settings = settings or {}
         key = str(settings.get("api_key") or "").strip() or self._api_key()
         if not key:
             return {"ok": False, "error": "API 키를 먼저 입력하세요."}
         url = api.endpoint_url(settings.get("chat_completions_url", self._config.get("chat_completions_url", "")),
-                               api.CHAT_COMPLETIONS_PATH)
+                               api.CHAT_COMPLETIONS_PATH) or api.DEFAULT_CHAT_COMPLETIONS_URL
         if not self._valid_https_url(url):
             return {"ok": False, "error": "올바른 HTTPS Chat Completions 주소를 입력하세요."}
         try:
             ids = api.list_models(key, url)
         except ApiError as e:
             return {"ok": False, "error": f"모델 목록을 불러오지 못했습니다: {e}"}
-        with self._lock:
-            self._config["chat_completions_url"] = url
-            self._config["server_models"] = ids
-            storage.save_config(self._config)
         return {"ok": True, "chat_completions_url": url,
                 "models": [{"id": m, "label": api.model_label(m)} for m in ids]}
 
@@ -429,6 +485,336 @@ class Bridge:
 
     def open_mcp_config(self):
         open_path(mcp_client.ensure_config_file())
+
+    # ---- 크레딧 ----
+
+    def get_credit(self):
+        """POSTECH GenAI의 이번 주기 크레딧 사용량. 크레딧을 쓰지 않는 요청으로 확인한다."""
+        key = self._api_key()
+        if not key:
+            return {"ok": False, "error": "API 키를 먼저 입력하세요."}
+        url = self._config.get("chat_completions_url") or api.DEFAULT_CHAT_COMPLETIONS_URL
+        if urlparse(url).hostname != urlparse(api.DEFAULT_CHAT_COMPLETIONS_URL).hostname:
+            url = api.DEFAULT_CHAT_COMPLETIONS_URL  # 다른 OpenAI 호환 서버를 쓰더라도 크레딧은 POSTECH에 묻는다
+        try:
+            return {"ok": True, **api.credit(key, url)}
+        except ApiError as e:
+            return {"ok": False, "error": str(e)}
+
+    # ---- PO노트 ----
+
+    def _po_push(self, kind, **data):
+        self._push({"type": "po", "kind": kind, **data})
+
+    def po_state(self):
+        ok, reason = stt.available()
+        session = self._po_session
+        return {
+            "available": ok, "reason": reason,
+            "engine": self._config.get("po_engine", "auto"),
+            "model": self._config.get("po_model", stt.DEFAULT_MODEL),
+            "language": self._config.get("po_language", "ko"),
+            "device": self._config.get("po_device", ""),
+            "reserve": self._po_reserve(),
+            "models": stt.models_status() if ok else [],
+            "languages": stt.LANGUAGES,
+            "has_key": bool(self._api_key()),
+            "recording": {"note_id": self._po_note, "elapsed": session.elapsed if session else 0,
+                          "engine": self._po_label if session else "", "stopping": self._po_stopping}
+            if self._po_note else None,
+            "download": self._po_download,
+            "generating": self._po_generating,
+            "credit": self._credit,
+        }
+
+    def po_devices(self):
+        if not stt.available()[0]:
+            return []
+        try:
+            return stt.input_devices()
+        except Exception:
+            return []
+
+    def po_save_settings(self, settings):
+        with self._lock:
+            if settings.get("engine") in ("auto", "local", "server"):
+                self._config["po_engine"] = settings["engine"]
+            if settings.get("model") in stt.LOCAL_MODELS:
+                self._config["po_model"] = settings["model"]
+            if settings.get("language") in stt.LANGUAGES:
+                self._config["po_language"] = settings["language"]
+            if "device" in settings:
+                self._config["po_device"] = settings["device"] if isinstance(settings["device"], int) else ""
+            if settings.get("reserve") in PO_RESERVES:
+                self._config["po_reserve"] = settings["reserve"]
+            storage.save_config(self._config)
+        return self.po_state()
+
+    def po_download_model(self, key):
+        if key not in stt.LOCAL_MODELS:
+            return {"ok": False, "error": "알 수 없는 모델입니다."}
+        if self._po_download:
+            return {"ok": False, "error": "이미 모델을 내려받고 있습니다."}
+        self._po_download = {"key": key, "done": 0, "total": 0}
+        self._po_cancel_download.clear()
+        threading.Thread(target=self._po_download_work, args=(key,), daemon=True).start()
+        return {"ok": True}
+
+    def _po_download_work(self, key):
+        last = [0.0]
+
+        def progress(done, total):
+            self._po_download = {"key": key, "done": done, "total": total}
+            if time.monotonic() - last[0] >= 0.25:
+                last[0] = time.monotonic()
+                self._po_push("download", **self._po_download)
+
+        try:
+            stt.download(key, progress, self._po_cancel_download.is_set)
+            self._po_download = None
+            self._po_push("download_done", key=key, state=self.po_state())
+        except stt.SttError as e:
+            self._po_download = None
+            self._po_push("download_error", key=key, error=str(e))
+
+    def po_cancel_download(self):
+        self._po_cancel_download.set()
+
+    def po_delete_model(self, key):
+        if self._po_session and getattr(self._po_session.engine, "key", None) == key:
+            return {"ok": False, "error": "녹음에 쓰고 있는 모델은 지울 수 없습니다."}
+        stt.delete_model(key)
+        return {"ok": True, "state": self.po_state()}
+
+    def _po_call(self, fn, *args):
+        try:
+            return {"ok": True, "result": fn(*args)}
+        except (po_note.NoteError, OSError, ValueError) as e:
+            return {"ok": False, "error": str(e)}
+
+    def po_list(self):
+        return po_note.list_notes()
+
+    def po_create(self, title=None):
+        return self._po_call(po_note.create, title)
+
+    def po_load(self, note_id):
+        return self._po_call(po_note.load, note_id)
+
+    def po_rename(self, note_id, title):
+        return self._po_call(po_note.rename, note_id, title)
+
+    def po_delete(self, note_id):
+        if note_id in (self._po_note, self._po_generating):
+            return {"ok": False, "error": "녹음하거나 노트를 만드는 중인 강의는 지울 수 없습니다."}
+        return self._po_call(po_note.delete, note_id)
+
+    def po_save_note(self, note_id, text):
+        return self._po_call(po_note.save_note, note_id, text)
+
+    def po_save_memo(self, note_id, text):
+        return self._po_call(po_note.save_memo, note_id, text)
+
+    def po_upload_material(self, note_id, upload_id, name, offset, data_b64, last):
+        return self._po_call(po_note.upload_material, note_id, upload_id, name, int(offset), data_b64, bool(last))
+
+    def po_remove_material(self, note_id, material_id):
+        return self._po_call(po_note.remove_material, note_id, material_id)
+
+    def po_material_text(self, note_id, material_id):
+        return self._po_call(po_note.material_text, note_id, material_id)
+
+    def po_open_material(self, note_id, material_id):
+        result = self._po_call(po_note.material_path, note_id, material_id)
+        if result["ok"]:
+            open_path(result["result"])
+        return result
+
+    def po_open_folder(self, note_id):
+        result = self._po_call(po_note.export_files, note_id)
+        if result["ok"]:
+            open_path(result["result"])
+        return result
+
+    def _po_reserve(self):
+        reserve = self._config.get("po_reserve", 30)
+        return reserve if reserve in PO_RESERVES else 30
+
+    def _po_budget_ok(self):
+        """크레딧 예산 보호: 이번 주 남은 크레딧이 한도의 po_reserve% 아래면 서버를 쓰지 않는다."""
+        reserve, c = self._po_reserve(), self._credit
+        if not reserve or not c or not c.get("limit") or c.get("usage") is None:
+            return True
+        return c["limit"] - c["usage"] >= c["limit"] * reserve / 100
+
+    def _po_engines(self, note_id):
+        """{"engine", "fallback", "refiner", "label", "notice"}.
+
+        auto: 로컬 모델이 있고 API 키가 있으면 하이브리드(로컬로 바로 받아 적고 불확실한 구간만 서버가 보정),
+              모델이 없으면 이번에는 서버로 받아 적으면서 모델을 내려받기 시작한다. 키가 없으면 로컬만.
+        server: 서버로 모두 받아 적고, 실패하거나 예산 아래면 로컬(있으면)로. local: 로컬만.
+        """
+        choice = self._config.get("po_engine", "auto")
+        language = self._config.get("po_language", "ko")
+        model = self._config.get("po_model", stt.DEFAULT_MODEL)
+        key = self._api_key()
+        local = stt.LocalEngine(model, language) if stt.model_installed(model) else None
+        server = None
+        if key and choice != "local":
+            url = self._config.get("chat_completions_url") or api.DEFAULT_CHAT_COMPLETIONS_URL
+            server = stt.ServerEngine(key, url, language, hint=po_note.vocabulary(note_id))
+        if choice == "local" or (choice == "auto" and server is None):
+            if local is None:
+                raise stt.SttError("로컬 음성 인식 모델을 먼저 내려받으세요(PO노트 → 음성 인식 설정)."
+                                   + ("" if key else " API 키가 있으면 POSTECH 서버로도 받아 적을 수 있습니다."))
+            return {"engine": local, "fallback": None, "refiner": None, "label": local.label, "notice": ""}
+        if server is None:
+            raise stt.SttError("POSTECH 서버 음성 인식에는 API 키가 필요합니다. 설정에서 키를 입력하세요.")
+        if choice == "auto" and local is not None:
+            return {"engine": local, "fallback": None, "refiner": server,
+                    "label": f"{local.label} + POSTECH 보정", "notice": ""}
+        notice = ""
+        if choice == "auto" and not self._po_download:
+            self.po_download_model(model)  # 다음 녹음부터 하이브리드로 크레딧을 아낀다
+            notice = "로컬 AI 모델을 내려받는 동안 이번 녹음은 POSTECH 서버로 받아 적습니다."
+        return {"engine": server, "fallback": local, "refiner": None, "label": server.label, "notice": notice}
+
+    def po_start(self, note_id):
+        ok, reason = stt.available()
+        if not ok:
+            return {"ok": False, "error": reason}
+        if self._po_note:
+            return {"ok": False, "error": "이미 녹음하고 있습니다."}
+        try:
+            meta = po_note.touch(note_id)
+            if not stt.vad_installed():
+                self._po_push("status", note_id=note_id, text="음성 구간 검출 모델(약 2MB)을 내려받는 중…")
+                stt.download(None)
+            engines = self._po_engines(note_id)
+            if engines["refiner"] or isinstance(engines["engine"], stt.ServerEngine):
+                try:
+                    api.credit(self._api_key(), self._config.get("chat_completions_url") or None)  # 예산 판단용(무료)
+                except ApiError:
+                    pass
+        except (po_note.NoteError, stt.SttError) as e:
+            return {"ok": False, "error": str(e)}
+        except Exception as e:  # 모델 파일이 깨졌거나 라이브러리를 불러오지 못했다
+            return {"ok": False, "error": f"음성 인식을 시작하지 못했습니다: {type(e).__name__}: {e}"}
+        last_error = [0.0]
+
+        def on_segment(segment):
+            try:
+                po_note.append_segment(note_id, segment)
+            except (po_note.NoteError, OSError):
+                return
+            self._po_push("segment", note_id=note_id, segment=segment)
+
+        def on_refine(ids, fixed):
+            try:
+                items = po_note.apply_refinement(note_id, ids, fixed)
+            except (po_note.NoteError, OSError):
+                return
+            self._po_push("transcript", note_id=note_id, transcript=items)
+
+        def on_level(level, speaking):
+            session = self._po_session
+            self._po_push("level", note_id=note_id, level=round(level, 3), speaking=bool(speaking),
+                          elapsed=round(meta.get("duration", 0) + (session.elapsed if session else 0), 1))
+
+        def on_error(message):
+            if time.monotonic() - last_error[0] >= 10:  # 같은 오류로 화면을 덮지 않는다
+                last_error[0] = time.monotonic()
+                self._po_push("error", note_id=note_id, error=message)
+
+        device = self._config.get("po_device", "")
+        session = stt.LiveSession(engines["engine"], on_segment, on_level, on_error,
+                                  device=device if device != "" else None, offset=meta.get("duration", 0),
+                                  fallback=engines["fallback"], refiner=engines["refiner"], on_refine=on_refine,
+                                  budget_ok=self._po_budget_ok, id_base=po_note.next_segment_id(note_id))
+        try:
+            session.start()
+        except stt.SttError as e:
+            return {"ok": False, "error": str(e)}
+        self._po_session, self._po_note, self._po_stopping = session, note_id, False
+        self._po_label = engines["label"]
+        po_note.touch(note_id, engine=engines["label"])
+        return {"ok": True, "engine": engines["label"], "notice": engines["notice"], "state": self.po_state()}
+
+    def po_stop(self):
+        """녹음을 멈춘다. 남은 말 구간을 인식하는 동안 기다리지 않도록 백그라운드에서 마무리한다."""
+        session, note_id = self._po_session, self._po_note
+        if session is None or self._po_stopping:
+            return {"ok": True}
+        self._po_stopping = True
+        self._po_push("stopping", note_id=note_id)
+
+        def finish():
+            elapsed = session.elapsed
+            session.stop()
+            try:
+                meta = po_note._meta(note_id)
+                po_note.touch(note_id, duration=round(meta.get("duration", 0) + elapsed, 1))
+            except po_note.NoteError:
+                pass
+            self._po_session, self._po_note, self._po_stopping = None, None, False
+            self._po_push("stopped", note_id=note_id)
+
+        threading.Thread(target=finish, daemon=True).start()
+        return {"ok": True}
+
+    def _po_shutdown(self):
+        """창을 닫을 때: 녹음을 멈추고 녹음 길이를 저장한다."""
+        session, note_id = self._po_session, self._po_note
+        if session is not None:
+            elapsed = session.elapsed
+            session.stop(timeout=20)
+            try:
+                po_note.touch(note_id, duration=round(po_note._meta(note_id).get("duration", 0) + elapsed, 1))
+            except po_note.NoteError:
+                pass
+        self._po_cancel_download.set()
+
+    def po_generate(self, note_id, model=None):
+        """강의 자료·전사·메모로 필기 노트(note.md)를 만든다. 진행은 po 이벤트로 알린다."""
+        key = self._api_key()
+        if not key:
+            return {"ok": False, "error": "API 키를 먼저 입력하세요."}
+        if self._po_generating:
+            return {"ok": False, "error": "다른 노트를 만들고 있습니다. 끝난 뒤 다시 시도하세요."}
+        try:
+            po_note.build_prompts(note_id)
+        except po_note.NoteError as e:
+            return {"ok": False, "error": str(e)}
+        settings = ApiSettings.from_config(self._config)
+        allowed = self._model_ids(settings.mode)
+        if model in allowed:
+            settings.model = model
+        elif settings.model not in allowed:
+            settings.model = self._default_model()
+        self._po_generating = note_id
+        threading.Thread(target=self._po_generate_work, args=(note_id, key, settings), daemon=True).start()
+        return {"ok": True, "model": settings.model}
+
+    def _po_generate_work(self, note_id, key, settings):
+        last = [0.0]
+
+        def on_delta(text):
+            if time.monotonic() - last[0] >= 0.1:
+                last[0] = time.monotonic()
+                self._po_push("note_delta", note_id=note_id, text=text)
+
+        def ask(prompt, delta):
+            return api.ask(key, prompt, timeout=600, settings=settings, on_delta=delta)
+
+        try:
+            text = po_note.generate(note_id, ask,
+                                    on_status=lambda label: self._po_push("note_status", note_id=note_id, text=label),
+                                    on_delta=on_delta)
+            self._po_push("note_done", note_id=note_id, note=text)
+        except (ApiError, po_note.NoteError, OSError) as e:
+            self._po_push("note_error", note_id=note_id, error=str(e))
+        finally:
+            self._po_generating = None
 
     # ---- 대화 실행 ----
 
@@ -609,6 +995,7 @@ def selftest():
     except ImportError as e:
         lines.append(f"documents: FAIL {e}")
     lines.append(f"attachments: {attachments.selfcheck()}")
+    lines.append(f"stt: {stt.selfcheck()}")
     import tempfile
     manager = mcp_client.Manager()
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
@@ -733,6 +1120,7 @@ def run_app():
     try:
         webview.start(debug=os.environ.get("POSTECH_CHAT_DEBUG") == "1")
     finally:
+        bridge._po_shutdown()
         bridge._mcp.shutdown()
 
 

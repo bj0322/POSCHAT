@@ -95,4 +95,23 @@ def selftest(files_dir, res_dir):
                 report["word_read"] = documents.extract_text(Path(ws) / "t.docx")
         finally:
             manager.shutdown()
+    report["po_note"] = _po_note_check()
     return json.dumps(report, ensure_ascii=False)
+
+
+def _po_note_check():
+    """PO노트: 노트를 만들고 강의 자료를 올려 노트 프롬프트까지 만들 수 있는지. 녹음은 휴대폰에서 꺼져 있어야 한다."""
+    import base64
+    import uuid
+    import po_note
+    import stt
+    try:
+        note = po_note.create("selftest")
+        po_note.upload_material(note["id"], uuid.uuid4().hex, "slides.md", 0,
+                                base64.b64encode("# 베이즈 정리".encode()).decode(), True)
+        po_note.append_segment(note["id"], {"start": 0, "end": 1, "text": "오늘은 베이즈 정리"})
+        ok = "베이즈 정리" in po_note.build_prompts(note["id"])[0][0][1]
+        po_note.delete(note["id"])
+        return "OK" if ok and not stt.available()[0] else "FAIL"
+    except Exception as e:
+        return f"FAIL {type(e).__name__}: {e}"
