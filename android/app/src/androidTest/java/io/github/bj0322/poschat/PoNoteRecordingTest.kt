@@ -60,6 +60,8 @@ class PoNoteRecordingTest {
             val item = wavs.getJSONObject(name)
             assertTrue("$name: $item", item.getDouble("cer") < 0.05)
         }
+        val quiet = report.getJSONObject("quiet")
+        assertTrue("작은 소리도 받아 적어야 한다: $quiet", quiet.getDouble("cer") < 0.1)
         val pipe = report.getJSONObject("pipeline")
         assertEquals(pipe.toString(), 4, pipe.getJSONArray("segments").length())
         assertTrue(pipe.toString(), pipe.getDouble("cer") < 0.05)

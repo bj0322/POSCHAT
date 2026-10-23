@@ -94,6 +94,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(len(pipe["segments"]), 4, pipe)
         self.assertLess(pipe["cer"], 0.05, pipe)
         self.assertEqual(pipe["errors"], [])
+        self.assertLess(report["quiet"]["cer"], 0.1, report["quiet"])  # 작은 소리도 받아 적는다
         print(f"\n  안드로이드 녹음 경로(이 컴퓨터): 음성 {pipe['audio_seconds']:.1f}초를 {pipe['seconds']:.2f}초에 처리"
               f" (RTF {pipe['rtf']:.3f}), 최대 메모리 {report['peak_rss_mb']}MB")
         self.assertLess(pipe["rtf"], 1.0)  # 실시간보다 빨라야 녹음이 밀리지 않는다

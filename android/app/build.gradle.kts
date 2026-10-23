@@ -1,5 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Beomjoon Kim
 // SPDX-License-Identifier: AGPL-3.0-only
+import java.net.URI
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -42,8 +45,8 @@ val sherpaAarSha256 = "633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bd
 val sherpaAar = layout.buildDirectory.file("downloads/sherpa-onnx-$sherpaVersion.aar")
 val sherpaJniDir = layout.buildDirectory.dir("generated/sherpaJniLibs")
 
-fun sha256(file: File): String = java.security.MessageDigest.getInstance("SHA-256")
-    .digest(file.readBytes()).joinToString("") { "%02x".format(it) }
+fun sha256(file: File): String = MessageDigest.getInstance("SHA-256")
+    .digest(file.readBytes()).joinToString("") { b -> "%02x".format(b) }
 
 val downloadSherpaOnnx by tasks.registering {
     val target = sherpaAar
@@ -54,7 +57,7 @@ val downloadSherpaOnnx by tasks.registering {
         file.parentFile.mkdirs()
         val url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaVersion/sherpa-onnx-$sherpaVersion.aar"
         val part = File(file.path + ".part")
-        java.net.URI(url).toURL().openStream().use { input -> part.outputStream().use { input.copyTo(it) } }
+        URI(url).toURL().openStream().use { input -> part.outputStream().use { output -> input.copyTo(output) } }
         val actual = sha256(part)
         if (actual != sherpaAarSha256) {
             part.delete()
@@ -67,7 +70,9 @@ val downloadSherpaOnnx by tasks.registering {
 val syncSherpaJniLibs by tasks.registering(Sync::class) {
     dependsOn(downloadSherpaOnnx)
     from(sherpaAar.map { zipTree(it) }) {
-        include("jni/*/libsherpa-onnx-c-api.so", "jni/*/libonnxruntime.so")
+        for (abi in listOf("arm64-v8a", "x86_64")) {  // defaultConfig.ndk.abiFilters와 같게
+            include("jni/$abi/libsherpa-onnx-c-api.so", "jni/$abi/libonnxruntime.so")
+        }
         eachFile { path = path.removePrefix("jni/") }
         includeEmptyDirs = false
     }

@@ -103,6 +103,12 @@ def run(wav_dir):
                        "audio_seconds": round(len(samples) / 16000, 2), "seconds": round(seconds, 3)}
     report["files"] = files
 
+    # 작은 소리(강의실 뒤쪽): 첫 시험 음성을 3% 크기로 줄여도 받아 적어야 한다(stt.level)
+    name = names[0]
+    quiet = np.frombuffer(_pcm16(wav_dir / name), dtype="<i2").astype(np.float32) / 32768 * 0.03
+    text, conf = engine.recognize(quiet)
+    report["quiet"] = {"text": text, "cer": round(cer(refs[name], text), 4), "conf": conf}
+
     # 휴대폰 녹음 경로: 말 사이에 0.5초 쉼, 끝에 1초 쉼
     silence = bytes(16000)  # 0.5초
     audio = b"".join(silence + _pcm16(wav_dir / n) for n in names) + silence * 2
