@@ -5,6 +5,7 @@ Python → JS 알림은 window.onBackendEvent(event)로 보낸다.
 """
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 import threading
@@ -20,11 +21,13 @@ import mcp_client
 import po_note
 import storage
 import stt
+import updates
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
 from api import DEFAULT_MODEL, MODELS, RESPONSES_MODELS, ApiError, ApiSettings
 from version import APP_VERSION
 
 APP_TITLE = "POSTECH GenAI Chat"
+UPDATE_INTERVAL = 6 * 3600  # 시작할 때 새 버전을 확인하는 최소 간격(초)
 PO_RESERVES = (0, 10, 20, 30, 50)  # PO노트 크레딧 예산 보호: 이번 주 한도의 몇 %를 남겨 둘지(0은 끄기)
 
 SKILL_TEMPLATE = """---
@@ -86,6 +89,7 @@ class Bridge:
         self._po_cancel_download = threading.Event()
         self._po_generating = None    # 노트를 만드는 중인 노트 ID
         self._po_label = ""           # 녹음 중인 인식 방식 이름
+        self._updating = False        # 업데이트 파일을 내려받는 중
         api.on_usage = storage.record_usage
         api.on_credit = self._on_credit
         storage.cleanup_staged()
@@ -175,6 +179,7 @@ class Bridge:
                 "chat_completions_url": self._config.get("chat_completions_url", ""),
                 "model": self._config.get("model", DEFAULT_MODEL),
                 "stream": self._config.get("stream", True),
+                "update_check": self._config.get("update_check", True),
                 "notion_source": "settings" if self._config.get("notion_token") else (
                     "env" if os.environ.get("NOTION_TOKEN") or os.environ.get("NOTION_API_KEY") else None),
                 "firecrawl_source": "settings" if self._config.get("firecrawl_key") else (
@@ -308,6 +313,8 @@ class Bridge:
                 self._config["model"] = settings["model"]
             if "stream" in settings:
                 self._config["stream"] = bool(settings["stream"])
+            if "update_check" in settings:
+                self._config["update_check"] = bool(settings["update_check"])
             storage.save_config(self._config)
         return self.get_state()
 
@@ -485,6 +492,86 @@ class Bridge:
 
     def open_mcp_config(self):
         open_path(mcp_client.ensure_config_file())
+
+    # ---- 업데이트 ----
+
+    def check_for_updates(self, manual=False):
+        """GitHub Releases의 최신 버전. 시작할 때(manual=False)는 설정을 따르고 6시간에 한 번만, 건너뛴 버전은 알리지 않는다."""
+        if not manual and (not self._config.get("update_check", True)
+                           or time.time() - self._config.get("update_checked_at", 0) < UPDATE_INTERVAL):
+            return {"available": False, "skipped": True}
+        try:
+            result = updates.check(APP_VERSION)
+        except updates.UpdateError as e:
+            return {"available": False, "error": str(e)}
+        with self._lock:
+            self._config["update_checked_at"] = time.time()
+            storage.save_config(self._config)
+        if not manual and result["version"] == self._config.get("update_skip"):
+            result["available"] = False
+        result["can_install"] = bool(result["asset"]) and self._can_self_update()
+        result["current"] = APP_VERSION
+        return result
+
+    @staticmethod
+    def _can_self_update():
+        platform = updates.current_platform()
+        if platform == "windows":
+            return bool(getattr(sys, "frozen", False))  # 소스로 실행 중이면 설치 프로그램으로 바꿀 것이 없다
+        return platform in ("macos", "android")
+
+    def skip_update(self, version):
+        with self._lock:
+            self._config["update_skip"] = str(version)
+            storage.save_config(self._config)
+
+    def open_release_page(self):
+        import webbrowser
+        webbrowser.open(updates.RELEASES_PAGE)
+
+    def download_update(self):
+        """새 버전을 내려받아 설치를 시작한다. 진행은 {"type": "update"} 이벤트로 알린다."""
+        if self._updating:
+            return {"ok": False, "error": "이미 업데이트를 내려받고 있습니다."}
+        if not self._can_self_update():
+            return {"ok": False, "error": "이 실행 방식에서는 자동으로 설치할 수 없습니다. Releases 페이지에서 받으세요."}
+        self._updating = True
+        threading.Thread(target=self._update_work, daemon=True).start()
+        return {"ok": True}
+
+    def _update_work(self):
+        last = [0.0]
+
+        def progress(done, total):
+            if time.monotonic() - last[0] >= 0.25 or done == total:
+                last[0] = time.monotonic()
+                self._push({"type": "update", "kind": "progress", "done": done, "total": total})
+
+        try:
+            path, version = updates.download(APP_VERSION, storage.APP_DIR / "updates", on_progress=progress)
+            platform = updates.current_platform()
+            if platform == "windows":
+                # 설치 프로그램은 앱이 실행 중이면 설치하지 않는다. 같은 폴더에 설치하도록 열고 앱을 닫는다.
+                install_dir = Path(sys.executable).resolve().parent
+                subprocess.Popen([str(path), f"--dir={install_dir}"], cwd=str(path.parent))
+                self._push({"type": "update", "kind": "installing", "version": version,
+                            "message": "설치 프로그램을 열었습니다. 앱을 닫으니 설치 프로그램에서 '설치'를 누르세요."})
+                threading.Timer(2.0, self._close_for_update).start()
+            else:
+                open_path(path)
+                message = ("Android 설치 화면에서 업데이트를 승인하세요." if platform == "android" else
+                           "디스크 이미지를 열었습니다. 앱을 끝낸 뒤 POSTECH GenAI Chat을 응용 프로그램 폴더로 끌어다 놓아 바꾸세요.")
+                self._push({"type": "update", "kind": "opened", "version": version, "message": message})
+        except (updates.UpdateError, OSError) as e:
+            self._push({"type": "update", "kind": "error", "error": str(e)})
+        finally:
+            self._updating = False
+
+    def _close_for_update(self):
+        try:
+            self._window.destroy()
+        except Exception:
+            os._exit(0)
 
     # ---- 크레딧 ----
 

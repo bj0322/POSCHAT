@@ -513,3 +513,4 @@ svg { width: 18px; height: 18px; flex: none; }
   .po-rec-note { min-width: 100%; order: 5; }
   .po-material { max-width: 100%; }
 }
+.update-notes { max-height: 40vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; font-size: 13.5px; }

@@ -132,6 +132,22 @@ class SettingsTests(unittest.TestCase):
         bridge._config["po_reserve"] = 0
         self.assertTrue(bridge._po_budget_ok())
 
+    @patch.object(app_main.storage, "save_config")
+    @patch.object(app_main.updates, "check")
+    def test_startup_update_check_respects_setting_interval_and_skip(self, check, _save_config):
+        check.return_value = {"available": True, "version": "1.10.0", "asset": "PostechChat-Setup.exe",
+                              "name": "", "notes": "", "url": ""}
+        bridge = self.bridge({"update_check": False})
+        self.assertTrue(bridge.check_for_updates(False)["skipped"])  # 꺼 두면 시작할 때 묻지 않는다
+        self.assertTrue(bridge.check_for_updates(True)["available"])  # '업데이트 확인' 버튼은 언제나 묻는다
+        bridge._config["update_check"] = True
+        self.assertTrue(bridge.check_for_updates(False)["skipped"])  # 방금 확인했다: 6시간 안에는 다시 묻지 않는다
+        bridge._config["update_checked_at"] = 0
+        bridge._config["update_skip"] = "1.10.0"
+        self.assertFalse(bridge.check_for_updates(False)["available"])  # 건너뛴 버전은 알리지 않는다
+        check.side_effect = app_main.updates.UpdateError("업데이트 정보를 찾지 못했습니다")
+        self.assertIn("찾지 못했습니다", bridge.check_for_updates(True)["error"])
+
     def test_refresh_models_needs_key_and_https_url(self):
         with patch.dict(app_main.os.environ, {}, clear=True):
             self.assertFalse(self.bridge().refresh_models({"chat_completions_url": "https://api.example.edu/v1"})["ok"])
