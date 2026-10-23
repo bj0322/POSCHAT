@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """클라우드 동기화(Opt-in, 종단간 암호화): Windows·macOS·Android 사이에서 메모리·대화·설정·PO노트를 맞춘다.
 
 백엔드(새 서버를 만들지 않는다)

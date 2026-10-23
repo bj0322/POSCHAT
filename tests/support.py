@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """테스트 도우미: 데이터 폴더를 임시 폴더로 바꾸고, 내장 서버의 HTTP 호출을 가짜 응답으로 바꾼다."""
 import contextlib
 import json

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Beomjoon Kim
+// SPDX-License-Identifier: AGPL-3.0-only
 pluginManagement {
     repositories {
         google()

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """에이전트 작업 인계(Agent Handoff): 표준 형식과 상태 기계. JSON Schema는 docs/api/handoff.schema.json.
 
 인계 하나

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """연구 논문 라이브러리: 논문 메타데이터·분류(태그·컬렉션)·PDF 연결·메모를 이 기기에 보관하고 BibTeX으로 내보낸다.
 
 <데이터 폴더>/research/library.json

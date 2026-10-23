@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """내장 MCP 서버 memory: 통합 메모리(memory_store)와 에이전트 인계(handoff)를 MCP 도구로 연다.
 
 POSCHAT 에이전트가 쓰고(커넥터 → 통합 메모리), 같은 서버를 stdio MCP를 지원하는 다른 AI 클라이언트

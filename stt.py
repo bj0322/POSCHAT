@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """PO노트의 실시간 음성 인식(STT).
 
 마이크 소리를 16kHz로 받아 음성 구간 검출(VAD)로 말 한 마디씩 끊고, 끊은 구간을 글자로 바꾼다.

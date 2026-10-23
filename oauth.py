@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """OAuth 2.0: 설치형 앱 루프백 흐름(PKCE), 토큰 교환·갱신·폐기, GitHub 디바이스 흐름.
 
 - 루프백 흐름(RFC 8252): 127.0.0.1의 임의 포트에 한 번만 받는 HTTP 서버를 띄우고 브라우저로 동의 화면을 연다.

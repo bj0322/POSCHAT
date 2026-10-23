@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """내장 MCP 서버 github: GitHub REST API로 저장소·코드·이슈·PR·커밋·Actions를 다룬다(커넥터 → GitHub).
 
 토큰은 connectors.credential("github")로 읽는다: secret_store의 Personal Access Token(Fine-grained 권장),

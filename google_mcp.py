@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """내장 MCP 서버 gdrive·gdocs·gsheets·gslides·gmail·gcalendar: Google 공식 REST API(커넥터 → Google Workspace).
 
 서비스마다 커넥터가 따로 있고 OAuth 토큰도 따로 받는다(필요한 scope만 요청, 하나를 끊어도 나머지는 그대로).

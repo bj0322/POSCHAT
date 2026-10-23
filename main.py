@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """POSTECH GenAI Chat — pywebview 데스크톱 앱 진입점.
 
 화면은 web/ 아래의 HTML/CSS/JS이고, JS는 window.pywebview.api.<메서드>로 Bridge를 호출한다.

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """내장 MCP 서버 paper: 논문을 찾고, 정보를 보고, 섹션별로 나눠 읽는다.
 
 arXiv API(키 없음)로 찾고 PDF를 받으며, Semantic Scholar API(키 없이도 됨, 요청이 몰리면 잠시 거절)로

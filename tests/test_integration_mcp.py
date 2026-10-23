@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """통합 테스트: 커넥터의 내장 서버를 실제로 띄워(데스크톱: 하위 프로세스, 안드로이드: 스레드) MCP로 주고받는다.
 
 네트워크는 쓰지 않는다. 도구 목록, 인자 검사 오류, 인증 정보 없음 오류가 MCP 경로를 그대로 지나는지 본다.

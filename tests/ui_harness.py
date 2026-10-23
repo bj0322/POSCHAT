@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """화면 점검용 하네스: web/ 화면을 브라우저에서 열고 window.pywebview.api 호출을 실제 main.Bridge로 넘긴다.
 
     python tests/ui_harness.py            # http://127.0.0.1:8765 에서 직접 열어 보기

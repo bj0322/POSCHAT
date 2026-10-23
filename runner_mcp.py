@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """내장 MCP 서버 python·ssh: 코드·원격 명령 실행(커넥터 → 에이전트 자동화). 기본 비활성, 데스크톱 전용.
 
 임의 코드 실행은 위험하므로

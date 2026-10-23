@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """PDF·Word·PowerPoint·Excel·한글 문서에서 에이전트가 읽을 텍스트를 뽑는다.
 
 read와 search는 이 모듈로 문서를 텍스트로 바꿔 다룬다. 문서를 만들거나 고치는 일은

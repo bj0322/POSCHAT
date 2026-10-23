@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """내장 MCP 서버 research(논문 라이브러리·연구 문서 검색)와 zotero(Zotero Web API v3). 커넥터 → 연구.
 
 research

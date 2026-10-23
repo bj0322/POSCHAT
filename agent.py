@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """INIT.md / SKILL.md 로딩과 Claude Code 방식의 단계 반복 에이전트.
 
 POSTECH GenAI 서버 모델은 자체 시스템 프롬프트 때문에 "사용자 PC에 접근하라"는 형태의

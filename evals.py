@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """모델 자동 평가: 같은 평가 세트를 여러 모델에 돌려 점수·지연을 비교한다. 크레딧을 쓰므로 사용자가 직접 실행할 때만 돈다.
 
 평가 세트(JSON): {"name", "description", "cases": [{"id", "prompt", "expect": {...}}]}

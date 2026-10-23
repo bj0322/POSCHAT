@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """내장 MCP 서버: Word(.docx)·PowerPoint(.pptx)·Excel(.xlsx) 문서를 만들고 고친다.
 
 앱이 `PostechChat.exe --mcp-server word`(소스 실행은 `python office_mcp.py word`)로 띄우고,

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """POSTECH GenAI API 호출.
 
 세 가지 방식을 지원한다.

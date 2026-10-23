@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """선택 기능: 벡터 검색(Qdrant REST API + OpenAI 호환 임베딩 API).
 
 설정(연결·도구 → 연구 라이브러리 → 벡터 검색)에 Qdrant 주소와 임베딩 API 주소·모델을 넣었을 때만 쓴다.

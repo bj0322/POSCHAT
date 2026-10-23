@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 name: Build installer
 
 # PR과 수동 실행: Windows 설치 파일, macOS 디스크 이미지, Android APK를 빌드하고, 각각 자가 진단(Windows·macOS)과

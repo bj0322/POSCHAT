@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Beomjoon Kim
+// SPDX-License-Identifier: AGPL-3.0-only
 "use strict";
 
 /* ---------- 연결·도구 창: 커넥터 · MCP 서버 (이후 Phase의 탭도 여기에 더한다) ----------

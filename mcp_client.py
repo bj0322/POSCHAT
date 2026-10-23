@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """MCP(Model Context Protocol) 클라이언트: 표준 입출력 MCP 서버를 띄우고 도구를 부른다.
 
 내장 서버(word·powerpoint·excel·paper·notion·firecrawl)는 앱 exe 자신을

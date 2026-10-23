@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """관측(Observability): LLM 호출·MCP 도구 호출·에이전트 실행·답변 평가를 이 기기에 기록하고 모은다.
 
 <데이터 폴더>/telemetry/events.jsonl (90일 보관). 내용(질문·답변·문서·도구 결과)은 남기지 않고 메타데이터만 남긴다.

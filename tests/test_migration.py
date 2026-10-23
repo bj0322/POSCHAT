@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """1.9.2 데이터 폴더에서 1.10을 처음 실행할 때: 기존 파일은 그대로, 백업은 한 번, 새 기능은 모두 꺼진 채로."""
 import json
 import os

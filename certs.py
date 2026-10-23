@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """서버가 중간 인증서를 보내지 않을 때 인증서의 AIA(CA Issuers) 주소에서 받아 와 검증에 쓴다.
 
 genai.postech.ac.kr은 중간 인증서를 보내지 않는다. Windows는 운영체제가 중간 인증서를 받아 오므로

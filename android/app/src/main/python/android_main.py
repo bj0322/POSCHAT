@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """안드로이드 앱(Chaquopy)에서 데스크톱 앱의 Python 코드(main.Bridge, agent, MCP 등)를 그대로 쓰기 위한 연결.
 
 pywebview가 하던 일을 Kotlin(MainActivity)이 대신한다.

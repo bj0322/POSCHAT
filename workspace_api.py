@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """'연결·도구' 창(커넥터·MCP·메모리·동기화·연구·자동화·진단)이 부르는 Bridge API.
 
 main.Bridge가 이 클래스를 상속한다. 밑줄로 시작하지 않는 메서드는 모두 JS(window.pywebview.api)에 노출된다.

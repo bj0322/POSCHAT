@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """화면 통합 점검: 실제 Bridge에 붙은 web/ 화면을 Chromium(Playwright)으로 열어 '연결·도구' 창을 조작한다.
 
 Playwright가 없으면(기본 CI) 건너뛴다. 스크린숏은 POSTECH_UI_SHOTS 폴더가 주어지면 거기에 남긴다.

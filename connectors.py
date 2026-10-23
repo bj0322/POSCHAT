@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """커넥터 프레임워크: 외부 서비스 연결(인증 + 내장 MCP 서버 + 도구 정책)과 모든 MCP 도구 호출이 지나는 게이트웨이.
 
 커넥터를 켜면 mcp_client.Manager가 그 커넥터의 내장 서버를 띄우고, 도구는 기존 MCP 경로로 발견·호출된다.

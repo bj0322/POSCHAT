@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """통합 메모리(계층형). 1.9의 memory.md·USER.md·대화 기록은 그대로 두고, 그 위에 계층을 더한다.
 
 계층(layer)

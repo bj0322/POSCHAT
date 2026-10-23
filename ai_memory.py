@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """ai-memory(https://github.com/akitaonrails/ai-memory) 연동: 다른 코딩 에이전트와 기억을 이어 쓴다.
 
 mcp.json에 ai-memory를 표준 입출력 브리지로 등록하면(command "ai-memory", args ["mcp-bridge", "--no-session-id"])

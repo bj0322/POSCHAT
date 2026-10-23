@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """연구 문서 인덱스(Research RAG): 사용자가 가진 PDF·문서를 쪽·섹션 단위로 나눠 SQLite에 넣고 찾는다.
 
 <데이터 폴더>/research/index.sqlite

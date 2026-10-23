@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """로그·관측 데이터에 비밀이나 개인 정보가 남지 않게 지우는 도우미. 커넥터 감사 로그와 telemetry가 쓴다."""
 import json
 import re

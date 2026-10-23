@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """비밀(커넥터 토큰·API 키) 저장소.
 
 OS 보안 저장소(keyring: Windows 자격 증명 관리자, macOS 키체인)를 먼저 쓰고, 쓸 수 없으면(안드로이드,
