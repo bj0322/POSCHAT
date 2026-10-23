@@ -228,6 +228,62 @@ def transcribe(api_key, chat_completions_url, wav_b64, language=None, context=""
     return text.strip()
 
 
+_NUMBERED_RE = re.compile(r"^\s*\[?(\d+)\]?\s*[|:.)\]]\s?(.*)$")
+
+
+def refine_transcript(api_key, chat_completions_url, wav_b64, drafts, language=None, context="", model=STT_MODEL,
+                      timeout=180):
+    """로컬 음성 인식 초안 drafts(구간 글 목록)를 음성과 대조해 고친다.
+
+    음성은 drafts의 구간을 차례로 이어 붙인 것이다. 고친 글 목록(drafts와 같은 길이)을 돌려주고,
+    모델이 번호를 맞춰 답하지 않으면 번호 없이 이어 쓴 글(str)을 돌려준다.
+    """
+    lang = {"ko": "한국어", "en": "영어"}.get(language, "들리는 언어")
+    lines = "\n".join(f"{i}| {t}" for i, t in enumerate(drafts, 1))
+    instruction = (f"이 강의 음성은 아래 {len(drafts)}개 구간을 차례로 이어 붙인 것입니다. 각 줄은 로컬 음성 인식기가 받아 적은 초안이라 "
+                   f"틀린 글자가 있을 수 있습니다. 음성을 듣고 구간마다 {lang} 그대로 고쳐 `번호| 고친 글` 형식으로 "
+                   f"1번부터 {len(drafts)}번까지 한 줄씩 출력하세요. 맞는 초안은 그대로 두고, 말이 없는 구간은 `번호|`만 쓰세요. "
+                   "다른 설명은 쓰지 마세요.")
+    if context:
+        instruction += f"\n\n참고(강의 자료 용어·앞부분, 받아 적지 말 것):\n{context[-600:]}"
+    instruction += f"\n\n[초안]\n{lines}"
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": instruction},
+            {"type": "input_audio", "input_audio": {"data": wav_b64, "format": "wav"}},
+        ]}],
+        "reasoning_effort": "none",
+    }
+    url = endpoint_url(chat_completions_url, CHAT_COMPLETIONS_PATH) or DEFAULT_CHAT_COMPLETIONS_URL
+    response = _post(url, _auth_headers(api_key, **{"Content-Type": "application/json"}), payload, timeout, stream=False)
+    try:
+        data = response.json()
+        text = data["choices"][0]["message"]["content"] or ""
+    except (ValueError, KeyError, IndexError, TypeError) as e:
+        raise ApiError(f"음성 인식 응답 형식 오류: {response.text[:300]}") from e
+    if on_usage:
+        try:
+            on_usage("stt", model, _usage(data))
+        except Exception:
+            pass
+    return parse_numbered(text, len(drafts))
+
+
+def parse_numbered(text, count):
+    """`번호| 글` 줄들을 count개 목록으로. 번호가 다 맞지 않으면 번호를 뗀 글 전체(str)."""
+    found, loose = {}, []
+    for line in (text or "").strip().splitlines():
+        match = _NUMBERED_RE.match(line)
+        if match and 1 <= int(match.group(1)) <= count:
+            found[int(match.group(1))] = match.group(2).strip()
+        elif line.strip():
+            loose.append(line.strip())
+    if len(found) == count:
+        return [found[i] for i in range(1, count + 1)]
+    return " ".join([found[i] for i in sorted(found)] + loose).strip()
+
+
 # ---- 크레딧 ----
 # POSTECH 게이트웨이는 모든 응답 헤더에 이번 주기(WEEKLY 등)의 크레딧 사용량과 한도를 담아 준다.
 # 크레딧 정보가 담긴 응답을 받을 때마다 on_credit({"usage", "limit", "interval"})을 부른다.

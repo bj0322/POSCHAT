@@ -149,9 +149,38 @@ def transcript(note_id):
 
 def append_segment(note_id, segment):
     items = transcript(note_id)
-    items.append({"start": float(segment["start"]), "end": float(segment["end"]), "text": str(segment["text"])})
+    item = {"start": float(segment["start"]), "end": float(segment["end"]), "text": str(segment["text"])}
+    for key in ("id", "conf", "src"):
+        if segment.get(key) is not None:
+            item[key] = segment[key]
+    items.append(item)
     items.sort(key=lambda x: x["start"])
     storage._write_json(_dir(note_id) / "transcript.json", items)
+
+
+def next_segment_id(note_id):
+    return max((int(x["id"]) for x in transcript(note_id) if isinstance(x.get("id"), int)), default=-1) + 1
+
+
+def apply_refinement(note_id, ids, fixed):
+    """서버 보정 결과를 전사에 반영한다. fixed가 ids와 같은 길이의 목록이면 구간마다 바꾸고,
+    이어 쓴 글(str)이면 그 구간들을 하나로 합친다. 빈 글이 된 구간은 지운다. 바뀐 전사를 돌려준다."""
+    items = transcript(note_id)
+    targets = [x for x in items if x.get("id") in set(ids)]
+    if not targets:
+        return items
+    if isinstance(fixed, list) and len(fixed) == len(ids):
+        by_id = dict(zip(ids, fixed))
+        for x in targets:
+            x["text"], x["src"] = by_id[x["id"]].strip(), "server"
+        items = [x for x in items if x.get("text")]
+    else:
+        merged = {"id": targets[0]["id"], "start": min(x["start"] for x in targets),
+                  "end": max(x["end"] for x in targets), "text": str(fixed).strip(), "src": "server"}
+        items = [x for x in items if x not in targets] + ([merged] if merged["text"] else [])
+        items.sort(key=lambda x: x["start"])
+    storage._write_json(_dir(note_id) / "transcript.json", items)
+    return items
 
 
 def transcript_text(items, stamps=True):

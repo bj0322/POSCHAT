@@ -158,6 +158,107 @@ class LiveSessionTranscribeTests(unittest.TestCase):
         self.assertIn("크레딧 부족", errors[0])
 
 
+class FakeLocal:
+    label = "local"
+    batch_seconds = 0
+
+    def __init__(self, confs):
+        self.confs = list(confs)
+
+    def recognize(self, samples):
+        return f"초안{len(samples)}", self.confs.pop(0)
+
+    def transcribe(self, samples, context=""):
+        return self.recognize(samples)[0]
+
+
+class FakeRefiner:
+    label = "server"
+
+    def __init__(self, result=None, error=None):
+        self.calls, self.result, self.error = [], result, error
+
+    def refine(self, samples, drafts, context=""):
+        self.calls.append(list(drafts))
+        if self.error:
+            raise stt.SttError(self.error)
+        return self.result(drafts) if callable(self.result) else self.result
+
+
+class HybridTests(unittest.TestCase):
+    def run_session(self, confs, refiner, budget=True, seconds=10):
+        try:
+            import numpy as np
+        except ImportError:
+            self.skipTest("numpy 없음")
+        segs, refined, notes = [], [], []
+        session = stt.LiveSession(FakeLocal(confs), segs.append, on_error=notes.append, refiner=refiner,
+                                  on_refine=lambda ids, fixed: refined.append((ids, fixed)),
+                                  budget_ok=lambda: budget, id_base=7)
+        session._segmenter = type("S", (), {"_np": np})()
+        import threading
+        t = threading.Thread(target=session._refine_loop)
+        t.start()
+        for i, _ in enumerate(confs):
+            session._jobs.put((i * 16000 * 12, np.zeros(16000 * seconds, dtype=np.float32)))
+        session._jobs.put(None)
+        session._transcribe()
+        t.join(5)
+        return session, segs, refined, notes
+
+    def test_local_text_comes_first_and_low_confidence_batches_are_refined(self):
+        refiner = FakeRefiner(lambda drafts: [d + "(고침)" for d in drafts])
+        # 10초 구간 14개 = 140초: 앞의 12개(120초)가 한 묶음, 나머지 2개가 녹음을 멈출 때의 묶음
+        session, segs, refined, _ = self.run_session([0.95] * 5 + [0.6] + [0.95] * 8, refiner)
+        self.assertEqual([s["id"] for s in segs], list(range(7, 21)))
+        self.assertTrue(all(s["src"] == "local" for s in segs))
+        self.assertEqual(len(refiner.calls), 1)  # 두 번째 묶음은 모두 확신해서 서버를 부르지 않는다
+        self.assertEqual(refined[0][0], list(range(7, 19)))
+        self.assertTrue(refined[0][1][0].endswith("(고침)"))
+        self.assertEqual(session.stats["skipped_batches"], 1)
+
+    def test_confident_lecture_uses_no_credits(self):
+        refiner = FakeRefiner(lambda drafts: drafts)
+        session, segs, refined, _ = self.run_session([0.9, 0.92, 0.88], refiner)
+        self.assertEqual(len(segs), 3)
+        self.assertEqual(refiner.calls, [])
+        self.assertEqual(session.stats["server_calls"], 0)
+
+    def test_budget_guard_and_server_failure_keep_local_text(self):
+        refiner = FakeRefiner(lambda drafts: drafts)
+        session, segs, refined, notes = self.run_session([0.5, 0.5], refiner, budget=False)
+        self.assertEqual(len(segs), 2)
+        self.assertEqual(refiner.calls, [])
+        self.assertIn("예산", notes[0])
+
+        broken = FakeRefiner(error="504")
+        session, segs, refined, notes = self.run_session([0.5], broken)
+        self.assertEqual(len(segs), 1)
+        self.assertEqual(refined, [])
+        self.assertIn("로컬 글을 그대로", notes[0])
+
+
+class RefinementStorageTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.patch = patch.object(po_note, "NOTES_DIR", Path(self.temp.name) / "po_notes")
+        self.patch.start()
+
+    def tearDown(self):
+        self.patch.stop()
+        self.temp.cleanup()
+
+    def test_refinement_replaces_lines_or_merges_them(self):
+        note_id = po_note.create()["id"]
+        for i in range(3):
+            po_note.append_segment(note_id, {"id": i, "start": i * 5, "end": i * 5 + 4, "text": f"초안{i}", "conf": 0.5, "src": "local"})
+        self.assertEqual(po_note.next_segment_id(note_id), 3)
+        items = po_note.apply_refinement(note_id, [0, 1], ["고친 0", ""])
+        self.assertEqual([(x["id"], x["text"], x["src"]) for x in items], [(0, "고친 0", "server"), (2, "초안2", "local")])
+        items = po_note.apply_refinement(note_id, [0, 2], "합친 글")
+        self.assertEqual([(x["start"], x["end"], x["text"]) for x in items], [(0, 14, "합친 글")])
+
+
 class ResamplerTests(unittest.TestCase):
     def test_48k_blocks_become_16k(self):
         try:

@@ -2,10 +2,12 @@
 
 마이크 소리를 16kHz로 받아 음성 구간 검출(VAD)로 말 한 마디씩 끊고, 끊은 구간을 글자로 바꾼다.
 
-- 로컬 AI(기본): sherpa-onnx로 이 기기에서 인식한다. 인터넷·API 비용이 없고 CPU 스레드 2개만 쓴다.
+- 로컬 AI: sherpa-onnx로 이 기기에서 인식한다. 인터넷·크레딧이 필요 없고 CPU 스레드 2개만 쓴다.
   모델은 처음 쓸 때 한 번 내려받는다(한국어 약 76MB, 다국어 약 240MB).
 - POSTECH GenAI 서버: POSTECH에는 음성 인식 API(/audio/transcriptions)가 없지만, OpenAI 호환 Chat Completions의
-  Gemini 3.8 Flash가 음성(input_audio)을 받아 적는다. 크레딧은 거의 호출 수로 정해지므로(호출당 약 8 + 음성 1초당 약 0.05) 말 구간을 약 25초씩 묶어 보낸다.
+  Gemini 3.8 Flash가 음성(input_audio)을 받아 적는다. 크레딧은 거의 호출 수로 정해진다(호출당 약 8 + 음성 1초당 약 0.05).
+- 하이브리드(자동 방식의 기본): 로컬 AI가 바로 받아 적고, 약 2분치 구간 가운데 로컬 신뢰도가 낮은 구간이 있을 때만
+  서버가 음성과 초안을 대조해 고친다. 1시간에 0~약 420크레딧. 이번 주 남은 크레딧이 예산 아래면 로컬만 쓴다.
 
 마이크·모델 라이브러리(sounddevice, sherpa-onnx, numpy)는 데스크톱 앱에만 들어 있다. 안드로이드처럼 없으면
 available()이 이유를 돌려주고, 녹음 기능만 꺼진다.
@@ -206,20 +208,28 @@ class LocalEngine:
                 use_itn=True, language=language if language in ("ko", "en") else "auto")
 
     def transcribe(self, samples, context=""):
+        return self.recognize(samples)[0]
+
+    def recognize(self, samples):
+        """(글, 신뢰도). 신뢰도는 토큰 확률의 평균(0~1)이고, 모델이 알려 주지 않으면(SenseVoice) None."""
+        import numpy as np
         stream = self._rec.create_stream()
         stream.accept_waveform(SAMPLE_RATE, samples)
         self._rec.decode_stream(stream)
         result = stream.result
-        if self.kind == "transducer" and result.tokens:
+        probs = list(getattr(result, "ys_log_probs", None) or [])
+        conf = round(float(np.exp(np.array(probs)).mean()), 3) if probs else None
+        if self.kind == "transducer":
             # 한국어 Zipformer는 result.text에서 띄어쓰기가 빠진다. 토큰에는 띄어쓰기(▁)가 남아 있다.
-            return "".join(result.tokens).replace("▁", " ").strip()
-        return result.text.strip()
+            text = "".join(result.tokens).replace("▁", " ").strip() if result.tokens else result.text.strip()
+            return text, conf if text else None
+        return result.text.strip(), None
 
 
 class ServerEngine:
-    """POSTECH GenAI의 OpenAI 호환 API(Gemini 3.8 Flash)로 받아 적는다."""
+    """POSTECH GenAI의 OpenAI 호환 API(Gemini 3.8 Flash)로 받아 적거나, 로컬 초안을 음성과 대조해 고친다."""
 
-    batch_seconds = 25  # 호출마다 드는 크레딧을 줄이려고 말 구간을 이만큼 모아 보낸다
+    batch_seconds = 25  # 서버만 쓸 때 호출 수를 줄이려고 말 구간을 이만큼 모아 보낸다
 
     def __init__(self, api_key, chat_completions_url, language="auto", hint=""):
         import api
@@ -228,13 +238,25 @@ class ServerEngine:
         self._hint = hint  # 강의 자료에서 뽑은 용어 등. 전문 용어를 바르게 받아 적게 돕는다
         self.label = f"POSTECH GenAI · {api.model_label(self.model)}"
 
+    def _context(self, context):
+        return "\n".join(x for x in (self._hint[:300], context[-300:]) if x)
+
     def transcribe(self, samples, context=""):
         import base64
         import api
-        context = "\n".join(x for x in (self._hint[:300], context[-300:]) if x)
         try:
             return api.transcribe(self._key, self._url, base64.b64encode(wav_bytes(samples)).decode("ascii"),
-                                  self._language, context=context)
+                                  self._language, context=self._context(context))
+        except api.ApiError as e:
+            raise SttError(str(e)) from e
+
+    def refine(self, samples, drafts, context=""):
+        """drafts(구간 글 목록)를 이어 붙인 음성 samples와 대조해 고친다. 목록 또는 이어 쓴 글(str)."""
+        import base64
+        import api
+        try:
+            return api.refine_transcript(self._key, self._url, base64.b64encode(wav_bytes(samples)).decode("ascii"),
+                                         drafts, self._language, context=self._context(context))
         except api.ApiError as e:
             raise SttError(str(e)) from e
 
@@ -335,28 +357,50 @@ class _Resampler:
 
 # ---- 녹음 세션 ----
 
+CONF_THRESHOLD = 0.8      # 로컬 신뢰도가 이보다 낮은 구간이 있으면 서버로 보정한다(잡음 섞은 측정에서 정한 값)
+REFINE_SECONDS = 120      # 서버 보정은 말 구간을 이만큼 모아 한 번에 보낸다(호출당 약 8크레딧이라 길게 모을수록 싸다)
+REFINE_MAX_WAIT = 300     # 말이 드문드문해도 이 시간(초)이 지나면 모은 만큼 보정한다
+GAP_SECONDS = 0.4         # 구간을 이어 붙일 때 사이에 넣는 무음
+
+
 class LiveSession:
     """마이크 → VAD → 인식을 백그라운드 스레드로 돌린다.
 
-    on_segment({"start", "end", "text"})는 구간마다(초 단위, offset부터), on_level(0~1, 말하는 중)은 1초에 몇 번,
-    on_error(문장)는 인식에 실패했을 때 부른다. fallback 엔진이 있으면 주 엔진이 실패한 구간을 그걸로 다시 인식한다.
+    - 로컬 엔진: 구간마다 바로 받아 적는다. refiner(서버 엔진)가 있으면 하이브리드로, 말 구간을 약 2분씩 모아
+      그 안에 신뢰도가 낮은 구간이 있을 때만 서버가 음성과 초안을 대조해 고친다(on_refine).
+    - 서버 엔진: 구간을 약 25초씩 모아 받아 적고, 실패하면 fallback(로컬)으로 다시 받아 적는다.
+    - budget_ok()가 False이면(이번 주 남은 크레딧이 예산 아래) 서버를 쓰지 않고 로컬로만 받아 적는다.
+
+    on_segment({"id", "start", "end", "text", "conf", "src"})는 구간마다(초 단위, offset부터),
+    on_refine(ids, 고친 글 목록 또는 이어 쓴 글)은 서버 보정마다, on_level(0~1, 말하는 중)은 1초에 몇 번,
+    on_error(문장)는 실패나 알림이 있을 때 부른다.
     """
 
-    def __init__(self, engine, on_segment, on_level=None, on_error=None, device=None, offset=0.0, fallback=None):
-        self.engine, self.fallback = engine, fallback
+    def __init__(self, engine, on_segment, on_level=None, on_error=None, device=None, offset=0.0, fallback=None,
+                 refiner=None, on_refine=None, budget_ok=None, id_base=0):
+        self.engine, self.fallback, self.refiner = engine, fallback, refiner
         self._on_segment, self._on_level, self._on_error = on_segment, on_level, on_error
+        self._on_refine, self._budget_ok = on_refine, budget_ok
         self._device, self._offset = device, float(offset)
         self._audio = queue.Queue()
         self._jobs = queue.Queue()
+        self._refine_jobs = queue.Queue()
         self._stop = threading.Event()
         self._stream = None
         self._fed = 0  # 받은 소리(16kHz 샘플 수). 녹음 길이는 벽시계가 아니라 받은 소리로 잰다
         self._context = ""
+        self._next_id = int(id_base)
+        self._budget_warned = False
         self._threads = []
+        self.stats = {"segments": 0, "server_calls": 0, "skipped_batches": 0, "budget_skips": 0}
 
     @property
     def elapsed(self):
         return self._fed / SAMPLE_RATE
+
+    @property
+    def hybrid(self):
+        return self.refiner is not None and hasattr(self.engine, "recognize")
 
     def start(self):
         import sounddevice as sd
@@ -373,6 +417,8 @@ class LiveSession:
         self._resample = _Resampler(rate) if rate != SAMPLE_RATE else None
         self._threads = [threading.Thread(target=self._listen, daemon=True),
                          threading.Thread(target=self._transcribe, daemon=True)]
+        if self.hybrid:
+            self._threads.append(threading.Thread(target=self._refine_loop, daemon=True))
         for t in self._threads:
             t.start()
         self._stream.start()
@@ -382,7 +428,7 @@ class LiveSession:
                               callback=lambda data, frames, t, status: self._audio.put(data[:, 0].copy()))
 
     def stop(self, timeout=120):
-        """녹음을 멈추고, 남은 구간을 다 인식할 때까지(최대 timeout초) 기다린다."""
+        """녹음을 멈추고, 남은 구간을 다 인식·보정할 때까지(최대 timeout초) 기다린다."""
         if self._stream is not None:
             try:
                 self._stream.stop()
@@ -418,16 +464,41 @@ class LiveSession:
             self._jobs.put((begin, samples))
         self._jobs.put(None)
 
+    def _budget(self):
+        """서버를 써도 되는지. 예산 아래면 한 번만 알린다."""
+        if self._budget_ok is None or self._budget_ok():
+            return True
+        self.stats["budget_skips"] += 1
+        if not self._budget_warned and self._on_error:
+            self._budget_warned = True
+            self._on_error("이번 주 남은 크레딧이 예산 아래라 서버를 쓰지 않고 로컬 AI로만 받아 적습니다.")
+        return False
+
+    def _emit(self, begin, end, text, conf, src):
+        seg = {"id": self._next_id, "start": round(self._offset + begin / SAMPLE_RATE, 2),
+               "end": round(self._offset + end / SAMPLE_RATE, 2), "text": text, "conf": conf, "src": src}
+        self._next_id += 1
+        self.stats["segments"] += 1
+        self._context = (self._context + " " + text)[-400:]
+        self._on_segment(seg)
+        return seg
+
     def _transcribe(self):
         np = self._segmenter._np
-        gap = np.zeros(int(0.4 * SAMPLE_RATE), dtype=np.float32)
+        gap = np.zeros(int(GAP_SECONDS * SAMPLE_RATE), dtype=np.float32)
         done = False
         while not done:
             job = self._jobs.get()
             if job is None:
-                return
+                break
             begin, parts = job[0], [job[1]]
             end = begin + len(job[1])
+            if self.hybrid:
+                text, conf = self._recognize_local(job[1])
+                if text:
+                    seg = self._emit(begin, end, text, conf, "local")
+                    self._refine_jobs.put((seg, job[1]))
+                continue
             batch = getattr(self.engine, "batch_seconds", 0) * SAMPLE_RATE
             # 서버 엔진은 구간을 모아 보낸다. 말이 8초 넘게 끊기거나 녹음을 멈추면 모은 만큼 보낸다.
             while batch and end - begin < batch:
@@ -441,19 +512,70 @@ class LiveSession:
                 parts += [gap, nxt[1]]
                 end = nxt[0] + len(nxt[1])
             samples = np.concatenate(parts) if len(parts) > 1 else parts[0]
-            text = self._run(samples)
+            text, src = self._run(samples)
             if text:
-                self._context = (self._context + " " + text)[-400:]
-                self._on_segment({"start": round(self._offset + begin / SAMPLE_RATE, 2),
-                                  "end": round(self._offset + end / SAMPLE_RATE, 2), "text": text})
+                self._emit(begin, end, text, None, src)
+        self._refine_jobs.put(None)
+
+    def _recognize_local(self, samples):
+        try:
+            return self.engine.recognize(samples)
+        except Exception as e:
+            if self._on_error:
+                self._on_error(f"{self.engine.label} 인식 실패: {e}")
+            return "", None
 
     def _run(self, samples):
+        """서버(또는 로컬) 엔진으로 받아 적는다. (글, 출처)."""
         for engine in (self.engine, self.fallback):
             if engine is None:
                 continue
+            if isinstance(engine, ServerEngine):
+                if not self._budget():
+                    continue
+                self.stats["server_calls"] += 1
             try:
-                return engine.transcribe(samples, self._context)
+                return engine.transcribe(samples, self._context), "server" if isinstance(engine, ServerEngine) else "local"
             except Exception as e:  # 한 구간이 실패해도 녹음은 계속한다
                 if self._on_error:
                     self._on_error(f"{engine.label} 인식 실패: {e}")
-        return ""
+        return "", ""
+
+    def _refine_loop(self):
+        """하이브리드: 로컬 구간을 약 2분씩 모아, 신뢰도가 낮은 구간이 있을 때만 서버로 고친다."""
+        np = self._segmenter._np
+        gap = np.zeros(int(GAP_SECONDS * SAMPLE_RATE), dtype=np.float32)
+        done = False
+        while not done:
+            job = self._refine_jobs.get()
+            if job is None:
+                return
+            batch, speech, since = [job], len(job[1]), time.monotonic()
+            while speech < REFINE_SECONDS * SAMPLE_RATE:
+                wait = REFINE_MAX_WAIT - (time.monotonic() - since)
+                if wait <= 0:
+                    break
+                try:
+                    nxt = self._refine_jobs.get(timeout=wait)
+                except queue.Empty:
+                    break
+                if nxt is None:
+                    done = True
+                    break
+                batch.append(nxt)
+                speech += len(nxt[1])
+            if all(seg["conf"] is not None and seg["conf"] >= CONF_THRESHOLD for seg, _ in batch):
+                self.stats["skipped_batches"] += 1  # 로컬이 모두 확신한다: 크레딧을 쓰지 않는다
+                continue
+            if not self._budget():
+                continue
+            samples = np.concatenate(sum([[s, gap] for _, s in batch], [])[:-1])
+            self.stats["server_calls"] += 1
+            try:
+                fixed = self.refiner.refine(samples, [seg["text"] for seg, _ in batch], self._context)
+            except Exception as e:  # 보정이 실패해도 로컬 글은 이미 있다
+                if self._on_error:
+                    self._on_error(f"{self.refiner.label} 보정 실패(로컬 글을 그대로 둡니다): {e}")
+                continue
+            if self._on_refine and fixed:
+                self._on_refine([seg["id"] for seg, _ in batch], fixed)

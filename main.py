@@ -25,6 +25,7 @@ from api import DEFAULT_MODEL, MODELS, RESPONSES_MODELS, ApiError, ApiSettings
 from version import APP_VERSION
 
 APP_TITLE = "POSTECH GenAI Chat"
+PO_RESERVES = (0, 10, 20, 30, 50)  # PO노트 크레딧 예산 보호: 이번 주 한도의 몇 %를 남겨 둘지(0은 끄기)
 
 SKILL_TEMPLATE = """---
 name: {name}
@@ -84,6 +85,7 @@ class Bridge:
         self._po_download = None      # 내려받는 중인 모델 {"key", "done", "total"}
         self._po_cancel_download = threading.Event()
         self._po_generating = None    # 노트를 만드는 중인 노트 ID
+        self._po_label = ""           # 녹음 중인 인식 방식 이름
         api.on_usage = storage.record_usage
         api.on_credit = self._on_credit
         storage.cleanup_staged()
@@ -513,11 +515,12 @@ class Bridge:
             "model": self._config.get("po_model", stt.DEFAULT_MODEL),
             "language": self._config.get("po_language", "ko"),
             "device": self._config.get("po_device", ""),
+            "reserve": self._po_reserve(),
             "models": stt.models_status() if ok else [],
             "languages": stt.LANGUAGES,
             "has_key": bool(self._api_key()),
             "recording": {"note_id": self._po_note, "elapsed": session.elapsed if session else 0,
-                          "engine": session.engine.label if session else "", "stopping": self._po_stopping}
+                          "engine": self._po_label if session else "", "stopping": self._po_stopping}
             if self._po_note else None,
             "download": self._po_download,
             "generating": self._po_generating,
@@ -542,6 +545,8 @@ class Bridge:
                 self._config["po_language"] = settings["language"]
             if "device" in settings:
                 self._config["po_device"] = settings["device"] if isinstance(settings["device"], int) else ""
+            if settings.get("reserve") in PO_RESERVES:
+                self._config["po_reserve"] = settings["reserve"]
             storage.save_config(self._config)
         return self.po_state()
 
@@ -631,25 +636,48 @@ class Bridge:
             open_path(result["result"])
         return result
 
+    def _po_reserve(self):
+        reserve = self._config.get("po_reserve", 30)
+        return reserve if reserve in PO_RESERVES else 30
+
+    def _po_budget_ok(self):
+        """크레딧 예산 보호: 이번 주 남은 크레딧이 한도의 po_reserve% 아래면 서버를 쓰지 않는다."""
+        reserve, c = self._po_reserve(), self._credit
+        if not reserve or not c or not c.get("limit") or c.get("usage") is None:
+            return True
+        return c["limit"] - c["usage"] >= c["limit"] * reserve / 100
+
     def _po_engines(self, note_id):
-        """(주 엔진, 대신 쓸 엔진). auto는 API 키가 있으면 POSTECH 서버, 없으면 로컬 AI. 서버가 실패하면 로컬로."""
+        """{"engine", "fallback", "refiner", "label", "notice"}.
+
+        auto: 로컬 모델이 있고 API 키가 있으면 하이브리드(로컬로 바로 받아 적고 불확실한 구간만 서버가 보정),
+              모델이 없으면 이번에는 서버로 받아 적으면서 모델을 내려받기 시작한다. 키가 없으면 로컬만.
+        server: 서버로 모두 받아 적고, 실패하거나 예산 아래면 로컬(있으면)로. local: 로컬만.
+        """
         choice = self._config.get("po_engine", "auto")
         language = self._config.get("po_language", "ko")
         model = self._config.get("po_model", stt.DEFAULT_MODEL)
         key = self._api_key()
-        local = stt.LocalEngine(model, language) if choice != "server" and stt.model_installed(model) else None
-        if choice == "local":
-            if local is None:
-                raise stt.SttError("로컬 음성 인식 모델을 먼저 내려받으세요(PO노트 → 음성 인식 설정).")
-            return local, None
-        if key:
+        local = stt.LocalEngine(model, language) if stt.model_installed(model) else None
+        server = None
+        if key and choice != "local":
             url = self._config.get("chat_completions_url") or api.DEFAULT_CHAT_COMPLETIONS_URL
-            return stt.ServerEngine(key, url, language, hint=po_note.vocabulary(note_id)), local
-        if choice == "server":
+            server = stt.ServerEngine(key, url, language, hint=po_note.vocabulary(note_id))
+        if choice == "local" or (choice == "auto" and server is None):
+            if local is None:
+                raise stt.SttError("로컬 음성 인식 모델을 먼저 내려받으세요(PO노트 → 음성 인식 설정)."
+                                   + ("" if key else " API 키가 있으면 POSTECH 서버로도 받아 적을 수 있습니다."))
+            return {"engine": local, "fallback": None, "refiner": None, "label": local.label, "notice": ""}
+        if server is None:
             raise stt.SttError("POSTECH 서버 음성 인식에는 API 키가 필요합니다. 설정에서 키를 입력하세요.")
-        if local is None:
-            raise stt.SttError("API 키가 없으면 로컬 음성 인식 모델이 필요합니다. PO노트 → 음성 인식 설정에서 내려받으세요.")
-        return local, None
+        if choice == "auto" and local is not None:
+            return {"engine": local, "fallback": None, "refiner": server,
+                    "label": f"{local.label} + POSTECH 보정", "notice": ""}
+        notice = ""
+        if choice == "auto" and not self._po_download:
+            self.po_download_model(model)  # 다음 녹음부터 하이브리드로 크레딧을 아낀다
+            notice = "로컬 AI 모델을 내려받는 동안 이번 녹음은 POSTECH 서버로 받아 적습니다."
+        return {"engine": server, "fallback": local, "refiner": None, "label": server.label, "notice": notice}
 
     def po_start(self, note_id):
         ok, reason = stt.available()
@@ -662,7 +690,12 @@ class Bridge:
             if not stt.vad_installed():
                 self._po_push("status", note_id=note_id, text="음성 구간 검출 모델(약 2MB)을 내려받는 중…")
                 stt.download(None)
-            engine, fallback = self._po_engines(note_id)
+            engines = self._po_engines(note_id)
+            if engines["refiner"] or isinstance(engines["engine"], stt.ServerEngine):
+                try:
+                    api.credit(self._api_key(), self._config.get("chat_completions_url") or None)  # 예산 판단용(무료)
+                except ApiError:
+                    pass
         except (po_note.NoteError, stt.SttError) as e:
             return {"ok": False, "error": str(e)}
         except Exception as e:  # 모델 파일이 깨졌거나 라이브러리를 불러오지 못했다
@@ -676,6 +709,13 @@ class Bridge:
                 return
             self._po_push("segment", note_id=note_id, segment=segment)
 
+        def on_refine(ids, fixed):
+            try:
+                items = po_note.apply_refinement(note_id, ids, fixed)
+            except (po_note.NoteError, OSError):
+                return
+            self._po_push("transcript", note_id=note_id, transcript=items)
+
         def on_level(level, speaking):
             session = self._po_session
             self._po_push("level", note_id=note_id, level=round(level, 3), speaking=bool(speaking),
@@ -687,15 +727,18 @@ class Bridge:
                 self._po_push("error", note_id=note_id, error=message)
 
         device = self._config.get("po_device", "")
-        session = stt.LiveSession(engine, on_segment, on_level, on_error, device=device if device != "" else None,
-                                  offset=meta.get("duration", 0), fallback=fallback)
+        session = stt.LiveSession(engines["engine"], on_segment, on_level, on_error,
+                                  device=device if device != "" else None, offset=meta.get("duration", 0),
+                                  fallback=engines["fallback"], refiner=engines["refiner"], on_refine=on_refine,
+                                  budget_ok=self._po_budget_ok, id_base=po_note.next_segment_id(note_id))
         try:
             session.start()
         except stt.SttError as e:
             return {"ok": False, "error": str(e)}
         self._po_session, self._po_note, self._po_stopping = session, note_id, False
-        po_note.touch(note_id, engine=engine.label)
-        return {"ok": True, "engine": engine.label, "state": self.po_state()}
+        self._po_label = engines["label"]
+        po_note.touch(note_id, engine=engines["label"])
+        return {"ok": True, "engine": engines["label"], "notice": engines["notice"], "state": self.po_state()}
 
     def po_stop(self):
         """녹음을 멈춘다. 남은 말 구간을 인식하는 동안 기다리지 않도록 백그라운드에서 마무리한다."""

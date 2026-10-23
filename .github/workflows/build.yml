@@ -188,7 +188,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
           # 실패하면 앱·화면·Python 로그를 남긴다
-          script: cd android && ./gradlew --no-daemon connectedDebugAndroidTest || { adb logcat -d -s Poschat:V PoschatWeb:V python.stdout:V python.stderr:V AndroidRuntime:E TestRunner:V chromium:W | tail -400; exit 1; }
+          script: cd android && ./gradlew --no-daemon connectedDebugAndroidTest || { adb logcat -d -s Poschat:V PoschatWeb:V python.stdout:V python.stderr:V AndroidRuntime:E TestRunner:V chromium:W DEBUG:V libc:F cr_AwContents:V ActivityManager:W | tail -400; exit 1; }
 
       - name: Collect APK
         run: cp android/app/build/outputs/apk/release/app-release.apk PostechChat.apk

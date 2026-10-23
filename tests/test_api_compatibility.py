@@ -113,6 +113,10 @@ class EndpointTests(unittest.TestCase):
             api._check_a1_error('<div cls="error" attr="10000"></div>')
         api._check_a1_error("정상 답변")
 
+    def test_refined_transcript_lines_follow_the_draft_numbers(self):
+        self.assertEqual(api.parse_numbered("1| 첫 문장\n2| 둘째\n3|", 3), ["첫 문장", "둘째", ""])
+        self.assertEqual(api.parse_numbered("1| 첫 문장\n3| 끝", 3), "첫 문장 끝")  # 번호가 빠지면 이어 쓴 글
+
     def test_credit_headers(self):
         info = api._credit({"x-role-ratelimit-credit-usage": "175", "x-role-ratelimit-credit-limit": "15000",
                             "x-role-ratelimit-credit-limit-interval": "WEEKLY"})

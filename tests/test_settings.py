@@ -121,6 +121,17 @@ class SettingsTests(unittest.TestCase):
         bridge._migrate_config()
         self.assertEqual(bridge._config["api_mode"], "a1")
 
+    def test_po_budget_guard_keeps_the_reserved_share_of_weekly_credits(self):
+        bridge = self.bridge({"po_reserve": 30})
+        bridge._credit = None
+        self.assertTrue(bridge._po_budget_ok())  # 크레딧을 아직 모르면 막지 않는다
+        bridge._credit = {"usage": 10000, "limit": 15000, "interval": "WEEKLY"}
+        self.assertTrue(bridge._po_budget_ok())   # 남은 5,000 ≥ 4,500
+        bridge._credit = {"usage": 11000, "limit": 15000, "interval": "WEEKLY"}
+        self.assertFalse(bridge._po_budget_ok())  # 남은 4,000 < 4,500
+        bridge._config["po_reserve"] = 0
+        self.assertTrue(bridge._po_budget_ok())
+
     def test_refresh_models_needs_key_and_https_url(self):
         with patch.dict(app_main.os.environ, {}, clear=True):
             self.assertFalse(self.bridge().refresh_models({"chat_completions_url": "https://api.example.edu/v1"})["ok"])

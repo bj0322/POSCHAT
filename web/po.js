@@ -19,10 +19,12 @@ const PO = {
 
 const MATERIAL_ACCEPT = ".pptx,.pdf,.docx,.hwp,.hwpx,.xlsx,.xlsm,.txt,.md";
 const ENGINE_LABELS = {
-  auto: "자동 — POSTECH 서버, 실패하면 로컬 AI",
-  server: "POSTECH GenAI 서버 (Gemini 3.8 Flash)",
-  local: "로컬 AI (이 PC에서 처리)",
+  auto: "자동 (권장) — 로컬 AI로 바로 받아 적고, 불확실한 구간만 POSTECH 서버가 보정",
+  server: "POSTECH 서버로 모두 받아 적기 (Gemini 3.8 Flash)",
+  local: "로컬 AI만 (크레딧을 쓰지 않음)",
 };
+const RESERVES = [[0, "끄기"], [10, "10% 남기기"], [20, "20% 남기기"], [30, "30% 남기기 (기본)"], [50, "50% 남기기"]];
+const LOW_CONF = 0.8;  // stt.CONF_THRESHOLD와 같은 값
 
 function fmtClock(sec) {
   sec = Math.max(0, Math.floor(sec || 0));
@@ -211,7 +213,7 @@ async function startRecording() {
   PO.tab = "transcript";
   renderRecDot();
   renderPo();
-  toast(`녹음을 시작했습니다 · ${res.engine}`);
+  toast(res.notice || `녹음을 시작했습니다 · ${res.engine}`);
 }
 
 async function stopRecording() {
@@ -360,7 +362,11 @@ function notePane() {
 }
 
 function segmentRow(seg) {
-  return h("div", { class: "po-seg" }, h("span", { class: "po-seg-time" }, fmtClock(seg.start)), h("span", {}, seg.text));
+  // 로컬 AI가 확신하지 못한 구간은 흐리게 보인다. 하이브리드 방식이면 서버가 곧 고친다.
+  const low = seg.src !== "server" && seg.conf != null && seg.conf < LOW_CONF;
+  return h("div", { class: "po-seg" + (low ? " low" : ""), "data-id": seg.id ?? null,
+    title: seg.src === "server" ? "POSTECH 서버가 받아 적거나 고친 구간" : low ? `로컬 AI 신뢰도 ${Math.round(seg.conf * 100)}%` : null },
+  h("span", { class: "po-seg-time" }, fmtClock(seg.start)), h("span", {}, seg.text));
 }
 
 function transcriptPane() {
@@ -457,11 +463,19 @@ async function showPoSettings() {
   };
   PO.renderModels = renderModels;
   renderModels();
+  const reserve = h("select", {}, RESERVES.map(([v, l]) => h("option", { value: String(v) }, l)));
+  reserve.value = String(st.reserve);
   const costHint = h("small", {},
-    "POSTECH 서버는 말 구간을 약 25초씩 모아 Gemini 3.8 Flash로 받아 적습니다. 호출 한 번에 약 9크레딧이라 1시간 강의에 약 1,000~1,300크레딧(주간 한도 15,000의 약 7~9%)이 듭니다. ",
-    "로컬 AI는 크레딧·인터넷 없이 이 PC의 CPU 2코어만 써서 받아 적습니다.");
+    "자동: 로컬 AI가 바로 받아 적고, 약 2분치 구간 가운데 로컬 AI가 확신하지 못한 구간(잡음·전문 용어 등)이 있을 때만 ",
+    "POSTECH 서버(Gemini 3.8 Flash)가 음성과 대조해 고칩니다. 1시간에 0~약 420크레딧이고, 서버가 실패해도 로컬 글은 남습니다. ",
+    "로컬 AI 모델이 없으면 첫 녹음은 서버로 받아 적으면서 모델을 내려받습니다. ",
+    "서버로 모두 받아 적기: 말 구간을 약 25초씩 모아 보내 1시간에 약 1,000~1,300크레딧(주간 한도의 약 7~9%)이 듭니다. ",
+    "로컬 AI만: 크레딧·인터넷 없이 이 PC의 CPU 2코어만 씁니다.");
   const body = h("div", {},
     h("div", { class: "field" }, h("label", {}, "받아 적는 방식"), engine, costHint),
+    h("div", { class: "field" }, h("label", {}, "크레딧 예산 보호"), reserve,
+      h("small", {}, "이번 주 남은 크레딧이 한도의 이 비율 아래로 내려가면 서버를 쓰지 않고 로컬 AI로만 받아 적습니다. ",
+        "채팅과 노트 만들기에 쓸 크레딧을 남겨 둡니다.")),
     h("div", { class: "field" }, h("label", {}, "강의 언어"), language,
       h("small", {}, "한국어 강의는 '한국어'가 가장 정확합니다. 영어 강의는 '영어'(로컬 AI는 다국어 모델이 필요), 섞여 있으면 '자동 감지'.")),
     h("div", { class: "field" }, h("label", {}, "마이크"), device),
@@ -480,7 +494,7 @@ async function showPoSettings() {
           return toast("로컬 AI를 쓰려면 고른 모델을 먼저 내려받으세요.");
         }
         PO.state = await api().po_save_settings({ engine: engine.value, language: language.value, model: model.value,
-          device: device.value === "" ? "" : Number(device.value) });
+          device: device.value === "" ? "" : Number(device.value), reserve: Number(reserve.value) });
         close();
         renderPo();
         toast("음성 인식 설정을 저장했습니다");
@@ -522,6 +536,16 @@ function poEvent(ev) {
       const count = $("#po-count");
       if (count) count.textContent = ` ${note.transcript.length}`;
       if (atBottom) pane.scrollTop = pane.scrollHeight;
+      break;
+    }
+    case "transcript": {
+      if (!here) break;
+      note.transcript = ev.transcript;
+      if (!PO.open || PO.tab !== "transcript") break;
+      const pane = $("#po-view");
+      const top = pane.scrollTop, atBottom = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 80;
+      renderPo();
+      pane.scrollTop = atBottom ? pane.scrollHeight : top;
       break;
     }
     case "status":
