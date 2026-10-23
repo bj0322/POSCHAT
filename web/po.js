@@ -458,7 +458,7 @@ async function showPoSettings() {
   PO.renderModels = renderModels;
   renderModels();
   const costHint = h("small", {},
-    "POSTECH 서버는 말 구간을 약 25초씩 모아 Gemini 3.8 Flash로 받아 적습니다. 1시간 강의에 약 2,500크레딧(주간 한도 15,000의 약 17%)이 듭니다. ",
+    "POSTECH 서버는 말 구간을 약 25초씩 모아 Gemini 3.8 Flash로 받아 적습니다. 호출 한 번에 약 9크레딧이라 1시간 강의에 약 1,000~1,300크레딧(주간 한도 15,000의 약 7~9%)이 듭니다. ",
     "로컬 AI는 크레딧·인터넷 없이 이 PC의 CPU 2코어만 써서 받아 적습니다.");
   const body = h("div", {},
     h("div", { class: "field" }, h("label", {}, "받아 적는 방식"), engine, costHint),

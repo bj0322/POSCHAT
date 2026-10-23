@@ -121,7 +121,7 @@ Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 
 | 방식 | 처리 | 비용 | 특징 |
 |---|---|---|---|
 | 자동 (기본) | API 키가 있으면 POSTECH GenAI 서버, 실패하면 로컬 AI | 서버를 쓰면 크레딧 | |
-| POSTECH GenAI 서버 | OpenAI 호환 API의 Gemini 3.8 Flash가 음성(`input_audio`)을 받아 적습니다 | 1시간에 약 2,500크레딧(주간 한도 15,000의 약 17%) | 말 구간을 약 25초씩 모아 보내 호출 수를 줄입니다. 강의 자료의 용어를 힌트로 줍니다. |
+| POSTECH GenAI 서버 | OpenAI 호환 API의 Gemini 3.8 Flash가 음성(`input_audio`)을 받아 적습니다 | 1시간에 약 1,000~1,300크레딧(주간 한도 15,000의 약 7~9%) | 말 구간을 약 25초씩 모아 보내 호출 수를 줄입니다. 비용은 거의 호출 수로 정해집니다(호출당 약 8크레딧 + 음성 1초당 약 0.05크레딧). 강의 자료의 용어를 힌트로 줍니다. |
 | 로컬 AI | 이 PC에서 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)로 처리 | 없음(인터넷도 필요 없음) | CPU 스레드 2개만 쓰는 가벼운 모델. 처음 한 번 모델을 내려받습니다. |
 
 POSTECH GenAI에는 음성 인식 전용 API(`/audio/transcriptions`)가 없어서 Chat Completions의 음성 입력으로 받아 적습니다. 로컬 AI 모델은 둘 중에서 고릅니다.

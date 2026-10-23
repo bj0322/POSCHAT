@@ -5,7 +5,7 @@
 - 로컬 AI(기본): sherpa-onnx로 이 기기에서 인식한다. 인터넷·API 비용이 없고 CPU 스레드 2개만 쓴다.
   모델은 처음 쓸 때 한 번 내려받는다(한국어 약 76MB, 다국어 약 240MB).
 - POSTECH GenAI 서버: POSTECH에는 음성 인식 API(/audio/transcriptions)가 없지만, OpenAI 호환 Chat Completions의
-  Gemini 3.8 Flash가 음성(input_audio)을 받아 적는다. 크레딧을 쓰므로(1시간에 약 2,500) 말 구간을 약 25초씩 묶어 보낸다.
+  Gemini 3.8 Flash가 음성(input_audio)을 받아 적는다. 크레딧은 거의 호출 수로 정해지므로(호출당 약 8 + 음성 1초당 약 0.05) 말 구간을 약 25초씩 묶어 보낸다.
 
 마이크·모델 라이브러리(sounddevice, sherpa-onnx, numpy)는 데스크톱 앱에만 들어 있다. 안드로이드처럼 없으면
 available()이 이유를 돌려주고, 녹음 기능만 꺼진다.
