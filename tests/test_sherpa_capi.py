@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """sherpa_capi(안드로이드에서 쓰는 sherpa-onnx C API 바인딩) 시험.
 
 구조체 크기·필드 위치는 언제나 확인한다. 모델과 시험 음성이 있으면(POSCHAT_TEST_MODELS, tests/fetch_test_models.py)

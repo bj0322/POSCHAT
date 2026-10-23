@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """음성 인식 테스트에 쓰는 모델과 시험 음성을 내려받는다(CI의 tests 작업이 부른다).
 
     python tests/fetch_test_models.py <폴더>

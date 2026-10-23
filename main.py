@@ -69,6 +69,25 @@ def _extend_mac_path():
     os.environ["PATH"] = os.pathsep.join(current + [d for d in extra if d not in current])
 
 
+def _installed_package_licenses():
+    """설치된 Python 패키지가 함께 싣는 라이선스 파일(dist-info)."""
+    from importlib import metadata
+    items, seen = [], set()
+    for dist in metadata.distributions():
+        name = dist.metadata.get("Name") or "?"
+        if name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        for f in dist.files or []:
+            if f.name.upper().startswith(("LICENSE", "LICENCE", "COPYING", "NOTICE")) or "licenses" in f.parts[:-1]:
+                try:
+                    text = Path(f.locate()).read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    continue
+                items.append({"name": f"python/{name}-{dist.version}/{f.name}", "text": text[:200_000]})
+    return sorted(items, key=lambda x: x["name"].lower())
+
+
 class Bridge(WorkspaceApi):
     """JS에서 호출하는 API. 밑줄로 시작하는 이름은 JS에 노출되지 않는다. '연결·도구' 창의 API는 WorkspaceApi에 있다."""
 
@@ -552,6 +571,33 @@ class Bridge(WorkspaceApi):
         with self._lock:
             self._config["update_skip"] = str(version)
             storage.save_config(self._config)
+
+    def license_info(self):
+        """설정의 라이선스 정보: 라이선스 전문, 제3자 고지, 이 버전에 대응하는 소스코드 주소."""
+        root = resource_dir()
+
+        def read(path):
+            try:
+                return path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                return ""
+
+        third = [{"name": "THIRD_PARTY_NOTICES.md", "text": read(root / "THIRD_PARTY_NOTICES.md")}]
+        licenses = root / "licenses"  # 화면 라이브러리 원문 + 데스크톱 빌드가 넣은 python/<패키지>/
+        third += [{"name": f.relative_to(licenses).as_posix(), "text": read(f)}
+                  for f in sorted(licenses.rglob("*")) if f.is_file()]
+        if not (licenses / "python").is_dir():
+            third += _installed_package_licenses()  # 안드로이드(Chaquopy)·소스 실행: 설치된 패키지 정보에서 읽는다
+        tag = f"v{APP_VERSION}"
+        return {
+            "name": "POSCHAT", "version": APP_VERSION,
+            "copyright": "Copyright © 2026 Beomjoon Kim",
+            "license": "GNU Affero General Public License v3.0 only", "spdx": "AGPL-3.0-only",
+            "license_text": read(root / "LICENSE"), "third_party": third,
+            # 이 앱 버전과 같은 커밋(릴리스 태그)의 소스. Releases가 같은 태그로 만든 소스 아카이브도 함께 준다
+            "source_url": f"https://github.com/{updates.REPOSITORY}/tree/{tag}",
+            "source_archive": f"https://github.com/{updates.REPOSITORY}/archive/refs/tags/{tag}.zip",
+        }
 
     def open_release_page(self):
         import webbrowser

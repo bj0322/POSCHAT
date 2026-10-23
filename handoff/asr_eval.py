@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """(임시, v1.10.0 출시 때 handoff/ 폴더째 지운다) 한국어 로컬 음성 인식 정확도 측정.
 
     pip install pyarrow soundfile        # requirements.txt 외에 필요

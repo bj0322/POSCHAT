@@ -36,6 +36,15 @@ APP_DATA = [
 ]
 
 
+def dependency_licenses():
+    """번들에 들어가는 Python 패키지의 라이선스 원문을 모아 licenses/python/으로 넣는 PyInstaller 인자."""
+    sys.path.insert(0, str(ROOT / "tools"))
+    import license_check
+    dest = WORK / "pylicenses"
+    license_check.collect(dest)
+    return ["--add-data", f"{dest}{os.pathsep}licenses/python"]
+
+
 def pyinstaller(*args):
     subprocess.run([
         sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--log-level", "WARN",
@@ -50,7 +59,7 @@ def build_mac():
     print("[1/2] 앱 빌드")
     pyinstaller(
         "--windowed", "--onedir", "--name", "PostechChat", "--icon", str(ICON_PNG),
-        "--osx-bundle-identifier", BUNDLE_ID, *APP_DATA,
+        "--osx-bundle-identifier", BUNDLE_ID, *APP_DATA, *dependency_licenses(),
         "--distpath", str(WORK / "app"),
         str(ROOT / "main.py"),
     )
@@ -72,6 +81,9 @@ def build_mac():
     stage.mkdir()
     shutil.copytree(app, stage / app.name, symlinks=True)
     (stage / "Applications").symlink_to("/Applications")
+    # 디스크 이미지를 열면 바로 보이도록 라이선스 전문(AGPL-3.0-only)과 제3자 고지를 함께 둔다(앱 안에도 들어 있다)
+    shutil.copy2(ROOT / "LICENSE", stage / "LICENSE.txt")
+    shutil.copy2(ROOT / "THIRD_PARTY_NOTICES.md", stage / "THIRD_PARTY_NOTICES.md")
     out = ROOT / "release"
     out.mkdir(exist_ok=True)
     target = out / "PostechChat-mac.dmg"
@@ -101,7 +113,7 @@ def main():
 
     print("[1/3] 앱 빌드")
     pyinstaller(
-        "--windowed", "--onedir", "--name", "PostechChat", "--icon", str(ICON), *APP_DATA,
+        "--windowed", "--onedir", "--name", "PostechChat", "--icon", str(ICON), *APP_DATA, *dependency_licenses(),
         "--distpath", str(WORK / "app"),
         str(ROOT / "main.py"),
     )

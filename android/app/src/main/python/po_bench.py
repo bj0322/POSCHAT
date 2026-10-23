@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """PO노트 로컬 음성 인식의 정확도·속도 측정. 안드로이드 계측 테스트(SttBenchmarkTest)와 데스크톱 tests/가 부른다.
 
 모델 저장소의 한국어 시험 음성 4개(정답 trans.txt 포함, 커밋 고정·SHA-256 확인)를

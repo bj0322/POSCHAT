@@ -429,4 +429,6 @@ POSCHAT의 새 공식 배포본은 **GNU Affero General Public License v3.0 only
 6. **POSTECH GenAI API는 별개**: 이 소프트웨어 라이선스는 POSTECH GenAI API 이용 권한이나 POSTECH 명칭·상표 사용권을 주지 않습니다. API는 본인에게 발급된 키와 서비스 제공자의 이용 조건을 따릅니다.
 7. **제3자 구성 요소**: 번들 라이브러리와 설치 파일에 들어가는 패키지, 실행 중에 내려받는 모델·도구는 각자의 라이선스를 따릅니다.
 
+앱의 **설정** 맨 아래에서 라이선스 전문(**라이선스 보기**), 설치한 버전과 같은 태그의 소스코드(**소스 코드 보기**), 제3자 라이선스를 볼 수 있습니다. 각 Release 본문에도 그 바이너리에 대응하는 소스(같은 태그)를 적습니다. 의존성별 호환성 검토는 [docs/license-audit.md](docs/license-audit.md)에 있습니다.
+
 번들 라이브러리의 버전, 출처, 라이선스는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)에 정리했습니다. 원문은 `licenses/`에 보관하며, 제3자 파일은 각 원본 라이선스를 따릅니다.

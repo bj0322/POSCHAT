@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """test_sherpa_capi가 하위 프로세스로 부른다: 시험 음성을 pip 패키지(pip) 또는 C API 바인딩(capi)으로 인식해 JSON으로 출력.
 
     python tests/_stt_worker.py pip|capi <모델 폴더>

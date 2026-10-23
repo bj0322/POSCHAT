@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """sherpa-onnx C API를 ctypes로 부른다. 안드로이드 앱에는 sherpa-onnx Python 패키지가 없어서, stt.py가 쓰는
 sherpa_onnx의 일부(오프라인 인식기·VAD)를 같은 이름으로 흉내 낸다. 데스크톱은 pip 패키지를 그대로 쓴다.
 

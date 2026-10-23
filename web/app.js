@@ -1007,7 +1007,8 @@ function showSettings() {
   body.append(h("p", { style: "margin:14px 0 0;color:var(--text-3);font-size:12px" }, `POSTECH GenAI Chat 버전 ${S.version}`),
     h("p", { style: "margin:2px 0 0;color:var(--text-3);font-size:12px" }, "서비스 대표자: 김범준"),
     h("p", { style: "margin:2px 0 0;color:var(--text-3);font-size:12px" }, "문의사항은 ",
-      h("a", { href: REPO_URL, target: "_blank", style: "color:inherit" }, REPO_URL), "의 문의 메일로 보내 주세요."));
+      h("a", { href: REPO_URL, target: "_blank", style: "color:inherit" }, REPO_URL), "의 문의 메일로 보내 주세요."),
+    licenseBlock());
   modal({
     title: "설정",
     body,
@@ -1354,6 +1355,42 @@ ChatGPT·claude.ai 같은 웹 채팅 서비스의 기억은 이어받을 수 없
   ["데이터와 개인정보", `
 대화·설정·메모리·첨부 파일·PO노트는 이 기기의 데이터 폴더(설정 창 아래쪽 **데이터 폴더 → 열기**)에만 저장됩니다(동기화를 직접 켜면 암호화해 고른 저장소에도 둡니다). 질문할 때 대화 내용, 첨부 내용, 메모리, 내 정보, INIT.md가 POSTECH GenAI API로 전달됩니다. PO노트는 로컬 AI로 받아 적으면 녹음이 PC 밖으로 나가지 않고, POSTECH 서버로 받아 적으면 말 구간의 소리가 POSTECH GenAI로 전달됩니다. 녹음 소리 자체는 저장하지 않습니다. POSTECH API 키·Notion·Firecrawl 키는 설정 파일(config.json)에, 1.10의 커넥터 토큰(GitHub·Google·Zotero 등)은 OS 보안 저장소(없으면 이 사용자만 읽는 앱 파일)에 저장됩니다. 사용량·진단 기록에는 질문·답변 내용이 없습니다.`],
 ];
+
+// 설정 맨 아래: 라이선스(AGPL-3.0-only)와 이 버전의 소스코드·제3자 라이선스
+function licenseBlock() {
+  const small = "margin:2px 0 0;color:var(--text-3);font-size:12px";
+  const source = h("a", { href: `${REPO_URL}/tree/v${S.version}`, target: "_blank", class: "btn" }, "소스 코드 보기");
+  const box = h("div", { class: "license-block", style: "margin-top:12px" },
+    h("p", { style: small }, "POSCHAT"),
+    h("p", { style: small }, "Copyright © 2026 Beomjoon Kim"),
+    h("p", { style: small }, "GNU Affero General Public License v3.0 only (AGPL-3.0-only)"),
+    h("div", { class: "row", style: "margin-top:6px;gap:6px;flex-wrap:wrap" },
+      h("button", { class: "btn", type: "button", onclick: () => showLicense("license") }, "라이선스 보기"),
+      source,
+      h("button", { class: "btn", type: "button", onclick: () => showLicense("third") }, "제3자 라이선스")));
+  api().license_info().then((info) => { source.href = info.source_url; }).catch(() => {});
+  return box;
+}
+
+async function showLicense(kind) {
+  let info;
+  try {
+    info = await api().license_info();
+  } catch (e) {
+    return toast("라이선스 정보를 불러오지 못했습니다: " + e.message);
+  }
+  const pre = (text) => h("pre", { class: "license-text", style: "white-space:pre-wrap;font-size:12px;max-height:60vh;overflow:auto" },
+    text || "(앱에 들어 있는 파일을 찾지 못했습니다. 저장소의 파일을 보세요.)");
+  if (kind === "license") {
+    return modal({ title: `${info.license} (${info.spdx})`, wide: true, body: h("div", {},
+      h("p", {}, `${info.name} ${info.version} · ${info.copyright}`), pre(info.license_text)), buttons: [{ label: "닫기", value: null }] });
+  }
+  const body = h("div", {},
+    h("p", {}, "이 앱에 들어 있는 제3자 구성 요소는 각자의 라이선스를 따릅니다. 이 버전의 소스: ",
+      h("a", { href: info.source_url, target: "_blank" }, info.source_url), " (", h("a", { href: info.source_archive, target: "_blank" }, "zip"), ")"),
+    ...info.third_party.map((item, i) => h("details", { open: i === 0 }, h("summary", {}, item.name), pre(item.text))));
+  modal({ title: "제3자 라이선스", wide: true, body, buttons: [{ label: "닫기", value: null }] });
+}
 
 function showGuide() {
   const body = h("div", { class: "guide" },

@@ -21,6 +21,30 @@ permissions:
   contents: write
 
 jobs:
+  license:
+    # 라이선스 자동 점검: AGPL 원문, SPDX 머리말, 필수 문서, 배포 설정, 의존성 라이선스 목록.
+    # 결과는 사람이 검토할 재료이며 법적 호환성을 확정하지 않는다(docs/license-audit.md).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: LICENSE, SPDX headers, required documents
+        run: python tools/license_check.py repo
+
+      - name: Dependency license list
+        run: |
+          python -m pip install -r requirements.txt
+          python tools/license_check.py deps --out dependency-licenses.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dependency-licenses
+          path: dependency-licenses.md
+
   tests:
     runs-on: ubuntu-latest
     steps:
@@ -76,6 +100,12 @@ jobs:
           PYTHONUTF8: "1"
           PYTHONIOENCODING: utf-8
         run: python build_installer.py
+
+      - name: License files in the app
+        shell: pwsh
+        run: |
+          $payload = python -c "import os, tempfile; print(os.path.join(tempfile.gettempdir(), 'PostechChat-build', 'payload.zip'))"
+          python tools/license_check.py package --python-licenses $payload
 
       - name: Self-test the built app
         shell: pwsh
@@ -144,6 +174,7 @@ jobs:
           hdiutil attach release/PostechChat-mac.dmg -nobrowse -mountpoint "$mnt"
           test -x "$mnt/PostechChat.app/Contents/MacOS/PostechChat"
           test -L "$mnt/Applications"
+          python tools/license_check.py package --python-licenses "$mnt"
           hdiutil detach "$mnt"
 
       - uses: actions/upload-artifact@v4
@@ -200,7 +231,9 @@ jobs:
           script: cd android && ./gradlew --no-daemon connectedDebugAndroidTest && adb logcat -d -s PoschatBench:I || { adb logcat -d -s Poschat:V PoschatWeb:V PoschatBench:I python.stdout:V python.stderr:V AndroidRuntime:E TestRunner:V chromium:W DEBUG:V libc:F cr_AwContents:V ActivityManager:W AudioRecord:V | tail -400; exit 1; }
 
       - name: Collect APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk PostechChat.apk
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk PostechChat.apk
+          python tools/license_check.py package PostechChat.apk
 
       - uses: actions/upload-artifact@v4
         with:
@@ -214,7 +247,7 @@ jobs:
           path: android/app/build/reports/androidTests/
 
   publish:
-    needs: [tests, windows, macos, android]
+    needs: [license, tests, windows, macos, android]
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release != '')
     runs-on: ubuntu-latest
     steps:
@@ -227,6 +260,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release || github.ref_name }}
-        run: >
-          gh release create "$TAG" dist/PostechChat-Setup.exe dist/PostechChat-mac.dmg dist/PostechChat.apk
-          --repo "$GITHUB_REPOSITORY" --title "POSTECH GenAI Chat $TAG" --target "$GITHUB_SHA" --generate-notes
+        # 릴리스 본문 맨 앞에 라이선스와 이 배포본의 해당 소스(같은 태그의 소스 아카이브)를 밝힌다
+        run: |
+          {
+            echo "**License**: GNU Affero General Public License v3.0 only (AGPL-3.0-only). Copyright © 2026 Beomjoon Kim."
+            echo "Corresponding Source of these binaries: tag \`$TAG\` (commit $GITHUB_SHA), https://github.com/$GITHUB_REPOSITORY/tree/$TAG and the Source code archives below."
+            echo "Releases v1.9.2 and earlier were distributed under the MIT License; those rights are unchanged (LICENSE_HISTORY.md)."
+            echo "Third-party components keep their own licenses (THIRD_PARTY_NOTICES.md, docs/license-audit.md)."
+            echo
+          } > notes.md
+          gh release create "$TAG" dist/PostechChat-Setup.exe dist/PostechChat-mac.dmg dist/PostechChat.apk \
+            --repo "$GITHUB_REPOSITORY" --title "POSTECH GenAI Chat $TAG" --target "$GITHUB_SHA" \
+            --notes-file notes.md --generate-notes

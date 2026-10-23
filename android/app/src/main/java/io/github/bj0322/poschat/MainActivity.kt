@@ -176,6 +176,8 @@ class MainActivity : ComponentActivity() {
             if (!Python.isStarted()) Python.start(AndroidPlatform(this))
             val resDir = File(filesDir, "res")
             copyAssetDir("skills", File(resDir, "skills"))
+            // 설정 > 라이선스가 읽는 라이선스 전문·제3자 고지
+            for (name in listOf("LICENSE", "THIRD_PARTY_NOTICES.md", "licenses")) copyAssetDir(name, File(resDir, name))
             val module = Python.getInstance().getModule("android_main")
             module.callAttr("start", Host(), filesDir.absolutePath, resDir.absolutePath)
             bridge = module
