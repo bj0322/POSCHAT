@@ -12,10 +12,18 @@
 | Phase 2 | `996501b` | 통합 논문 검색, 라이브러리, RAG, 벡터(선택), Zotero |
 | Phase 3 | `7a709a9` | 통합 메모리, 인계, memory MCP 서버, 암호화 동기화 |
 
-## 남은 단계
-- Phase 4: `runner_mcp.py`(python·ssh, 기본 비활성, 데스크톱 전용), 자동화 탭
-- Phase 5: `telemetry.py`, `evals.py`, 피드백, 사용량·진단 탭
-- 마무리: 버전 1.10.0, 문서(설치·설정·API·Migration·Release Notes), CI selftest 문자열, 안드로이드 selftest 확장
+| Phase 4 | `d18466e` | Python·Jupyter·SSH 실행(기본 비활성, 데스크톱) |
+| Phase 5 | `9527506` | 관측·피드백·평가 |
+| 릴리스 준비 | `5beb84d` + 문서 커밋 | 1.10.0, selftest·CI, 첫 실행 백업, 문서 |
+
+## 상태
+- 모든 Phase 구현 완료. 테스트 153개(Python 3.11·3.12·3.13 통과, 화면 6개는 Playwright가 있을 때).
+- **릴리스(태그 v1.10.0)는 하지 않았다**: 태그를 올리면 모든 사용자에게 자동 업데이트가 나가므로, PR을 만들어 Windows·macOS·Android CI(패키징·selftest·에뮬레이터)가 통과한 것을 확인한 뒤 사용자가 결정한다.
+
+## 다음에 할 일
+1. PR을 열어 CI 결과 확인(특히 PyInstaller가 keyring·cryptography·새 모듈을 묶는지, Chaquopy가 cryptography 42.0.8을 받는지).
+2. 실제 계정으로 커넥터 검증: GitHub PAT, Google OAuth 클라이언트(데스크톱·안드로이드), Zotero, Langfuse.
+3. 향후: 원격 게이트웨이(docs/architecture/04), HTTP MCP 클라이언트, 기존 API 키의 secret_store 이동.
 
 ## 테스트 실행
 ```

@@ -1,6 +1,8 @@
 # POSTECH GenAI Chat
 
-버전 1.9.2 — 자동 업데이트 시험용 릴리스(기능 변경 없음). 1.9.1에서 업데이트 알림부터 설치까지 확인하는 데 씁니다
+버전 1.10.0 — **POSCHAT 2.0: 연결·도구**. 왼쪽 아래 **연결·도구**에서(모두 기본 꺼짐) GitHub·Google Workspace(Drive·Docs·Sheets·Slides·Gmail·Calendar)·Zotero 커넥터, 통합 논문 검색·라이브러리·BibTeX·출처가 붙은 문서 검색(RAG), 프로젝트·연구 메모리와 에이전트 인계(다른 AI 클라이언트와 공유), 기기 사이 종단간 암호화 동기화, Python·Jupyter·SSH 실행(PC, 매번 승인), 사용량·진단과 모델 평가. 메일 전송·리뷰 제출·삭제·코드 실행은 자동 허용 설정이어도 매번 묻습니다. 1.6부터 에이전트의 MCP 도구 호출이 실패하던 버그 수정. 자세히: [릴리스 노트](docs/release-notes/v1.10.0.md) · [설치·설정](docs/setup.md) · [마이그레이션](docs/migration-1.10.md) · [보안](docs/security.md) · [API](docs/api/reference.md) · [아키텍처](docs/architecture/)
+
+1.9.2 — 자동 업데이트 시험용 릴리스(기능 변경 없음). 1.9.1에서 업데이트 알림부터 설치까지 확인하는 데 씁니다
 
 1.9.1 — **자동 업데이트**(시작할 때 GitHub Releases에서 새 버전을 확인하고, 받은 설치 파일의 크기·SHA-256을 확인한 뒤 설치 시작), 설정 창의 버전 정보 아래에 서비스 대표자(김범준)와 문의 안내, README에 문의 메일
 
@@ -211,6 +213,8 @@ Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 
 예전 Office 형식(`.doc`, `.ppt`, `.xls`)은 읽지 못하므로 Office에서 새 형식으로 저장한 뒤 사용하세요. 문서는 50MB까지 읽고, `search`는 20MB 이하 문서만 검색합니다.
 
 ### MCP
+
+1.10부터 MCP 목록은 **연결·도구 → MCP 서버** 탭에 있고, 커넥터(GitHub·Google 등)의 서버는 **커넥터** 탭에서 켭니다([API 레퍼런스](docs/api/reference.md)).
 
 MCP(Model Context Protocol)는 AI 도구를 연결하는 표준입니다. 에이전트 모드에서 켜진 MCP 서버의 도구가 `mcp` 단계로 제공됩니다. 서버는 처음 필요할 때 작업 폴더를 현재 폴더로 해서 실행되고, 작업 폴더나 설정이 바뀌면 다시 실행됩니다. 앱을 닫으면 함께 종료됩니다.
 
