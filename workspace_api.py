@@ -430,19 +430,7 @@ class WorkspaceApi:
             return ""
         return f"{workspace}/{project}"
 
-    @staticmethod
-    def _memory_server_command():
-        """다른 AI 클라이언트에 등록할 memory 서버 실행 명령."""
-        import sys
-        from pathlib import Path
-
-        if getattr(sys, "frozen", False):
-            return sys.executable, ["--mcp-server", "memory"]
-        return sys.executable, [str(Path(__file__).resolve().parent / "office_mcp.py"), "memory"]
-
     def memory_state(self, layer="", query=""):
-        import json as _json
-
         import handoff
         import memory_store
 
@@ -458,15 +446,10 @@ class WorkspaceApi:
             error = ""
         except Exception as e:  # 손상된 DB 등: 화면은 열리게 한다
             stats, items, handoffs, error = {"layers": {}, "handoffs": {}, "fts": "?"}, [], [], f"{type(e).__name__}: {e}"
-        command, args = self._memory_server_command()
-        snippet = _json.dumps({"mcpServers": {"poschat-memory": {"command": command, "args": args}}},
-                              ensure_ascii=False, indent=2)
         return {
             "feature": connectors.feature_enabled(self._config, "memory_hub"),
             "enabled": connectors.is_enabled(self._config, "memory"),
             "project": project, "stats": stats, "items": items, "handoffs": handoffs, "error": error,
-            "client_json": snippet,
-            "claude_code": f'claude mcp add poschat-memory -- "{command}" ' + " ".join(f'"{a}"' for a in args),
             "sync": self.sync_state(), "android": mcp_client.INPROCESS_BUILTIN,
         }
 

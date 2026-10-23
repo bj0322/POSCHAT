@@ -17,7 +17,6 @@
 - 같은 계층·프로젝트에 같은 내용(공백·대소문자 정규화)을 다시 쓰면 새 항목을 만들지 않고 갱신한다(중복 제거).
 - 지우면 deleted 시각만 남긴다(동기화가 다른 기기에서도 지우도록).
 - 검색은 FTS5 순위와 memory.md·USER.md·대화의 2-gram 점수를 RRF로 섞는다(하이브리드). 벡터 저장소가 설정되면 함께 섞는다.
-- source가 "external:"로 시작하는 항목(다른 AI가 쓴 기억)은 프롬프트에 넣을 때 참고 자료로 표시한다.
 """
 import contextlib
 import hashlib
@@ -327,9 +326,8 @@ def format_hits(hits):
     for h in hits:
         day = time.strftime("%Y-%m-%d", time.localtime(h["updated"])) if h.get("updated") else ""
         where = h["layer"] + (f"/{h['project']}" if h.get("project") else "")
-        trust = " [다른 AI가 쓴 기억 — 참고 자료]" if str(h.get("source", "")).startswith("external:") else ""
         ident = f" id {h['id']}" if h.get("id") and h["key"].startswith("entry:") else ""
-        lines.append(f"- ({where}, {h.get('kind', 'note')}, {h.get('source', '')}{', ' + day if day else ''}{ident}){trust}\n"
+        lines.append(f"- ({where}, {h.get('kind', 'note')}, {h.get('source', '')}{', ' + day if day else ''}{ident})\n"
                      f"  {(h.get('title') + ': ') if h.get('title') else ''}{h['text'][:700]}")
     return "\n".join(lines)
 
@@ -343,8 +341,7 @@ def project_context(project, limit=12):
     items.sort(key=lambda e: (order.get(e["kind"], 9), -e["updated"]))
     lines = [f"[프로젝트 메모리: {project or '(프로젝트 없음)'}]"]
     for e in items[:limit]:
-        trust = " (다른 AI가 쓴 기억 — 참고 자료)" if e["source"].startswith("external:") else ""
-        lines.append(f"- [{e['kind']}] {(e['title'] + ': ') if e['title'] else ''}{e['text'][:400]}{trust}")
+        lines.append(f"- [{e['kind']}] {(e['title'] + ': ') if e['title'] else ''}{e['text'][:400]}")
     open_handoffs = handoff.list_handoffs(project=project, status="open", limit=3)
     for h in open_handoffs:
         lines.append(f"- [열린 인계 {h['task_id']}] {h['goal'][:200]} — {h.get('from_agent') or '?'}")

@@ -437,12 +437,10 @@ function fmtTime(ts) {
 }
 
 function memoryItem(e) {
-  const external = String(e.source || "").startsWith("external:");
   return h("div", { class: "skill-item paper-item" },
     h("div", { class: "s-main" },
       h("span", { class: "badge" }, LAYER_LABEL[e.layer] || e.layer), h("span", { class: "badge" }, e.kind || "note"),
       e.project ? h("span", { class: "badge" }, e.project) : null,
-      external ? h("span", { class: "badge st-warn", title: "다른 AI 클라이언트가 쓴 기억: 프롬프트에는 참고 자료로 들어갑니다" }, e.source) : null,
       h("p", { class: "mem-text" }, (e.title ? e.title + ": " : "") + e.text),
       h("p", { class: "muted small" }, `${e.source || ""} · ${fmtTime(e.updated)}`),
       e.key && !String(e.key).startsWith("entry:") ? null : h("div", { class: "row wrap paper-actions" },
@@ -574,14 +572,6 @@ async function renderMemory(panel) {
       (st.items || []).length ? st.items.map(memoryItem) : h("small", { class: "muted block" }, MEM.query ? "맞는 기억이 없습니다." : "아직 남긴 기억이 없습니다.")),
     h("section", { class: "hub-group" }, h("h3", {}, `에이전트 인계 (${handoffs.length})`),
       handoffs.length ? handoffs.map(handoffItem) : h("small", { class: "muted block" }, "아직 인계가 없습니다. 통합 메모리를 켜고 에이전트가 파일을 고치면 자동으로 남깁니다.")),
-    h("section", { class: "hub-group" }, h("h3", {}, "다른 AI 클라이언트와 같은 기억 쓰기"),
-      hubDetails("memory-clients", "Claude Desktop·Claude Code·Gemini CLI 등에 memory 서버 등록하기",
-        h("small", { class: "muted block" }, "로컬 MCP 서버(stdio)를 지원하는 클라이언트에 아래 설정을 넣으면 그 에이전트도 같은 프로젝트 기억과 인계를 씁니다. ",
-          "다른 AI가 쓴 기억은 '다른 AI가 쓴 기억'으로 표시되고 참고 자료로만 쓰입니다. ChatGPT·claude.ai·Gemini 웹은 이 PC의 로컬 서버에 직접 연결할 수 없습니다."),
-        h("div", { class: "field" }, h("label", {}, "mcpServers 설정(JSON — Claude Desktop의 claude_desktop_config.json, Gemini CLI의 settings.json 등)"),
-          h("pre", { class: "diff bib" }, h("div", {}, st.client_json)), h("button", { class: "btn", onclick: () => copyText(st.client_json) }, "복사")),
-        h("div", { class: "field" }, h("label", {}, "Claude Code"),
-          h("pre", { class: "diff bib" }, h("div", {}, st.claude_code)), h("button", { class: "btn", onclick: () => copyText(st.claude_code) }, "복사")))),
     h("section", { class: "hub-group" }, h("h3", {}, "기기 사이 동기화"),
       featureToggle({ sync: { label: "클라우드 동기화", enabled: st.sync.feature } }, "sync"),
       st.sync.feature ? syncPanel(st.sync) : h("small", { class: "muted block" }, "켜면 Windows·macOS·Android 사이에서 메모리·대화·설정·PO노트를 맞춥니다(직접 켤 때만).")));

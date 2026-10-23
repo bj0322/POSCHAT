@@ -35,7 +35,7 @@
 - [x] 에이전트 프롬프트에 프로젝트 메모리(기능 켜짐일 때)
 - [x] `sync.py`: 암호화·폴더/Drive 백엔드·충돌 해결·삭제·상태
 - [x] UI: 메모리·동기화 탭
-- [x] 문서: Universal AI Memory Hub 연동 검증표
+- [-] Universal AI Memory Hub(5.4): 사용자 결정으로 제외. memory 서버는 POSCHAT 전용
 
 ## Phase 4 — Agent Automation
 - [x] 에이전트 실행 후 표준 인계 자동 기록(ai-memory와 병행)

@@ -1,18 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Beomjoon Kim
 # SPDX-License-Identifier: AGPL-3.0-only
-"""내장 MCP 서버 memory: 통합 메모리(memory_store)와 에이전트 인계(handoff)를 MCP 도구로 연다.
+"""내장 MCP 서버 memory: 통합 메모리(memory_store)와 에이전트 인계(handoff)를 POSCHAT 에이전트에 MCP 도구로 연다
+(커넥터 → 통합 메모리).
 
-POSCHAT 에이전트가 쓰고(커넥터 → 통합 메모리), 같은 서버를 stdio MCP를 지원하는 다른 AI 클라이언트
-(Claude Desktop·Claude Code·Gemini CLI·Codex CLI 등)에 등록하면 그 에이전트들도 같은 기억을 찾고 쓴다.
-
-    Windows:  "C:\\...\\PostechChat\\PostechChat.exe" --mcp-server memory
-    macOS:    /Applications/PostechChat.app/Contents/MacOS/PostechChat --mcp-server memory
-    소스 실행: python office_mcp.py memory
-
-- 프로젝트는 서버의 작업 폴더(cwd)에서 ai-memory와 같은 규칙(ai_memory.resolve_scope)으로 정한다. 그래서 같은 저장소를
-  여는 에이전트들은 같은 프로젝트 메모리를 본다. project 인자로 바꿀 수 있다.
-- initialize의 clientInfo.name이 POSCHAT이 아니면 쓴 기억의 source를 "external:<이름>"으로 남긴다. POSCHAT은 그런 기억을
-  프롬프트에 넣을 때 '참고 자료'로 표시한다.
+- 프로젝트는 작업 폴더에서 ai-memory와 같은 규칙(ai_memory.resolve_scope)으로 정한다. project 인자로 바꿀 수 있다.
+- 다른 AI 클라이언트와 기억을 나누는 기능(Universal AI Memory Hub)은 1.10에서 넣지 않았다. 앱 실행 파일은 내장 서버를
+  `--mcp-server <이름>`으로 띄우므로, POSCHAT이 아닌 클라이언트(initialize의 clientInfo.name)가 이 서버를 띄우면
+  도구를 거부한다. 다른 코딩 에이전트와의 인계는 기존 ai-memory 연동을 쓴다.
 """
 import ai_memory
 import handoff
@@ -27,9 +21,10 @@ ARR = {"type": "array", "items": STR}
 TESTS = {"type": "array", "items": {"type": "object"}}
 
 
-def _source():
+def _only_poschat():
     name = str((office_mcp.CLIENT_INFO or {}).get("name") or "")
-    return "poschat" if not name or name == POSCHAT_CLIENT else f"external:{name[:40]}"
+    if name and name != POSCHAT_CLIENT:
+        raise ToolFailure("이 메모리 서버는 POSTECH GenAI Chat 안에서만 씁니다(다른 AI 클라이언트 연결은 지원하지 않음).")
 
 
 def _project(project=None):
@@ -43,6 +38,7 @@ def _project(project=None):
 
 
 def _call(fn, *args, **kwargs):
+    _only_poschat()
     try:
         return fn(*args, **kwargs)
     except (memory_store.MemoryStoreError, handoff.HandoffError) as e:
@@ -50,6 +46,7 @@ def _call(fn, *args, **kwargs):
 
 
 def memory_search(query, layers=None, project=None, limit=10):
+    _only_poschat()
     layers = [layers] if isinstance(layers, str) else layers
     hits = memory_store.search(query, layers=layers, project=_project(project), limit=max(1, min(30, int(limit or 10))))
     return f"기억 검색 '{query}' (프로젝트 {_project(project) or '-'})\n" + memory_store.format_hits(hits)
@@ -57,7 +54,7 @@ def memory_search(query, layers=None, project=None, limit=10):
 
 def memory_write(text, layer="project", kind="note", project=None, title="", tags=None):
     entry, created = _call(memory_store.write, text, layer=layer, project=_project(project) if layer in ("project", "research") else "",
-                           kind=kind, title=title, tags=tags, source=_source())
+                           kind=kind, title=title, tags=tags, source="poschat")
     return (f"기억을 {'남겼습니다' if created else '갱신했습니다(같은 내용이 이미 있음)'}: id {entry['id']} "
             f"({entry['layer']}/{entry['project'] or '-'}, {entry['kind']})")
 
@@ -68,6 +65,7 @@ def memory_delete(id):  # noqa: A002 — 도구 인자 이름
 
 
 def project_context(project=None):
+    _only_poschat()
     text = memory_store.project_context(_project(project))
     return text or f"프로젝트 '{_project(project)}'에 남은 기억이 없습니다. memory_write(layer='project')로 남기세요."
 
@@ -75,7 +73,7 @@ def project_context(project=None):
 def handoff_create(goal, summary="", files_changed=None, commits=None, tools_run=None, tests=None, todo=None,
                    next_steps=None, approvals_needed=None, open_questions=None, idempotency_key=None, project=None,
                    from_agent=None):
-    agent = from_agent or (office_mcp.CLIENT_INFO or {}).get("name") or "agent"
+    agent = from_agent or "poschat"
     rec, created = _call(handoff.create, goal, project=_project(project), idempotency_key=idempotency_key,
                          from_agent=agent, summary=summary, files_changed=files_changed, commits=commits,
                          tools_run=tools_run, tests=tests, todo=todo, next_steps=next_steps,
@@ -84,6 +82,7 @@ def handoff_create(goal, summary="", files_changed=None, commits=None, tools_run
 
 
 def handoff_list(project=None, status="open", limit=10):
+    _only_poschat()
     items = handoff.list_handoffs(project=_project(project), status=status or None, limit=max(1, min(50, int(limit or 10))))
     if not items:
         return f"{status or ''} 인계가 없습니다."
@@ -91,7 +90,7 @@ def handoff_list(project=None, status="open", limit=10):
 
 
 def handoff_accept(task_id=None, project=None, agent=None):
-    who = agent or (office_mcp.CLIENT_INFO or {}).get("name") or "agent"
+    who = agent or "poschat"
     rec = _call(handoff.accept, who, task_id=task_id, project=_project(project))
     if rec is None:
         return "받을 열린 인계가 없습니다(이미 다른 에이전트가 받았을 수 있습니다)."

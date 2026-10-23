@@ -3,7 +3,7 @@
 안드로이드에서 Python·SSH 실행이 필요하거나, ChatGPT·claude.ai 웹처럼 원격 MCP만 붙는 서비스가 POSCHAT 기억을 쓰려면, 사용자가 운영하는 HTTPS 게이트웨이가 필요하다. 개인 데이터를 인터넷에 노출하는 결정이고 인프라가 필요하므로 이번 릴리스에서는 설계만 둔다.
 
 ## 구성
-- 사용자 PC(또는 연구실 서버)에서 도는 `poschat-gateway` 프로세스: Streamable HTTP MCP 엔드포인트(`/mcp`)로 memory·python·ssh 서버를 노출.
+- 사용자 PC(또는 연구실 서버)에서 도는 `poschat-gateway` 프로세스: Streamable HTTP MCP 엔드포인트(`/mcp`)로 python·ssh 서버를 노출.
 - TLS 필수(리버스 프록시 또는 터널). OAuth 2.1(PKCE) 또는 기기별 토큰. 기기 등록·폐기 목록.
 - 도구별 허용 목록: 원격에서는 기본 read만. exec는 PC 화면의 승인 요청(푸시)을 거쳐야 실행.
 - 감사 로그·속도 제한·요청 크기 제한은 `connectors.py` 게이트웨이를 재사용.

@@ -1,6 +1,6 @@
 # POSTECH GenAI Chat
 
-버전 1.10.0 — **POSCHAT 2.0: 연결·도구**. 왼쪽 아래 **연결·도구**에서(모두 기본 꺼짐) GitHub·Google Workspace(Drive·Docs·Sheets·Slides·Gmail·Calendar)·Zotero 커넥터, 통합 논문 검색·라이브러리·BibTeX·출처가 붙은 문서 검색(RAG), 프로젝트·연구 메모리와 에이전트 인계(다른 AI 클라이언트와 공유), 기기 사이 종단간 암호화 동기화, Python·Jupyter·SSH 실행(PC, 매번 승인), 사용량·진단과 모델 평가. 메일 전송·리뷰 제출·삭제·코드 실행은 자동 허용 설정이어도 매번 묻습니다. 1.6부터 에이전트의 MCP 도구 호출이 실패하던 버그 수정. 자세히: [릴리스 노트](docs/release-notes/v1.10.0.md) · [설치·설정](docs/setup.md) · [마이그레이션](docs/migration-1.10.md) · [보안](docs/security.md) · [API](docs/api/reference.md) · [아키텍처](docs/architecture/)
+버전 1.10.0 — **POSCHAT 2.0: 연결·도구**. 왼쪽 아래 **연결·도구**에서(모두 기본 꺼짐) GitHub·Google Workspace(Drive·Docs·Sheets·Slides·Gmail·Calendar)·Zotero 커넥터, 통합 논문 검색·라이브러리·BibTeX·출처가 붙은 문서 검색(RAG), 프로젝트·연구 메모리와 에이전트 인계, 기기 사이 종단간 암호화 동기화, Python·Jupyter·SSH 실행(PC, 매번 승인), 사용량·진단과 모델 평가. 메일 전송·리뷰 제출·삭제·코드 실행은 자동 허용 설정이어도 매번 묻습니다. 1.6부터 에이전트의 MCP 도구 호출이 실패하던 버그 수정. 자세히: [릴리스 노트](docs/release-notes/v1.10.0.md) · [설치·설정](docs/setup.md) · [마이그레이션](docs/migration-1.10.md) · [보안](docs/security.md) · [API](docs/api/reference.md) · [아키텍처](docs/architecture/)
 
 1.9.2 — 자동 업데이트 시험용 릴리스(기능 변경 없음). 1.9.1에서 업데이트 알림부터 설치까지 확인하는 데 씁니다
 

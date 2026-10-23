@@ -21,7 +21,7 @@ SERVER_VERSION = "1.0.0"
 
 # 앱 프로세스 안의 스레드로 돌릴 때(안드로이드) 작업 폴더. None이면 현재 폴더(하위 프로세스로 실행할 때의 cwd).
 ROOT = None
-# initialize 때 받은 클라이언트 정보({"name", "version"}). memory 서버가 다른 AI가 쓴 기억을 표시하는 데 쓴다.
+# initialize 때 받은 클라이언트 정보({"name", "version"}). memory 서버가 POSCHAT이 아닌 클라이언트를 거부하는 데 쓴다.
 CLIENT_INFO = {}
 
 

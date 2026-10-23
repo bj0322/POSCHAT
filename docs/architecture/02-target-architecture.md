@@ -24,7 +24,7 @@ vector_store.py      선택: Qdrant(REST) + OpenAI 호환 임베딩. 없으면 �
 research_mcp.py      내장 MCP 서버 research(라이브러리·RAG)와 zotero
 memory_store.py      계층형 메모리(profile·conversation·project·research) — memory.md/USER.md는 그대로
 handoff.py           표준 인계 형식과 상태 기계(idempotency)
-memory_mcp.py        내장 MCP 서버 memory — 외부 에이전트(Claude Desktop/Code, Gemini CLI 등)에도 같은 서버를 연결
+memory_mcp.py        내장 MCP 서버 memory — POSCHAT 에이전트 전용
 sync.py              Opt-in 종단간 암호화 동기화(폴더·Google Drive appDataFolder)
 runner_mcp.py        내장 MCP 서버 python·ssh (기본 비활성, 데스크톱 전용)
 telemetry.py         LLM·도구·에이전트 관측(로컬), Langfuse 내보내기(opt-in), 민감정보 제거
@@ -140,8 +140,8 @@ Agent._tool_mcp ──► connectors.Gateway.call()
 | Agent Handoff | 같은 DB의 `handoffs` 표 | handoff.py |
 
 - 검색: FTS5 + 2-gram 점수 융합, 계층·프로젝트·태그 필터, 내용 해시로 중복 제거, 출처(source) 기록. 벡터 저장소가 설정되면 하이브리드.
-- `memory` MCP 서버(기본 꺼짐)가 `memory_search`·`memory_write`·`project_context`·`handoff_*`를 제공하고, 같은 서버를 Claude Desktop·Claude Code·Gemini CLI 같은 **stdio MCP를 지원하는 클라이언트**에 등록할 수 있다. 외부 클라이언트가 쓴 기억은 `source=external:<클라이언트>`로 표시하고 POSCHAT 프롬프트에 넣을 때 "참고 자료" 표시를 단다.
-- **외부 AI 서비스 지원 현황(검증 결과는 docs/integrations/universal-memory-hub.md)**: ChatGPT·claude.ai 웹·Gemini 웹은 로컬 stdio MCP를 직접 붙일 수 없다(원격 HTTPS MCP 서버가 필요). 이 저장소는 원격 서버를 배포하지 않으므로 그 연결은 '향후 작업'이다.
+- `memory` MCP 서버(기본 꺼짐)가 POSCHAT 에이전트에 `memory_search`·`memory_write`·`project_context`·`handoff_*`를 제공한다.
+- **제외(사용자 결정, 1.10)**: 다른 AI 클라이언트·서비스와 기억을 나누는 Universal AI Memory Hub(원래 지시문 5.4)는 넣지 않는다. memory 서버는 POSCHAT이 아닌 클라이언트를 거부한다.
 
 ## 7. 동기화
 

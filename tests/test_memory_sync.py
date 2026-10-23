@@ -59,12 +59,11 @@ class MemoryStoreTests(unittest.TestCase):
         self.assertIn("결제 관련 답변은 표로 정리", [h["text"] for h in memory_store.search("결제 관련 답변", project="ws/shop")])  # memory.md도
         self.assertEqual(memory_store.search("손실 수렴", layers=["research"], project="ws/shop")[0]["layer"], "research")
 
-    def test_delete_leaves_a_tombstone_and_external_entries_are_marked(self):
-        e, _ = memory_store.write("남이 쓴 기억", project="p", source="external:claude-code")
-        self.assertIn("다른 AI가 쓴 기억", memory_store.format_hits(memory_store.search("남이 쓴 기억", project="p")))
-        self.assertIn("다른 AI", memory_store.project_context("p"))
+    def test_delete_leaves_a_tombstone(self):
+        e, _ = memory_store.write("지울 기억", project="p")
+        self.assertTrue(memory_store.search("지울 기억", project="p"))
         memory_store.delete(e["id"])
-        self.assertFalse(memory_store.search("남이 쓴 기억", project="p"))
+        self.assertFalse(memory_store.search("지울 기억", project="p"))
         self.assertTrue(memory_store.entries(include_deleted=True)[0]["deleted"])
 
     def test_upsert_raw_keeps_the_fts_index_consistent(self):
@@ -134,20 +133,23 @@ class HandoffTests(unittest.TestCase):
 
 
 class MemoryServerTests(unittest.TestCase):
-    def test_external_clients_are_tagged_and_project_comes_from_the_folder(self):
+    def test_poschat_uses_it_and_other_clients_are_refused(self):
+        # 1.10에는 다른 AI 클라이언트와 기억을 나누는 기능(Universal AI Memory Hub)을 넣지 않았다
         with isolated_app_dir() as root:
             ws = root / "myrepo"
             ws.mkdir()
-            with patch.object(office_mcp, "ROOT", ws), patch.object(office_mcp, "CLIENT_INFO", {"name": "claude-code"}):
+            with patch.object(office_mcp, "ROOT", ws), patch.object(office_mcp, "CLIENT_INFO", {"name": "postech-genai-chat"}):
                 memory_mcp.memory_write("배포는 금요일에 하지 않는다", kind="decision")
-                out = memory_mcp.project_context()
+                self.assertIn("default/myrepo", memory_mcp.project_context())
                 memory_mcp.handoff_create("API 문서 정리", files_changed=["docs/api.md"])
-                taken = memory_mcp.handoff_accept()
-            self.assertIn("default/myrepo", out)
+                self.assertIn("API 문서 정리", memory_mcp.handoff_accept())
             entry = memory_store.entries(layer="project")[0]
-            self.assertEqual((entry["project"], entry["source"]), ("default/myrepo", "external:claude-code"))
-            self.assertIn("API 문서 정리", taken)
-            self.assertEqual(handoff.list_handoffs(status="accepted")[0]["accepted_by"], "claude-code")
+            self.assertEqual((entry["project"], entry["source"]), ("default/myrepo", "poschat"))
+            with patch.object(office_mcp, "ROOT", ws), patch.object(office_mcp, "CLIENT_INFO", {"name": "claude-code"}):
+                for call in (lambda: memory_mcp.memory_search("배포"), lambda: memory_mcp.memory_write("x"),
+                             lambda: memory_mcp.project_context(), lambda: memory_mcp.handoff_list()):
+                    with self.assertRaisesRegex(office_mcp.ToolFailure, "POSTECH GenAI Chat 안에서만"):
+                        call()
 
 
 class AgentMemoryHubTests(unittest.TestCase):

@@ -27,9 +27,8 @@
 - Zotero: https://www.zotero.org/settings/keys 에서 키를 만들어 넣는다. 그룹 라이브러리는 옵션에 종류 `group`과 그룹 번호.
 - 벡터 검색(선택): Qdrant(예: `docker run -p 6333:6333 qdrant/qdrant`)와 OpenAI 호환 `/embeddings` API가 필요하다. 연구 라이브러리 탭 → 벡터 검색. **문서 조각이 임베딩 API로 전송된다.** POSTECH 게이트웨이가 임베딩 API를 제공하는지는 확인하지 못했다.
 
-## 통합 메모리·다른 AI 클라이언트
-- 메모리·동기화 탭에서 '통합 메모리'를 켜고 '에이전트 도구 켜기'.
-- Claude Desktop 등에 같은 기억을 연결하려면 같은 탭의 JSON·명령을 복사한다. 지원 범위: [integrations/universal-memory-hub.md](integrations/universal-memory-hub.md).
+## 통합 메모리
+- 메모리·동기화 탭에서 '통합 메모리'를 켜고 '에이전트 도구 켜기'. 기억은 POSCHAT 안에서만 씁니다(다른 AI 클라이언트 연결은 지원하지 않음).
 
 ## 동기화 (Opt-in)
 - 폴더: OneDrive·Dropbox·Google Drive 데스크톱·iCloud Drive 폴더를 고른다(그 클라이언트가 실제 업로드를 한다).
