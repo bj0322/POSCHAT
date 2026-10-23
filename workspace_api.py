@@ -412,3 +412,288 @@ class WorkspaceApi:
         if not connectors.has_credential("zotero"):
             return {"ok": False, "error": "먼저 커넥터 탭에서 Zotero API 키를 넣으세요."}
         return self._research_call(research_mcp.zotero_import, None, bool(full))
+
+    # ---- 통합 메모리·인계 (Phase 3) ----
+
+    def _project_key(self):
+        import ai_memory
+
+        ws = self._workspace()
+        if not ws:
+            return ""
+        try:
+            workspace, project = ai_memory.resolve_scope(ws)
+        except OSError:
+            return ""
+        return f"{workspace}/{project}"
+
+    @staticmethod
+    def _memory_server_command():
+        """다른 AI 클라이언트에 등록할 memory 서버 실행 명령."""
+        import sys
+        from pathlib import Path
+
+        if getattr(sys, "frozen", False):
+            return sys.executable, ["--mcp-server", "memory"]
+        return sys.executable, [str(Path(__file__).resolve().parent / "office_mcp.py"), "memory"]
+
+    def memory_state(self, layer="", query=""):
+        import json as _json
+
+        import handoff
+        import memory_store
+
+        project = self._project_key()
+        try:
+            stats = memory_store.stats()
+            if query:
+                hits = memory_store.search(query, layers=[layer] if layer else None, project=project or None, limit=50)
+                items = [{**h, "id": h.get("id", ""), "kind": h.get("kind", "note")} for h in hits]
+            else:
+                items = memory_store.entries(layer=layer or None, limit=200)
+            handoffs = handoff.list_handoffs(limit=30)
+            error = ""
+        except Exception as e:  # 손상된 DB 등: 화면은 열리게 한다
+            stats, items, handoffs, error = {"layers": {}, "handoffs": {}, "fts": "?"}, [], [], f"{type(e).__name__}: {e}"
+        command, args = self._memory_server_command()
+        snippet = _json.dumps({"mcpServers": {"poschat-memory": {"command": command, "args": args}}},
+                              ensure_ascii=False, indent=2)
+        return {
+            "feature": connectors.feature_enabled(self._config, "memory_hub"),
+            "enabled": connectors.is_enabled(self._config, "memory"),
+            "project": project, "stats": stats, "items": items, "handoffs": handoffs, "error": error,
+            "client_json": snippet,
+            "claude_code": f'claude mcp add poschat-memory -- "{command}" ' + " ".join(f'"{a}"' for a in args),
+            "sync": self.sync_state(), "android": mcp_client.INPROCESS_BUILTIN,
+        }
+
+    def memory_add(self, text, layer="project", kind="note", title=""):
+        import memory_store
+
+        project = self._project_key() if layer in ("project", "research") else ""
+        if layer in ("project", "research") and not project:
+            return {"ok": False, "error": "프로젝트 기억은 작업 폴더를 고른 뒤 남깁니다."}
+        try:
+            entry, created = memory_store.write(text, layer=layer, project=project, kind=kind, title=title)
+        except memory_store.MemoryStoreError as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, "entry": entry, "created": created}
+
+    def memory_delete_entry(self, entry_id):
+        import memory_store
+
+        try:
+            memory_store.delete(entry_id)
+        except memory_store.MemoryStoreError as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True}
+
+    def handoff_set_status(self, task_id, status):
+        import handoff
+
+        try:
+            if status == "completed":
+                rec = handoff.complete(task_id, "사용자가 화면에서 완료로 표시")
+            elif status == "cancelled":
+                rec = handoff.cancel(task_id)
+            elif status == "accepted":
+                rec = handoff.accept("poschat-user", task_id=task_id)
+            else:
+                return {"ok": False, "error": "알 수 없는 상태입니다."}
+        except handoff.HandoffError as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, "handoff": rec}
+
+    def memory_summarize_thread(self, thread_id):
+        """대화를 요약해 대화 메모리(conversation)에 남긴다. 모델을 한 번 부른다(크레딧 사용)."""
+        key = self._api_key()
+        thread = storage.load_thread(thread_id)
+        if not key:
+            return {"ok": False, "error": "API 키를 먼저 입력하세요."}
+        if not thread or not thread.get("messages"):
+            return {"ok": False, "error": "요약할 대화가 없습니다."}
+        threading.Thread(target=self._summarize_work, args=(thread, key), daemon=True).start()
+        return {"ok": True}
+
+    def _summarize_work(self, thread, key):
+        import api
+        import memory_store
+
+        lines = [f"{'사용자' if m['role'] == 'user' else '어시스턴트'}: {m['content'][:1500]}"
+                 for m in thread["messages"] if m.get("role") in ("user", "assistant")][-40:]
+        prompt = ("다음은 대화 요약 작업입니다. 아래 대화에서 나중에 다시 찾아볼 가치가 있는 내용(결정, 알게 된 사실, 남은 일)을 "
+                  "한국어로 5줄 이내의 불릿으로 요약하세요. 비밀번호·키 같은 민감한 정보는 쓰지 마세요.\n\n[대화]\n" + "\n".join(lines))
+        try:
+            settings = self._thread_api_settings(thread)
+            text = api.ask(key, prompt, settings=settings)
+            entry, _ = memory_store.write(text.strip(), layer="conversation", kind="summary",
+                                          title=f"대화 '{thread.get('title', '')}' 요약", tags=[f"thread:{thread['id']}"])
+            self._push({"type": "hub", "kind": "summary_done", "entry": entry})
+        except Exception as e:
+            self._push({"type": "hub", "kind": "summary_error", "error": f"{type(e).__name__}: {e}"})
+
+    # ---- 동기화 ----
+
+    def _sync_settings(self):
+        import sync
+
+        return {k: self._config.get(k) for k in sync.SETTINGS_KEYS}
+
+    def _stamp_settings(self, before):
+        """동기화하는 설정이 바뀌었으면 바뀐 시각을 남긴다(동기화의 최종 수정 우선 판단)."""
+        import time as _time
+
+        if before != self._sync_settings():
+            self._config["settings_updated"] = _time.time()
+
+    def _apply_synced_settings(self, values, stamp):
+        with self._lock:
+            if float(self._config.get("settings_updated") or 0) > float(stamp or 0):
+                return  # 이 기기의 설정이 더 최근
+            self._config.update(values)
+            self._config["settings_updated"] = stamp
+            storage.save_config(self._config)
+
+    def sync_state(self):
+        import sync
+
+        ok, reason = sync.available()
+        cfg = dict(self._config.get("sync") or {})
+        return {"available": ok, "reason": reason, "enabled": bool(cfg.get("enabled")),
+                "feature": connectors.feature_enabled(self._config, "sync"),
+                "backend": cfg.get("backend", "folder"), "folder": cfg.get("folder", ""),
+                "include": {k: (cfg.get("include") or {}).get(k, True) for k in sync.INCLUDE},
+                "has_key": bool(secret_store.get("sync:key")), "device_name": cfg.get("device_name", ""),
+                "last_sync": cfg.get("last_sync"), "last_error": cfg.get("last_error", ""),
+                "last_report": cfg.get("last_report"), "running": bool(getattr(self, "_syncing", False)),
+                "gsync": connectors.status(self._config, "gsync")["state"]}
+
+    def sync_choose_folder(self):
+        import webview
+
+        result = self._window.create_file_dialog(webview.FOLDER_DIALOG, directory="")
+        if not result:
+            return {"ok": False}
+        path = result[0] if isinstance(result, (list, tuple)) else result
+        return {"ok": True, "folder": str(path)}
+
+    def sync_setup(self, settings):
+        """동기화 켜기: 저장소·암호·대상을 정하고 키를 만든다. 다른 기기에서 이미 쓰는 저장소면 같은 암호여야 한다."""
+        import platform
+
+        import memory_store
+        import sync
+
+        settings = settings or {}
+        ok, reason = sync.available()
+        if not ok:
+            return {"ok": False, "error": reason}
+        backend_name = settings.get("backend") if settings.get("backend") in ("folder", "gdrive") else "folder"
+        cfg = {"enabled": True, "backend": backend_name, "folder": str(settings.get("folder") or "").strip(),
+               "include": {k: bool((settings.get("include") or {}).get(k, True)) for k in sync.INCLUDE},
+               "device_name": str(settings.get("device_name") or platform.node() or "이 기기")[:60]}
+        if backend_name == "folder":
+            from pathlib import Path
+
+            if not cfg["folder"] or not Path(cfg["folder"]).is_dir():
+                return {"ok": False, "error": "동기화 폴더(OneDrive·Dropbox 등의 폴더)를 고르세요."}
+        elif not connectors.has_credential("gsync"):
+            return {"ok": False, "error": "먼저 커넥터 탭에서 'Google Drive 동기화 저장소'에 로그인하세요."}
+        try:
+            key = sync.setup(sync.backend_from_config({"sync": cfg}), settings.get("passphrase", ""))
+        except sync.SyncError as e:
+            return {"ok": False, "error": str(e)}
+        sync.save_key(key)
+        memory_store.device_id()
+        with self._lock:
+            self._config["sync"] = cfg
+            self._config.setdefault("features", {})["sync"] = True
+            storage.save_config(self._config)
+        self._sync_schedule(0.5)
+        return {"ok": True, "state": self.sync_state()}
+
+    def sync_set_include(self, include):
+        import sync
+
+        with self._lock:
+            cfg = self._config.setdefault("sync", {})
+            cfg["include"] = {k: bool((include or {}).get(k, True)) for k in sync.INCLUDE}
+            storage.save_config(self._config)
+        return self.sync_state()
+
+    def sync_now(self):
+        if not (self._config.get("sync") or {}).get("enabled"):
+            return {"ok": False, "error": "동기화가 꺼져 있습니다."}
+        if getattr(self, "_syncing", False):
+            return {"ok": False, "error": "이미 동기화하고 있습니다."}
+        threading.Thread(target=self._sync_work, daemon=True).start()
+        return {"ok": True}
+
+    def _sync_work(self):
+        import time as _time
+
+        import memory_store
+        import sync
+
+        if getattr(self, "_syncing", False):
+            return
+        self._syncing = True
+        self._push({"type": "hub", "kind": "sync_started"})
+        try:
+            report = sync.sync_once(dict(self._config), device=memory_store.device_id(),
+                                    device_name=(self._config.get("sync") or {}).get("device_name", ""),
+                                    on_settings=self._apply_synced_settings)
+            with self._lock:
+                cfg = self._config.setdefault("sync", {})
+                cfg.update(last_sync=_time.time(), last_error="", last_report=report)
+                storage.save_config(self._config)
+            self._push({"type": "hub", "kind": "sync_done", "report": report})
+        except Exception as e:
+            message = str(e) if isinstance(e, sync.SyncError) else f"{type(e).__name__}: {e}"
+            with self._lock:
+                self._config.setdefault("sync", {})["last_error"] = message
+                storage.save_config(self._config)
+            self._push({"type": "hub", "kind": "sync_error", "error": message})
+        finally:
+            self._syncing = False
+
+    def _sync_schedule(self, delay):
+        """동기화를 켰을 때만: delay초 뒤 한 번(이미 예약돼 있으면 그대로). 이후 15분마다."""
+        cfg = self._config.get("sync") or {}
+        if not cfg.get("enabled") or not connectors.feature_enabled(self._config, "sync"):
+            return
+        timer = getattr(self, "_sync_timer", None)
+        if timer is not None and timer.is_alive():
+            return
+
+        def run():
+            self._sync_timer = None
+            self._sync_work()
+            self._sync_schedule(15 * 60)
+
+        self._sync_timer = threading.Timer(delay, run)
+        self._sync_timer.daemon = True
+        self._sync_timer.start()
+
+    def sync_disconnect(self):
+        """이 기기의 동기화를 끈다(원격 데이터와 로컬 데이터는 남긴다)."""
+        import sync
+
+        sync.forget_key()
+        with self._lock:
+            self._config.setdefault("sync", {})["enabled"] = False
+            storage.save_config(self._config)
+        timer = getattr(self, "_sync_timer", None)
+        if timer is not None:
+            timer.cancel()
+        return {"ok": True, "state": self.sync_state()}
+
+    def sync_wipe_remote(self):
+        """원격 동기화 데이터를 모두 지운다(다른 기기도 동기화가 멈춘다). 로컬 데이터는 남긴다."""
+        import sync
+
+        try:
+            sync.wipe(sync.backend_from_config(self._config))
+        except (sync.SyncError, OSError) as e:
+            return {"ok": False, "error": str(e)}
+        return self.sync_disconnect()

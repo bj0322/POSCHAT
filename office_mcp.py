@@ -19,6 +19,8 @@ SERVER_VERSION = "1.0.0"
 
 # 앱 프로세스 안의 스레드로 돌릴 때(안드로이드) 작업 폴더. None이면 현재 폴더(하위 프로세스로 실행할 때의 cwd).
 ROOT = None
+# initialize 때 받은 클라이언트 정보({"name", "version"}). memory 서버가 다른 AI가 쓴 기억을 표시하는 데 쓴다.
+CLIENT_INFO = {}
 
 
 class ToolFailure(Exception):
@@ -565,11 +567,12 @@ def all_servers():
     import google_mcp
     import notion_mcp
     import paper_mcp
+    import memory_mcp
     import research_mcp
 
     return {**SERVERS, "paper": paper_mcp.TOOLS, "notion": notion_mcp.TOOLS, "firecrawl": firecrawl_mcp.TOOLS,
             "github": github_mcp.TOOLS, **google_mcp.SERVERS,
-            "research": research_mcp.TOOLS, "zotero": research_mcp.ZOTERO_TOOLS}
+            "research": research_mcp.TOOLS, "zotero": research_mcp.ZOTERO_TOOLS, "memory": memory_mcp.TOOLS}
 
 
 # ---- MCP 표준 입출력 서버 ----
@@ -591,6 +594,8 @@ def _std_streams():
 def _handle(name, tools, msg):
     method, params = msg.get("method"), msg.get("params") or {}
     if method == "initialize":
+        global CLIENT_INFO
+        CLIENT_INFO = params.get("clientInfo") if isinstance(params.get("clientInfo"), dict) else {}
         version = params.get("protocolVersion")
         return {
             "protocolVersion": version if version in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0],

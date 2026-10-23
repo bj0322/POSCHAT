@@ -97,6 +97,7 @@ class Bridge(WorkspaceApi):
         storage.cleanup_staged()
         connectors.prune_audit()
         self._migrate_config()
+        self._sync_schedule(10)  # 동기화를 켰으면 시작하고 조금 뒤 한 번
 
     def _migrate_config(self):
         """1.9: a1/gpt가 서버 오류만 돌려주므로 OpenAI 호환 API(POSTECH 주소 내장)로 한 번 옮긴다. 잘못된 Claude 모델 ID도 고친다."""
@@ -124,7 +125,7 @@ class Bridge(WorkspaceApi):
     # ---- 내부 도우미 ----
 
     def _push(self, event):
-        if self._window is None:
+        if getattr(self, "_window", None) is None:
             return
         try:
             self._window.evaluate_js(f"window.onBackendEvent({json.dumps(event, ensure_ascii=False)})")
@@ -281,6 +282,7 @@ class Bridge(WorkspaceApi):
         if mode == "chat_completions" and compatible_url and not self._valid_https_url(compatible_url):
             return {"ok": False, "error": "OpenAI 호환 API를 선택했다면 올바른 HTTPS Chat Completions 주소를 입력해야 합니다."}
         with self._lock:
+            before = self._sync_settings()
             if settings.get("api_key"):
                 self._config["api_key"] = settings["api_key"].strip()
             if settings.get("clear_key"):
@@ -321,6 +323,7 @@ class Bridge(WorkspaceApi):
                 self._config["stream"] = bool(settings["stream"])
             if "update_check" in settings:
                 self._config["update_check"] = bool(settings["update_check"])
+            self._stamp_settings(before)
             storage.save_config(self._config)
         return self.get_state()
 
@@ -634,6 +637,7 @@ class Bridge(WorkspaceApi):
 
     def po_save_settings(self, settings):
         with self._lock:
+            before = self._sync_settings()
             if settings.get("engine") in ("auto", "local", "server"):
                 self._config["po_engine"] = settings["engine"]
             if settings.get("model") in stt.LOCAL_MODELS:
@@ -644,6 +648,7 @@ class Bridge(WorkspaceApi):
                 self._config["po_device"] = settings["device"] if isinstance(settings["device"], int) else ""
             if settings.get("reserve") in PO_RESERVES:
                 self._config["po_reserve"] = settings["reserve"]
+            self._stamp_settings(before)
             storage.save_config(self._config)
         return self.po_state()
 
@@ -1036,6 +1041,7 @@ class Bridge(WorkspaceApi):
             if run_id == self._run_id:
                 self._busy = False
                 self._push({"type": "done", "thread_id": thread_id, "workspace": self._workspace_info()})
+            self._sync_schedule(20)  # 대화가 끝나면 잠시 뒤 동기화(켰을 때만)
 
     def _thread_api_settings(self, thread):
         settings = ApiSettings.from_config(self._config)

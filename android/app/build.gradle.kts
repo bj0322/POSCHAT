@@ -24,6 +24,8 @@ val syncSharedPython by tasks.registering(Sync::class) {
             "github_mcp.py", "google_mcp.py",
             // 1.10: 연구 워크스페이스
             "research_library.py", "research_mcp.py", "rag.py", "vector_store.py",
+            // 1.10: 통합 메모리·인계·동기화
+            "memory_store.py", "memory_mcp.py", "handoff.py", "sync.py",
         )
     }
     into(sharedPythonDir)

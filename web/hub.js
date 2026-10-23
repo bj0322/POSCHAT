@@ -225,6 +225,7 @@ function oauthClientRow(provider, data, label, withSecret = true) {
 
 async function renderConnectors(panel) {
   const data = await api().get_connectors();
+  HUB.android = !!data.android;
   const groups = {};
   for (const c of data.connectors) (groups[c.group] = groups[c.group] || []).push(c);
   const backend = data.secret_backend.startsWith("os:") ? "OS 보안 저장소(Windows 자격 증명 관리자·macOS 키체인)"
@@ -419,6 +420,190 @@ async function renderResearch(panel) {
 }
 
 HUB_TABS.push({ id: "research", label: "연구 라이브러리", render: renderResearch });
+
+/* ---------- 메모리·동기화 탭 (Phase 3) ---------- */
+
+const MEM = { layer: "", query: "", syncNote: "" };
+const LAYER_LABEL = { profile: "프로필", global: "memory.md", conversation: "대화", project: "프로젝트", research: "연구" };
+const MEM_KINDS = ["note", "decision", "status", "todo", "issue", "experiment", "result", "hypothesis", "data", "preference", "summary"];
+const SYNC_LABEL = { memory: "메모리(memory.md)", profile: "내 정보(USER.md)", threads: "대화 기록", project: "프로젝트 메모리·인계",
+  research: "논문 라이브러리", settings: "설정 일부(대화·PO노트)", po_notes: "PO노트(제목·노트·메모·전사)" };
+const HANDOFF_STATUS = { open: ["열림", "st-warn"], accepted: ["받음", "st-ok"], completed: ["완료", ""], cancelled: ["취소", ""] };
+
+function fmtTime(ts) {
+  return ts ? new Date(ts * 1000).toLocaleString() : "-";
+}
+
+function memoryItem(e) {
+  const external = String(e.source || "").startsWith("external:");
+  return h("div", { class: "skill-item paper-item" },
+    h("div", { class: "s-main" },
+      h("span", { class: "badge" }, LAYER_LABEL[e.layer] || e.layer), h("span", { class: "badge" }, e.kind || "note"),
+      e.project ? h("span", { class: "badge" }, e.project) : null,
+      external ? h("span", { class: "badge st-warn", title: "다른 AI 클라이언트가 쓴 기억: 프롬프트에는 참고 자료로 들어갑니다" }, e.source) : null,
+      h("p", { class: "mem-text" }, (e.title ? e.title + ": " : "") + e.text),
+      h("p", { class: "muted small" }, `${e.source || ""} · ${fmtTime(e.updated)}`),
+      e.key && !String(e.key).startsWith("entry:") ? null : h("div", { class: "row wrap paper-actions" },
+        h("button", { class: "link-btn danger", onclick: async () => {
+          if (!confirm("이 기억을 지울까요?")) return;
+          if (await hubCall(api().memory_delete_entry(e.id), "지웠습니다")) renderHub();
+        } }, "지우기"))));
+}
+
+function handoffItem(r) {
+  const [label, cls] = HANDOFF_STATUS[r.status] || [r.status, ""];
+  const lists = [["변경 파일", r.files_changed], ["커밋", r.commits], ["실행한 도구", r.tools_run], ["다음 단계", r.next_steps],
+    ["필요한 승인", r.approvals_needed], ["남은 질문", r.open_questions]].filter(([, v]) => (v || []).length);
+  return h("div", { class: "conn-card" },
+    h("div", { class: "skill-item paper-item" }, h("div", { class: "s-main" },
+      h("b", { class: "paper-title" }, r.goal), h("span", { class: "badge " + cls }, label),
+      h("span", { class: "badge" }, r.from_agent || "?"), r.accepted_by ? h("span", { class: "badge" }, "→ " + r.accepted_by) : null,
+      h("p", { class: "muted small" }, `${r.task_id} · ${r.project || "-"} · ${fmtTime(r.updated)}`),
+      r.summary ? h("p", { class: "mem-text" }, r.summary.length > 300 ? r.summary.slice(0, 300) + "…" : r.summary) : null,
+      ...lists.map(([k, v]) => h("p", { class: "small" }, `${k}: ${v.slice(0, 8).join("; ")}${v.length > 8 ? ` 외 ${v.length - 8}개` : ""}`)),
+      ...(r.tests || []).map((t) => h("p", { class: "small" }, `${t.passed === true ? "✓" : t.passed === false ? "✗" : "·"} ${t.command} ${t.result || ""}`)),
+      r.status === "open" || r.status === "accepted" ? h("div", { class: "row wrap paper-actions" },
+        h("button", { class: "link-btn", onclick: async () => { if (await hubCall(api().handoff_set_status(r.task_id, "completed"))) renderHub(); } }, "완료로 표시"),
+        h("button", { class: "link-btn danger", onclick: async () => { if (await hubCall(api().handoff_set_status(r.task_id, "cancelled"))) renderHub(); } }, "취소")) : null)));
+}
+
+function syncPanel(st) {
+  if (!st.available) return h("p", { class: "mcp-error" }, st.reason);
+  const include = {};
+  const includeBoxes = Object.entries(SYNC_LABEL).map(([k, label]) => {
+    const box = checkbox(st.include[k] !== false, async (on) => {
+      include[k] = on;
+      if (st.enabled) { await api().sync_set_include({ ...st.include, ...include }); toast("동기화 대상을 바꿨습니다"); }
+    });
+    include[k] = st.include[k] !== false;
+    return h("label", { class: "inline-label sync-include" }, box, label);
+  });
+  if (st.enabled) {
+    const r = st.last_report || {};
+    return h("div", {},
+      h("div", { class: "stat-grid" },
+        h("div", { class: "stat" }, h("b", {}, st.backend === "gdrive" ? "Google Drive" : "폴더"), h("span", {}, st.backend === "gdrive" ? "앱 전용 숨김 폴더" : st.folder)),
+        h("div", { class: "stat" }, h("b", {}, st.running ? "동기화 중…" : fmtTime(st.last_sync)), h("span", {}, "마지막 동기화")),
+        h("div", { class: "stat" }, h("b", {}, `↑${r.uploaded || 0} ↓${r.downloaded || 0}`), h("span", {}, `병합 ${r.merged || 0} · 삭제 ${r.deleted || 0}`)),
+        h("div", { class: "stat" }, h("b", {}, String((r.devices || []).length || 1)), h("span", {}, "기기"))),
+      st.last_error ? h("p", { class: "mcp-error" }, `마지막 오류: ${st.last_error}`) : null,
+      MEM.syncNote ? h("small", { class: "muted block" }, MEM.syncNote) : null,
+      (r.conflicts || []).length ? h("p", { class: "small" }, `충돌로 따로 보관한 파일 ${r.conflicts.length}개: `, r.conflicts.map((c) => c.split(/[\\/]/).pop()).join(", ")) : null,
+      (r.devices || []).length ? h("p", { class: "small muted" }, "기기: " + r.devices.map((d) => `${d.name || d.id} (${d.platform || "?"}, ${fmtTime(d.last_seen)})`).join(" · ")) : null,
+      h("div", { class: "field" }, h("label", {}, "동기화할 것"), h("div", { class: "row wrap" }, includeBoxes)),
+      h("div", { class: "row wrap" },
+        h("button", { class: "btn primary", disabled: st.running, onclick: async () => { if (await hubCall(api().sync_now())) { MEM.syncNote = "동기화 중…"; renderHub(); } } }, "지금 동기화"),
+        h("button", { class: "btn", onclick: async () => {
+          if (!confirm("이 기기의 동기화를 끌까요? 이 기기의 키만 지우고 원격·로컬 데이터는 남깁니다.")) return;
+          if (await hubCall(api().sync_disconnect(), "이 기기의 동기화를 껐습니다")) renderHub();
+        } }, "이 기기 연결 해제"),
+        h("button", { class: "btn danger", onclick: async () => {
+          if (!confirm("원격 동기화 데이터를 모두 지울까요? 다른 기기도 동기화가 멈춥니다. 각 기기의 로컬 데이터는 남습니다.")) return;
+          if (!confirm("정말 지울까요? 되돌릴 수 없습니다.")) return;
+          if (await hubCall(api().sync_wipe_remote(), "원격 동기화 데이터를 지웠습니다")) renderHub();
+        } }, "원격 데이터 삭제")));
+  }
+  const backend = h("select", {}, h("option", { value: "folder" }, "동기화 폴더(OneDrive·Dropbox·Google Drive 데스크톱 등)"),
+    h("option", { value: "gdrive" }, `Google Drive 앱 전용 폴더${st.gsync === "connected" ? "" : " — 커넥터 탭에서 먼저 로그인"}`));
+  backend.value = HUB.android ? "gdrive" : (st.backend || "folder");
+  const folder = h("input", { type: "text", value: st.folder || "", placeholder: "동기화 폴더 경로" });
+  const pick = h("button", { class: "btn", onclick: async () => { const r = await api().sync_choose_folder(); if (r.ok) folder.value = r.folder; } }, "고르기");
+  const folderRow = h("div", { class: "field" }, h("label", {}, "폴더"), h("div", { class: "row wrap" }, folder, pick));
+  const syncBackend = () => { folderRow.hidden = backend.value !== "folder"; };
+  backend.addEventListener("change", syncBackend);
+  syncBackend();
+  const pass1 = h("input", { type: "password", placeholder: "동기화 암호(8글자 이상)", autocomplete: "new-password" });
+  const pass2 = h("input", { type: "password", placeholder: "한 번 더", autocomplete: "new-password" });
+  const device = h("input", { type: "text", value: st.device_name || "", placeholder: "이 기기 이름(예: 연구실 PC)" });
+  return h("div", {},
+    h("small", { class: "muted block" }, "동기화는 직접 켤 때만 동작합니다. 데이터는 이 기기에서 암호화(AES-256-GCM)한 뒤 올리고, 암호는 어디에도 저장하지 않습니다(이 기기의 보안 저장소에는 암호로 만든 키만 둡니다). ",
+      "암호를 잊으면 동기화 데이터를 되살릴 수 없습니다. API 키·로그인 토큰·작업 폴더 경로·첨부 원본은 동기화하지 않습니다."),
+    h("div", { class: "field" }, h("label", {}, "저장소"), backend), folderRow,
+    h("div", { class: "field" }, h("label", {}, "동기화 암호 (다른 기기에서도 같은 암호)"), h("div", { class: "row wrap" }, pass1, pass2)),
+    h("div", { class: "field" }, h("label", {}, "이 기기 이름"), device),
+    h("div", { class: "field" }, h("label", {}, "동기화할 것"), h("div", { class: "row wrap" }, includeBoxes)),
+    h("button", { class: "btn primary", onclick: async (ev) => {
+      if (pass1.value !== pass2.value) return toast("두 암호가 다릅니다");
+      ev.target.disabled = true;
+      try {
+        const res = await hubCall(api().sync_setup({ backend: backend.value, folder: folder.value.trim(), passphrase: pass1.value,
+          device_name: device.value.trim(), include }), "동기화를 켰습니다. 곧 첫 동기화를 합니다.");
+        if (res) renderHub();
+      } finally { ev.target.disabled = false; }
+    } }, "동기화 켜기"));
+}
+
+async function renderMemory(panel) {
+  const st = await api().memory_state(MEM.layer, MEM.query);
+  HUB.android = !!st.android;
+  const layers = st.stats.layers || {};
+  const search = h("input", { type: "search", placeholder: "기억 검색(프로젝트·연구·대화 요약·memory.md·USER.md·예전 대화)", value: MEM.query });
+  search.addEventListener("keydown", (e) => { if (e.key === "Enter") { MEM.query = search.value.trim(); renderHub(); } });
+  const layerSel = h("select", { class: "policy-select" }, h("option", { value: "" }, "모든 계층"),
+    ...Object.entries(LAYER_LABEL).map(([k, v]) => h("option", { value: k }, v)));
+  layerSel.value = MEM.layer;
+  layerSel.addEventListener("change", () => { MEM.layer = layerSel.value; renderHub(); });
+  const text = h("textarea", { rows: 2, placeholder: "남길 기억(예: API 응답은 JSON으로 통일하기로 함)" });
+  const addLayer = h("select", { class: "policy-select" }, ["project", "research", "conversation", "profile"].map((k) => h("option", { value: k }, LAYER_LABEL[k])));
+  const addKind = h("select", { class: "policy-select" }, MEM_KINDS.map((k) => h("option", { value: k }, k)));
+  const handoffs = st.handoffs || [];
+  fill(panel,
+    h("p", { class: "hub-intro" }, "memory.md·내 정보(USER.md)·대화 기록은 그대로 쓰고, 그 위에 프로젝트(설계 결정·진행 상태·TODO)·연구(실험·가설) 계층과 에이전트 인계를 더합니다. ",
+      "켜면 에이전트가 작업 폴더의 프로젝트 기억을 참고하고, 파일을 고친 실행 뒤에는 인계(변경 파일·테스트·다음 단계)를 남깁니다."),
+    featureToggle({ memory_hub: { label: "통합 메모리", enabled: st.feature } }, "memory_hub"),
+    st.feature && !st.enabled ? h("div", { class: "row wrap" }, h("small", { class: "muted" }, "에이전트 도구(memory 서버)가 꺼져 있습니다."),
+      h("button", { class: "btn", onclick: async () => { if (await hubCall(api().set_connector_enabled("memory", true), "켰습니다")) renderHub(); } }, "에이전트 도구 켜기")) : null,
+    st.error ? h("p", { class: "mcp-error" }, st.error) : null,
+    h("div", { class: "stat-grid" },
+      ...["project", "research", "conversation", "profile"].map((k) => h("div", { class: "stat" }, h("b", {}, String(layers[k] || 0)), h("span", {}, `${LAYER_LABEL[k]} 기억`))),
+      h("div", { class: "stat" }, h("b", {}, String((st.stats.handoffs || {}).open || 0)), h("span", {}, "열린 인계"))),
+    h("small", { class: "muted block" }, st.project ? `지금 프로젝트: ${st.project}` : "작업 폴더를 고르면 그 폴더의 프로젝트 기억을 씁니다."),
+    h("section", { class: "hub-group" }, h("h3", {}, "기억"),
+      h("div", { class: "row wrap" }, search, layerSel),
+      h("div", { class: "row wrap", style: "margin-top:8px" }, text, addLayer, addKind,
+        h("button", { class: "btn", onclick: async () => {
+          if (!text.value.trim()) return;
+          const r = await hubCall(api().memory_add(text.value.trim(), addLayer.value, addKind.value));
+          if (r) { toast(r.created ? "기억을 남겼습니다" : "같은 기억이 있어 갱신했습니다"); renderHub(); }
+        } }, "남기기")),
+      S.currentId ? h("button", { class: "link-btn", onclick: async () => {
+        if (await hubCall(api().memory_summarize_thread(S.currentId))) toast("지금 대화를 요약하는 중… (모델을 한 번 부릅니다)");
+      } }, "지금 대화를 요약해 대화 메모리에 남기기") : null,
+      (st.items || []).length ? st.items.map(memoryItem) : h("small", { class: "muted block" }, MEM.query ? "맞는 기억이 없습니다." : "아직 남긴 기억이 없습니다.")),
+    h("section", { class: "hub-group" }, h("h3", {}, `에이전트 인계 (${handoffs.length})`),
+      handoffs.length ? handoffs.map(handoffItem) : h("small", { class: "muted block" }, "아직 인계가 없습니다. 통합 메모리를 켜고 에이전트가 파일을 고치면 자동으로 남깁니다.")),
+    h("section", { class: "hub-group" }, h("h3", {}, "다른 AI 클라이언트와 같은 기억 쓰기"),
+      hubDetails("memory-clients", "Claude Desktop·Claude Code·Gemini CLI 등에 memory 서버 등록하기",
+        h("small", { class: "muted block" }, "로컬 MCP 서버(stdio)를 지원하는 클라이언트에 아래 설정을 넣으면 그 에이전트도 같은 프로젝트 기억과 인계를 씁니다. ",
+          "다른 AI가 쓴 기억은 '다른 AI가 쓴 기억'으로 표시되고 참고 자료로만 쓰입니다. ChatGPT·claude.ai·Gemini 웹은 이 PC의 로컬 서버에 직접 연결할 수 없습니다."),
+        h("div", { class: "field" }, h("label", {}, "mcpServers 설정(JSON — Claude Desktop의 claude_desktop_config.json, Gemini CLI의 settings.json 등)"),
+          h("pre", { class: "diff bib" }, h("div", {}, st.client_json)), h("button", { class: "btn", onclick: () => copyText(st.client_json) }, "복사")),
+        h("div", { class: "field" }, h("label", {}, "Claude Code"),
+          h("pre", { class: "diff bib" }, h("div", {}, st.claude_code)), h("button", { class: "btn", onclick: () => copyText(st.claude_code) }, "복사")))),
+    h("section", { class: "hub-group" }, h("h3", {}, "기기 사이 동기화"),
+      featureToggle({ sync: { label: "클라우드 동기화", enabled: st.sync.feature } }, "sync"),
+      st.sync.feature ? syncPanel(st.sync) : h("small", { class: "muted block" }, "켜면 Windows·macOS·Android 사이에서 메모리·대화·설정·PO노트를 맞춥니다(직접 켤 때만).")));
+}
+
+HUB_TABS.push({ id: "memory", label: "메모리·동기화", render: renderMemory });
+
+window.hubExtraEvent = (ev) => {
+  if (ev.kind === "sync_started") {
+    MEM.syncNote = "동기화 중…";
+  } else if (ev.kind === "sync_done") {
+    const r = ev.report;
+    MEM.syncNote = `동기화했습니다: 올림 ${r.uploaded}, 받음 ${r.downloaded}, 병합 ${r.merged}` + (r.errors.length ? ` · 오류 ${r.errors.length}개` : "");
+    if (HUB.tab === "memory") renderHub();
+  } else if (ev.kind === "sync_error") {
+    MEM.syncNote = `동기화 실패: ${ev.error}`;
+    if (HUB.tab === "memory") renderHub();
+  } else if (ev.kind === "summary_done") {
+    toast("대화 요약을 대화 메모리에 남겼습니다");
+    if (HUB.tab === "memory") renderHub();
+  } else if (ev.kind === "summary_error") {
+    toast(`요약하지 못했습니다: ${ev.error}`);
+  }
+};
 
 /* ---------- 백엔드 이벤트 ---------- */
 

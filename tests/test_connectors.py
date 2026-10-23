@@ -203,6 +203,8 @@ class RegistryTests(unittest.TestCase):
 
         servers = office_mcp.all_servers()
         for cid, c in connectors.CONNECTORS.items():
+            if not c.server:
+                continue  # 인증만 하는 커넥터(gsync)
             self.assertIn(c.server, servers, cid)
             self.assertEqual(set(servers[c.server]), set(connectors.TOOL_KINDS[c.server]), c.server)
             self.assertTrue(set(connectors.TOOL_KINDS[c.server].values()) <= set(connectors.KINDS), c.server)

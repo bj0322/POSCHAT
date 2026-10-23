@@ -6,14 +6,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 import connectors
+import po_note
 import secret_store
 import storage
 
 
 @contextlib.contextmanager
-def isolated_app_dir():
-    """storage·secret_store·connectors가 쓰는 경로를 모두 임시 폴더로. keyring 대신 파일 저장소를 쓴다."""
-    with tempfile.TemporaryDirectory() as tmp:
+def isolated_app_dir(root=None):
+    """storage·secret_store·connectors가 쓰는 경로를 모두 임시 폴더로. keyring 대신 파일 저장소를 쓴다.
+    root를 주면 그 폴더를 쓰고 지우지 않는다(여러 번 들어갔다 나오는 '기기' 흉내)."""
+    with (contextlib.nullcontext(str(root)) if root else tempfile.TemporaryDirectory()) as tmp:
         root = Path(tmp)
         patches = [
             patch.object(storage, "APP_DIR", root),
@@ -28,13 +30,14 @@ def isolated_app_dir():
             patch.object(storage, "OLD_MEMORY_PATH", root / "memory.json"),
             patch.object(secret_store, "SECRETS_PATH", root / "secrets.json"),
             patch.object(secret_store, "_keyring", False),
+            patch.object(po_note, "NOTES_DIR", root / "po_notes"),
             patch.object(connectors, "LOG_DIR", root / "logs"),
             patch.object(connectors, "AUDIT_PATH", root / "logs" / "tool_calls.jsonl"),
         ]
         for p in patches:
             p.start()
         connectors._health.clear()
-        (root / "threads").mkdir()
+        (root / "threads").mkdir(exist_ok=True)
         try:
             yield root
         finally:

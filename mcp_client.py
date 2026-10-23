@@ -316,8 +316,8 @@ class Manager:
         external, _ = load_external()
         for cid, connector in connectors.CONNECTORS.items():
             # 커넥터의 내장 서버는 켠 커넥터만. mcp.json에 같은 이름의 서버가 있으면 그쪽을 쓴다(status가 알린다).
-            if connector.server in external or connector.server in specs:
-                continue
+            if not connector.server or connector.server in external or connector.server in specs:
+                continue  # 서버가 없는 커넥터(인증만 하는 gsync)이거나 mcp.json의 같은 이름 서버가 이긴다
             if not connectors.is_enabled(config, cid, inprocess=INPROCESS_BUILTIN):
                 continue
             cmd = [INPROCESS, connector.server] if INPROCESS_BUILTIN else builtin_command(connector.server)

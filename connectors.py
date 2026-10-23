@@ -157,6 +157,18 @@ CONNECTORS = {c.id: c for c in [
                  Field("library_type", "라이브러리 종류: user 또는 group", "user")),
         setup="[Zotero API 키](https://www.zotero.org/settings/keys)를 만들어 넣습니다. 그룹 라이브러리는 종류를 group, ID를 그룹 번호로 넣습니다.",
         verify="research_mcp:zotero_verify"),
+    Connector(
+        "memory", "통합 메모리", "메모리·인계", "프로젝트 결정·진행 상태·TODO·연구 기록을 계층별로 남기고 찾기, 에이전트 작업 인계",
+        server="memory", auth="none", feature="memory_hub",
+        setup=("기억은 이 기기의 데이터 폴더(memory/memory.sqlite)에 저장됩니다. memory.md·USER.md는 그대로 쓰입니다. "
+               "같은 서버를 Claude Desktop·Claude Code 같은 다른 AI 클라이언트에 등록하는 방법은 '메모리·동기화' 탭에 있습니다."),
+        rate_per_min=240),
+    Connector(
+        "gsync", "Google Drive 동기화 저장소", "메모리·인계", "기기 사이 동기화 데이터를 Drive의 앱 전용 숨김 폴더에 둡니다(암호화, drive.appdata 권한만)",
+        server="", auth="oauth", provider="google", feature="sync",
+        scopes=("https://www.googleapis.com/auth/drive.appdata",),
+        setup=GOOGLE_SETUP + "\n\n이 커넥터는 에이전트 도구가 없습니다. '메모리·동기화' 탭에서 저장소로 고릅니다.",
+        verify="sync:verify_drive"),
 ]}
 
 # 도구 종류: 앱이 정한다(서버의 readOnlyHint를 믿지 않는다). 정의에 없는 도구는 write로 본다.
@@ -185,15 +197,19 @@ TOOL_KINDS = {
                  **dict.fromkeys(("library_add", "library_update", "export_bibtex", "index_documents"), "edit"),
                  "library_remove": "destructive"},
     "zotero": {"search": "read", "collections": "read", "import_library": "edit", "add_item": "write"},
+    "memory": {**dict.fromkeys(("memory_search", "project_context", "handoff_list"), "read"),
+               **dict.fromkeys(("memory_write", "handoff_create", "handoff_accept", "handoff_complete"), "edit"),
+               "memory_delete": "destructive"},
 }
-SERVER_CONNECTOR = {c.server: c.id for c in CONNECTORS.values()}
+SERVER_CONNECTOR = {c.server: c.id for c in CONNECTORS.values() if c.server}
 
 
 def register(connector, kinds):
     """다른 모듈(연구·메모리·자동화)이 자기 커넥터를 더한다."""
     CONNECTORS[connector.id] = connector
-    TOOL_KINDS[connector.server] = dict(kinds)
-    SERVER_CONNECTOR[connector.server] = connector.id
+    if connector.server:
+        TOOL_KINDS[connector.server] = dict(kinds)
+        SERVER_CONNECTOR[connector.server] = connector.id
 
 
 # ---- 설정 ----

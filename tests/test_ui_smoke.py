@@ -130,6 +130,42 @@ class UiSmokeTests(unittest.TestCase):
             finally:
                 browser.close()
 
+    def test_memory_tab_adds_memory_and_turns_on_encrypted_sync(self):
+        from playwright.sync_api import sync_playwright
+
+        ws = os.path.join(os.environ["APPDATA"], "proj")
+        shared = os.path.join(os.environ["APPDATA"], "cloud")
+        os.makedirs(ws, exist_ok=True)
+        os.makedirs(shared, exist_ok=True)
+        self.bridge._config["workspace"] = ws
+        with sync_playwright() as p:
+            browser, page, errors = self.open(p)
+            try:
+                page.evaluate("showHub('memory')")
+                page.wait_for_selector(".hub-panel .feature-toggle")
+                page.locator(".feature-toggle", has_text="통합 메모리").locator("input").check()
+                page.wait_for_selector("text=에이전트 도구 켜기")
+                page.fill(".hub-panel textarea", "배포는 금요일에 하지 않기로 함")
+                page.locator(".hub-panel select").nth(2).select_option("decision")
+                page.click("button:has-text('남기기')")
+                page.wait_for_selector(".mem-text:has-text('배포는 금요일')")
+                self.assertIn("default/proj", page.locator(".hub-panel").inner_text())
+                page.locator(".feature-toggle", has_text="클라우드 동기화").locator("input").check()
+                page.wait_for_selector("text=동기화 켜기")
+                page.fill("input[placeholder='동기화 폴더 경로']", shared)
+                page.fill("input[placeholder^='동기화 암호']", "correct horse battery")
+                page.fill("input[placeholder='한 번 더']", "correct horse battery")
+                page.click("button:has-text('동기화 켜기')")
+                page.wait_for_selector("text=동기화했습니다", timeout=30000)
+                self.assertTrue(os.path.exists(os.path.join(shared, "poschat-sync", "meta.json")))
+                with open(os.path.join(shared, "poschat-sync", "meta.json"), encoding="utf-8") as f:
+                    self.assertNotIn("correct horse", f.read())
+                self.shot(page, "hub-memory")
+                self.assertEqual(errors, [])
+            finally:
+                browser.close()
+                self.bridge.sync_disconnect()
+
     def test_hub_fits_a_phone_screen(self):
         from playwright.sync_api import sync_playwright
 

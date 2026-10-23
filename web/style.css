@@ -450,6 +450,13 @@ small.block, .muted.block { display: block; margin: 6px 0; font-size: 12px; }
 .rag-hit { border-left: 3px solid var(--border); padding: 2px 10px; margin: 8px 0; }
 .rag-hit p { margin: 2px 0 0; font-size: 13px; color: var(--text-2); white-space: pre-wrap; }
 pre.bib div { white-space: pre-wrap; }
+.mem-text { white-space: pre-wrap; word-break: break-word; color: var(--text) !important; }
+.sync-include { margin-right: 12px; }
+.field .inline-label, .field .feature-toggle { display: inline-flex; font-weight: 400; margin-bottom: 0; }
+.inline-label input, .feature-toggle input { flex: none !important; width: auto !important; }
+.stat b { font-size: 16px; word-break: break-word; }
+.stat span { word-break: break-all; }
+.hub-panel textarea { width: 100%; resize: vertical; flex-basis: 100%; }
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 8px 0; }
 .stat { border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; }
 .stat b { display: block; font-size: 18px; }
