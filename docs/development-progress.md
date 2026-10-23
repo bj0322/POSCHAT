@@ -11,7 +11,6 @@
 | Phase 1 | `9f460c4`, `18dd3bf`, `db948ae` | 커넥터 프레임워크·secret_store·oauth·게이트웨이, GitHub·Google 서버, 연결·도구 창 |
 | Phase 2 | `996501b` | 통합 논문 검색, 라이브러리, RAG, 벡터(선택), Zotero |
 | Phase 3 | `7a709a9` | 통합 메모리, 인계, memory MCP 서버, 암호화 동기화 |
-
 | Phase 4 | `d18466e` | Python·Jupyter·SSH 실행(기본 비활성, 데스크톱) |
 | Phase 5 | `9527506` | 관측·피드백·평가 |
 | 릴리스 준비 | `5beb84d` + 문서 커밋 | 1.10.0, selftest·CI, 첫 실행 백업, 문서 |
