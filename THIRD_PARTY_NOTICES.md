@@ -1,7 +1,9 @@
 # Third-party notices
 
-The project MIT license covers original project material. The following
-bundled third-party files retain their upstream notices and licenses.
+The project license (AGPL-3.0-only from commit 3edf859 and v1.10.0; MIT for
+v1.9.2 and earlier, see LICENSE_HISTORY.md) covers original project
+material only. The following bundled third-party files retain their
+upstream notices and licenses.
 
 | Bundled file | Version | Upstream | License text |
 |---|---|---|---|
