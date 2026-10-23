@@ -933,7 +933,12 @@ class Agent:
             connectors.audit_denied(server.name, tool_name, decision, arguments, "blocked")
             raise ToolError(f"MCP 도구 '{tool}'는 설정에서 차단되어 있습니다.")
         if decision.confirm:
-            if not self.confirm(decision.kind, f"MCP 도구: {tool}", _truncate(detail, 6000)):
+            shown = _truncate(detail, 6000)
+            if decision.kind == "exec" and decision.connector:
+                import runner_mcp  # 실행 대상(인터프리터·원격 호스트)을 앱이 설정에서 만든 글로 함께 보인다
+
+                shown = runner_mcp.preview(server.name, tool_name, arguments, self.workspace) + "\n\n" + shown
+            if not self.confirm(decision.kind, f"MCP 도구: {tool}", shown):
                 connectors.audit_denied(server.name, tool_name, decision, arguments, "denied")
                 self.denied.append(f"MCP 도구: {tool}")
                 self.on_tool(f"⛔ mcp {tool} 거부됨", detail)

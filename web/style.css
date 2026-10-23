@@ -451,6 +451,7 @@ small.block, .muted.block { display: block; margin: 6px 0; font-size: 12px; }
 .rag-hit p { margin: 2px 0 0; font-size: 13px; color: var(--text-2); white-space: pre-wrap; }
 pre.bib div { white-space: pre-wrap; }
 .mem-text { white-space: pre-wrap; word-break: break-word; color: var(--text) !important; }
+.hub-panel p.mcp-error { color: var(--danger); font-size: 13px; margin: 6px 0; white-space: pre-wrap; word-break: break-word; }
 .sync-include { margin-right: 12px; }
 .field .inline-label, .field .feature-toggle { display: inline-flex; font-weight: 400; margin-bottom: 0; }
 .inline-label input, .feature-toggle input { flex: none !important; width: auto !important; }

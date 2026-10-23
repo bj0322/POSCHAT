@@ -605,6 +605,82 @@ window.hubExtraEvent = (ev) => {
   }
 };
 
+/* ---------- 에이전트 자동화 탭 (Phase 4) ---------- */
+
+async function renderAutomation(panel) {
+  const st = await api().automation_state();
+  if (st.android) {
+    return fill(panel, h("p", { class: "hub-intro" }, "Python·SSH 실행은 하위 프로세스를 띄울 수 없는 안드로이드에서는 쓸 수 없습니다. ",
+      "PC 앱에서 켜세요. 휴대폰에서 원격 실행을 하려면 별도의 원격 실행 게이트웨이(향후 작업)가 필요합니다."),
+      h("small", { class: "muted block" }, "에이전트 인계(작업 상태·변경 파일·다음 단계)는 '메모리·동기화' 탭에서 볼 수 있고, 동기화를 켜면 PC와 공유됩니다."));
+  }
+  const py = st.python;
+  const toggle = (cid, on, label) => h("label", { class: "feature-toggle" },
+    checkbox(on, async (v) => { if (await hubCall(api().set_connector_enabled(cid, v), v ? `${label}을(를) 켰습니다` : `${label}을(를) 껐습니다`)) renderHub(); }),
+    h("span", {}, h("b", {}, label), h("small", {}, "켜면 에이전트가 실행 도구를 씁니다. 실행할 때마다 대상과 내용을 보여 주고 승인을 받습니다(자동 허용 설정과 관계없음).")));
+  const interp = h("input", { type: "text", value: py.interpreter, placeholder: py.detected ? `자동: ${py.detected}` : "python 실행 파일 경로" });
+  const iso = h("select", { class: "policy-select" }, h("option", { value: "none" }, "격리 없음(이 PC의 사용자 권한)"),
+    h("option", { value: "docker", disabled: !py.docker }, `Docker 격리${py.docker ? "" : " (Docker 없음)"}`));
+  iso.value = py.isolation;
+  const image = h("input", { type: "text", value: py.docker_image });
+  const timeout = h("input", { type: "number", min: 5, max: 3600, value: py.timeout });
+  const memory = h("input", { type: "number", min: 128, max: 65536, value: py.memory_mb });
+  const info = h("pre", { class: "diff bib", hidden: true }, h("div", {}));
+  const hosts = Object.entries(st.ssh.hosts || {});
+  const f = {};
+  for (const [k, ph] of [["alias", "별칭(예: gpu1)"], ["host", "호스트(예: gpu.example.ac.kr)"], ["user", "사용자"], ["port", "포트(22)"],
+    ["identity_file", "키 파일(선택, ~/.ssh/id_ed25519)"], ["cwd", "원격 작업 폴더(선택)"], ["allowed_commands", "허용 명령 접두어(쉼표로, 예: nvidia-smi, python train.py)"]]) {
+    f[k] = h("input", { type: "text", placeholder: ph });
+  }
+  const allowShell = checkbox(false, () => {});
+  fill(panel,
+    h("p", { class: "hub-intro" }, "에이전트가 Python 코드·Jupyter 노트북을 실행하거나 등록한 원격 서버에서 명령을 실행하게 합니다. 기본으로 꺼져 있고 PC 앱에서만 됩니다. ",
+      "실행한 코드·명령과 결과 앞부분은 아래 기록에 남습니다."),
+    featureToggle({ automation: { label: "에이전트 자동화", enabled: st.feature } }, "automation"),
+    st.feature ? h("div", {},
+      h("section", { class: "hub-group" }, h("h3", {}, "Python · Jupyter"),
+        toggle("python", py.enabled, "Python·Jupyter 실행"),
+        py.error ? h("p", { class: "mcp-error" }, py.error) : null,
+        h("div", { class: "field" }, h("label", {}, "Python"), h("div", { class: "row wrap" }, interp, iso)),
+        h("div", { class: "field" }, h("label", {}, "Docker 이미지 · 시간 제한(초) · 메모리(MB, Docker·macOS/Linux)"), h("div", { class: "row wrap" }, image, timeout, memory)),
+        h("div", { class: "row wrap" },
+          h("button", { class: "btn", onclick: async () => {
+            if (await hubCall(api().set_python_settings({ interpreter: interp.value.trim(), isolation: iso.value, docker_image: image.value.trim(),
+              timeout: timeout.value, memory_mb: memory.value }), "저장했습니다")) renderHub();
+          } }, "저장"),
+          h("button", { class: "btn", onclick: async () => {
+            const r = await hubCall(api().python_check());
+            if (r) { info.hidden = false; info.firstChild.textContent = r.info; }
+          } }, "확인")),
+        info),
+      h("section", { class: "hub-group" }, h("h3", {}, "원격 서버(SSH)"),
+        toggle("ssh", st.ssh.enabled, "원격 서버 실행"),
+        st.ssh.client ? null : h("p", { class: "mcp-error" }, "이 PC에서 ssh 명령을 찾지 못했습니다(Windows는 설정 → 선택적 기능 → OpenSSH 클라이언트)."),
+        hosts.length ? h("table", { class: "help-table log-table" }, hosts.map(([alias, hst]) => h("tr", {},
+          h("td", { class: "mono" }, alias), h("td", {}, `${hst.user ? hst.user + "@" : ""}${hst.host}:${hst.port || 22}`),
+          h("td", { class: "small" }, (hst.allowed_commands || []).join(", ") || "제한 없음"),
+          h("td", {}, h("button", { class: "link-btn danger", onclick: async () => { if (await hubCall(api().remove_ssh_host(alias))) renderHub(); } }, "지우기")))))
+          : h("small", { class: "muted block" }, "등록한 호스트가 없습니다."),
+        hubDetails("ssh-add", "호스트 등록",
+          h("div", { class: "row wrap" }, f.alias, f.host, f.user, f.port),
+          h("div", { class: "row wrap", style: "margin-top:6px" }, f.identity_file, f.cwd),
+          h("div", { class: "row wrap", style: "margin-top:6px" }, f.allowed_commands),
+          h("label", { class: "inline-label" }, allowShell, "셸 연결 문자(; && | > 등) 허용 — 권장하지 않음"),
+          h("div", { class: "row" }, h("button", { class: "btn", style: "margin-top:6px", onclick: async () => {
+            const spec = Object.fromEntries(Object.entries(f).map(([k, el]) => [k, el.value.trim()]));
+            spec.allow_shell = allowShell.checked;
+            if (await hubCall(api().set_ssh_host(spec.alias, spec), "등록했습니다")) renderHub();
+          } }, "등록")),
+          h("small", { class: "muted block" }, "비밀번호는 쓰지 않습니다. 이 PC의 ssh 키·ssh-agent로 접속하고, 처음 보는 호스트 키는 자동으로 믿지 않습니다."))),
+      h("section", { class: "hub-group" }, h("h3", {}, "실행 기록 (최근 30개)"),
+        st.log.length ? h("table", { class: "help-table log-table" }, st.log.map((r) => h("tr", {},
+          h("td", {}, fmtTime(r.ts)), h("td", {}, r.kind), h("td", { class: "mono small" }, r.target),
+          h("td", {}, r.timed_out ? "시간 초과" : `코드 ${r.code}`), h("td", { class: "mono small" }, (r.input || "").slice(0, 120)))))
+          : h("small", { class: "muted block" }, "아직 실행 기록이 없습니다."))) : null);
+}
+
+HUB_TABS.push({ id: "automation", label: "에이전트 자동화", render: renderAutomation });
+
 /* ---------- 백엔드 이벤트 ---------- */
 
 function hubEvent(ev) {

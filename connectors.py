@@ -169,6 +169,18 @@ CONNECTORS = {c.id: c for c in [
         scopes=("https://www.googleapis.com/auth/drive.appdata",),
         setup=GOOGLE_SETUP + "\n\n이 커넥터는 에이전트 도구가 없습니다. '메모리·동기화' 탭에서 저장소로 고릅니다.",
         verify="sync:verify_drive"),
+    Connector(
+        "python", "Python·Jupyter 실행", "에이전트 자동화", "Python 코드와 Jupyter 노트북을 작업 폴더에서 실행(매번 승인, 시간·리소스 제한, 선택: Docker 격리)",
+        server="python", auth="none", feature="automation", desktop_only=True, timeout=3700,
+        setup=("기본으로 꺼져 있습니다. 켜면 에이전트가 코드를 실행할 수 있으며, 실행할 때마다 실행 대상과 코드를 보여 주고 승인을 받습니다. "
+               "Docker 격리를 켜지 않으면 이 PC의 사용자 권한으로 실행됩니다(샌드박스가 아님). 설정은 '에이전트 자동화' 탭에 있습니다."),
+        rate_per_min=30),
+    Connector(
+        "ssh", "원격 서버(SSH)", "에이전트 자동화", "등록한 원격 서버에서 허용한 명령만 실행(매번 승인, 호스트 키 확인)",
+        server="ssh", auth="none", feature="automation", desktop_only=True, timeout=3700,
+        setup=("이 PC의 ssh 명령과 키(ssh-agent·~/.ssh)를 그대로 씁니다. 앱은 비밀번호·키를 저장하지 않습니다. "
+               "처음 연결하는 서버는 터미널에서 직접 접속해 호스트 키를 확인해 두세요. 호스트 별칭·허용 명령은 '에이전트 자동화' 탭에서 정합니다."),
+        rate_per_min=30),
 ]}
 
 # 도구 종류: 앱이 정한다(서버의 readOnlyHint를 믿지 않는다). 정의에 없는 도구는 write로 본다.
@@ -197,6 +209,8 @@ TOOL_KINDS = {
                  **dict.fromkeys(("library_add", "library_update", "export_bibtex", "index_documents"), "edit"),
                  "library_remove": "destructive"},
     "zotero": {"search": "read", "collections": "read", "import_library": "edit", "add_item": "write"},
+    "python": {"python_info": "read", "python_run": "exec", "run_notebook": "exec"},
+    "ssh": {"hosts": "read", "run": "exec"},
     "memory": {**dict.fromkeys(("memory_search", "project_context", "handoff_list"), "read"),
                **dict.fromkeys(("memory_write", "handoff_create", "handoff_accept", "handoff_complete"), "edit"),
                "memory_delete": "destructive"},

@@ -4,6 +4,7 @@ main.Bridge가 이 클래스를 상속한다. 밑줄로 시작하지 않는 메�
 Bridge의 _config·_lock·_push·_mcp·_workspace·_open_url을 쓴다.
 비밀 값은 돌려주지 않는다(있는지와 마스킹한 끝자리만).
 """
+import re
 import threading
 
 import connectors
@@ -697,3 +698,100 @@ class WorkspaceApi:
         except (sync.SyncError, OSError) as e:
             return {"ok": False, "error": str(e)}
         return self.sync_disconnect()
+
+    # ---- 에이전트 자동화 (Phase 4) ----
+
+    def automation_state(self):
+        import json as _json
+        import shutil as _shutil
+
+        auto = self._config.get("automation") or {}
+        py = dict(auto.get("python") or {})
+        detected, error = "", ""
+        if not mcp_client.INPROCESS_BUILTIN:
+            import office_mcp
+            import runner_mcp
+
+            try:
+                detected = runner_mcp.interpreter()
+            except office_mcp.ToolFailure as e:
+                error = str(e)
+        log = []
+        try:
+            lines = (storage.APP_DIR / "logs" / "exec.jsonl").read_text(encoding="utf-8").splitlines()[-30:]
+            log = [_json.loads(line) for line in reversed(lines) if line.strip()]
+        except (FileNotFoundError, ValueError):
+            pass
+        return {
+            "feature": connectors.feature_enabled(self._config, "automation"),
+            "android": mcp_client.INPROCESS_BUILTIN,
+            "python": {"enabled": connectors.is_enabled(self._config, "python"), "interpreter": py.get("interpreter", ""),
+                       "detected": detected, "error": error, "isolation": py.get("isolation", "none"),
+                       "docker_image": py.get("docker_image", "python:3.12-slim"), "timeout": py.get("timeout", 120),
+                       "memory_mb": py.get("memory_mb", 2048), "docker": bool(_shutil.which("docker"))},
+            "ssh": {"enabled": connectors.is_enabled(self._config, "ssh"), "hosts": (auto.get("ssh") or {}).get("hosts") or {},
+                    "timeout": (auto.get("ssh") or {}).get("timeout", 120), "client": bool(_shutil.which("ssh"))},
+            "log": log,
+        }
+
+    def set_python_settings(self, settings):
+        from pathlib import Path
+
+        settings = settings or {}
+        interp = str(settings.get("interpreter") or "").strip()
+        if interp and not Path(interp).is_file():
+            return {"ok": False, "error": f"Python 실행 파일이 없습니다: {interp}"}
+        try:
+            timeout = max(5, min(3600, int(settings.get("timeout") or 120)))
+            memory = max(128, min(65536, int(settings.get("memory_mb") or 2048)))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "시간 제한과 메모리는 숫자로 입력하세요."}
+        image = str(settings.get("docker_image") or "python:3.12-slim").strip()
+        if not re.fullmatch(r"[A-Za-z0-9._/:@\-]{1,200}", image):
+            return {"ok": False, "error": "Docker 이미지 이름이 잘못되었습니다."}
+        with self._lock:
+            auto = self._config.setdefault("automation", {})
+            auto["python"] = {"interpreter": interp, "isolation": "docker" if settings.get("isolation") == "docker" else "none",
+                              "docker_image": image, "timeout": timeout, "memory_mb": memory}
+            storage.save_config(self._config)
+        return {"ok": True, **self.automation_state()}
+
+    def set_ssh_host(self, alias, spec):
+        alias = str(alias or "").strip()
+        spec = spec or {}
+        if not re.fullmatch(r"[A-Za-z0-9_\-]{1,40}", alias):
+            return {"ok": False, "error": "별칭은 영문·숫자·-·_로 40자 이내입니다."}
+        host, user = str(spec.get("host") or "").strip(), str(spec.get("user") or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_.\-]+", host) or (user and not re.fullmatch(r"[A-Za-z0-9_.\-]+", user)):
+            return {"ok": False, "error": "호스트·사용자 이름에 쓸 수 없는 글자가 있습니다."}
+        try:
+            port = int(spec.get("port") or 22)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "포트는 숫자입니다."}
+        allowed = spec.get("allowed_commands") or []
+        if isinstance(allowed, str):
+            allowed = [a.strip() for a in allowed.split(",") if a.strip()]
+        entry = {"host": host, "user": user, "port": port, "identity_file": str(spec.get("identity_file") or "").strip(),
+                 "cwd": str(spec.get("cwd") or "").strip(), "allowed_commands": [str(a) for a in allowed][:50],
+                 "allow_shell": bool(spec.get("allow_shell"))}
+        with self._lock:
+            ssh = self._config.setdefault("automation", {}).setdefault("ssh", {})
+            ssh.setdefault("hosts", {})[alias] = entry
+            storage.save_config(self._config)
+        return {"ok": True, **self.automation_state()}
+
+    def remove_ssh_host(self, alias):
+        with self._lock:
+            hosts = ((self._config.get("automation") or {}).get("ssh") or {}).get("hosts") or {}
+            hosts.pop(str(alias), None)
+            storage.save_config(self._config)
+        return {"ok": True, **self.automation_state()}
+
+    def python_check(self):
+        import office_mcp
+        import runner_mcp
+
+        try:
+            return {"ok": True, "info": runner_mcp.python_info()}
+        except office_mcp.ToolFailure as e:
+            return {"ok": False, "error": str(e)}

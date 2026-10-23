@@ -569,10 +569,12 @@ def all_servers():
     import paper_mcp
     import memory_mcp
     import research_mcp
+    import runner_mcp
 
     return {**SERVERS, "paper": paper_mcp.TOOLS, "notion": notion_mcp.TOOLS, "firecrawl": firecrawl_mcp.TOOLS,
             "github": github_mcp.TOOLS, **google_mcp.SERVERS,
-            "research": research_mcp.TOOLS, "zotero": research_mcp.ZOTERO_TOOLS, "memory": memory_mcp.TOOLS}
+            "research": research_mcp.TOOLS, "zotero": research_mcp.ZOTERO_TOOLS, "memory": memory_mcp.TOOLS,
+            "python": runner_mcp.PYTHON_TOOLS, "ssh": runner_mcp.SSH_TOOLS}
 
 
 # ---- MCP 표준 입출력 서버 ----

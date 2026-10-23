@@ -166,6 +166,34 @@ class UiSmokeTests(unittest.TestCase):
                 browser.close()
                 self.bridge.sync_disconnect()
 
+    def test_automation_tab_registers_an_ssh_host(self):
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser, page, errors = self.open(p)
+            try:
+                page.evaluate("showHub('automation')")
+                page.wait_for_selector(".hub-panel .feature-toggle")
+                page.locator(".feature-toggle", has_text="에이전트 자동화").locator("input").check()
+                page.wait_for_selector("text=Python · Jupyter")
+                page.locator(".feature-toggle", has_text="Python·Jupyter 실행").locator("input").check()
+                page.wait_for_function("() => document.querySelector('.hub-panel').innerText.includes('Python')")
+                page.click("summary:has-text('호스트 등록')")
+                page.fill("input[placeholder^='별칭']", "gpu1")
+                page.fill("input[placeholder^='호스트']", "gpu.example.ac.kr")
+                page.fill("input[placeholder='사용자']", "kim")
+                page.fill("input[placeholder^='허용 명령']", "nvidia-smi, python train.py")
+                page.click("button:has-text('등록')")
+                page.wait_for_selector("td.mono:has-text('gpu1')")
+                hosts = self.bridge._config["automation"]["ssh"]["hosts"]
+                self.assertEqual(hosts["gpu1"]["allowed_commands"], ["nvidia-smi", "python train.py"])
+                python = next(c for c in self.bridge.get_connectors()["connectors"] if c["id"] == "python")
+                self.assertTrue(python["enabled"])
+                self.shot(page, "hub-automation")
+                self.assertEqual(errors, [])
+            finally:
+                browser.close()
+
     def test_hub_fits_a_phone_screen(self):
         from playwright.sync_api import sync_playwright
 
