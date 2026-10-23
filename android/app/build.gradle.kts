@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Beomjoon Kim
+// SPDX-License-Identifier: AGPL-3.0-only
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -19,6 +21,15 @@ val syncSharedPython by tasks.registering(Sync::class) {
             "agent.py", "ai_memory.py", "api.py", "attachments.py", "certs.py", "documents.py", "main.py",
             "mcp_client.py", "office_mcp.py", "paper_mcp.py", "notion_mcp.py", "firecrawl_mcp.py",
             "po_note.py", "sherpa_capi.py", "storage.py", "stt.py", "updates.py", "version.py",
+            // 1.10: 커넥터·연결·도구 창
+            "connectors.py", "oauth.py", "privacy.py", "secret_store.py", "workspace_api.py",
+            "github_mcp.py", "google_mcp.py",
+            // 1.10: 연구 워크스페이스
+            "research_library.py", "research_mcp.py", "rag.py", "vector_store.py",
+            // 1.10: 통합 메모리·인계·동기화
+            "memory_store.py", "memory_mcp.py", "handoff.py", "sync.py",
+            // 1.10: 에이전트 자동화(안드로이드에서는 쓸 수 없음으로 표시)·관측
+            "runner_mcp.py", "telemetry.py", "evals.py",
         )
     }
     into(sharedPythonDir)

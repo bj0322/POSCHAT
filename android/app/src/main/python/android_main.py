@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """안드로이드 앱(Chaquopy)에서 데스크톱 앱의 Python 코드(main.Bridge, agent, MCP 등)를 그대로 쓰기 위한 연결.
 
 pywebview가 하던 일을 Kotlin(MainActivity)이 대신한다.
@@ -167,7 +169,30 @@ def selftest(files_dir, res_dir):
     report["po_note"] = _po_note_check()
     import stt
     report["stt"] = stt.selfcheck()
+    report.update(_v110_check())
     return json.dumps(report, ensure_ascii=False)
+
+
+def _v110_check():
+    """1.10: 커넥터 서버(스레드)·연구 인덱스(trigram)·동기화 암호화가 안드로이드 묶음에서 되는지."""
+    import connectors
+    import mcp_client
+    import rag
+    import sync
+
+    out = {"crypto": sync.selfcheck()}
+    check = {"features": {k: True for k in connectors.FEATURES},
+             "connectors": {c: {"enabled": True} for c in ("github", "research", "memory", "python", "ssh")}}
+    manager = mcp_client.Manager()
+    with tempfile.TemporaryDirectory() as ws:
+        out["rag"] = rag.selfcheck(ws).split(" ")[0]
+        out["rag_mode"] = rag.fts_mode()
+        try:
+            out["connectors"] = {s.name: len(s.tools) for s in manager.ensure(check, ws)
+                                 if s.name in ("github", "research", "memory", "python", "ssh")}
+        finally:
+            manager.shutdown()
+    return out
 
 
 def _po_note_check():

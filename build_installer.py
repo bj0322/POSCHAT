@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """앱과 설치 프로그램을 빌드한다.
 
     python build_installer.py

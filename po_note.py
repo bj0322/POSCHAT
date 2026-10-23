@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """PO노트: 강의 녹음의 전사(transcript), 강의 자료, 내 메모, AI가 만든 필기 노트(note.md)를 강의마다 보관한다.
 
 <데이터 폴더>/po_notes/<id>/

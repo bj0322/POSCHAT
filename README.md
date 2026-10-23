@@ -1,6 +1,6 @@
 # POSTECH GenAI Chat
 
-버전 1.10.0 — **안드로이드 앱에서도 PO노트 녹음**: 휴대폰에서 로컬 AI(sherpa-onnx)가 바로 받아 적고 불확실한 구간만 POSTECH GenAI가 보정하는 하이브리드를 데스크톱과 같이 씁니다. 화면을 끄거나 다른 앱으로 가도 녹음을 이어 가고(알림에서 중지), 첫 녹음 때 한국어 모델(약 76MB)을 내려받습니다. 데스크톱의 sherpa-onnx를 1.13.8로 고정해 두 앱이 같은 인식 엔진을 씁니다
+버전 1.10.0 — **POSCHAT 2.0: 연결·도구**. 왼쪽 아래 **연결·도구**에서(모두 기본 꺼짐) GitHub·Google Workspace(Drive·Docs·Sheets·Slides·Gmail·Calendar)·Zotero 커넥터, 통합 논문 검색·라이브러리·BibTeX·출처가 붙은 문서 검색(RAG), 프로젝트·연구 메모리와 에이전트 인계, 기기 사이 종단간 암호화 동기화, Python·Jupyter·SSH 실행(PC, 매번 승인), 사용량·진단과 모델 평가. 메일 전송·리뷰 제출·삭제·코드 실행은 자동 허용 설정이어도 매번 묻습니다. 1.6부터 에이전트의 MCP 도구 호출이 실패하던 버그 수정. 자세히: [릴리스 노트](docs/release-notes/v1.10.0.md) · [설치·설정](docs/setup.md) · [마이그레이션](docs/migration-1.10.md) · [보안](docs/security.md) · [API](docs/api/reference.md) · [아키텍처](docs/architecture/) **안드로이드 앱에서도 PO노트 녹음**: 휴대폰의 로컬 AI(sherpa-onnx)가 받아 적고 불확실한 구간만 POSTECH GenAI가 보정하는 하이브리드를 데스크톱과 같이 씁니다(화면을 꺼도 녹음 유지, 알림에서 중지). 로컬 AI가 작은 소리를 받아 적지 못하던 문제 수정. 데스크톱의 sherpa-onnx를 1.13.8로 고정
 
 1.9.2 — 자동 업데이트 시험용 릴리스(기능 변경 없음). 1.9.1에서 업데이트 알림부터 설치까지 확인하는 데 씁니다
 
@@ -24,7 +24,7 @@
 
 1.2.0 — PDF·Word·PowerPoint·Excel·한글 문서 읽기, MCP 지원과 내장 오피스 MCP 서버(Word·PowerPoint·Excel 만들기·고치기), 답변의 LaTeX 수식 표시
 
-POSTECH GenAI API를 쓰는 Windows·macOS 데스크톱·안드로이드 챗봇입니다. PIDS Tech. 팀이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 MIT 라이선스는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
+POSTECH GenAI API를 쓰는 Windows·macOS 데스크톱·안드로이드 챗봇입니다. PIDS Tech. 팀이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 소프트웨어 라이선스(AGPL-3.0-only, 과거 버전은 MIT)는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
 
 ## 문의
 
@@ -213,6 +213,8 @@ Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 
 예전 Office 형식(`.doc`, `.ppt`, `.xls`)은 읽지 못하므로 Office에서 새 형식으로 저장한 뒤 사용하세요. 문서는 50MB까지 읽고, `search`는 20MB 이하 문서만 검색합니다.
 
 ### MCP
+
+1.10부터 MCP 목록은 **연결·도구 → MCP 서버** 탭에 있고, 커넥터(GitHub·Google 등)의 서버는 **커넥터** 탭에서 켭니다([API 레퍼런스](docs/api/reference.md)).
 
 MCP(Model Context Protocol)는 AI 도구를 연결하는 표준입니다. 에이전트 모드에서 켜진 MCP 서버의 도구가 `mcp` 단계로 제공됩니다. 서버는 처음 필요할 때 작업 폴더를 현재 폴더로 해서 실행되고, 작업 폴더나 설정이 바뀌면 다시 실행됩니다. 앱을 닫으면 함께 종료됩니다.
 
@@ -413,8 +415,18 @@ py -3 -m venv .venv
 - 앱 소스, 설치 프로그램 소스, 실행·빌드 스크립트, 기본 스킬 3종, 아이콘, 정적 UI와 번들 JavaScript 라이브러리를 포함합니다. `web/vendor/` 파일은 UI 실행에 필요한 배포 의존성이므로 포함하며, 원본 저작권·라이선스 주석을 유지합니다.
 - 이 저장소는 v1.1.0 소스 스냅샷을 시작점으로 합니다. 이전 버전의 코드·변경 이력은 가져오지 않습니다.
 
-## 라이선스
+## 라이선스 (License)
 
-이 프로젝트의 자체 코드와 문서는 [MIT License](LICENSE)로 배포합니다. 저작권 표시는 Beomjoon Kim (bj0322)이며, 제3자 코드와 자산의 권리는 각 권리자에게 있습니다. POSTECH의 명칭·상표나 API 서비스 이용 권한은 이 라이선스에 포함되지 않습니다.
+Copyright © 2026 Beomjoon Kim (bj0322)
+
+POSCHAT의 새 공식 배포본은 **GNU Affero General Public License v3.0 only (AGPL-3.0-only)**를 따릅니다. 전문은 [LICENSE](LICENSE), 전환 이력은 [LICENSE_HISTORY.md](LICENSE_HISTORY.md)에 있습니다. "or later"(이후 버전 선택)는 적용하지 않습니다.
+
+1. **적용 범위**: v1.10.0부터의 공식 배포본과, 전환 커밋 `3edf859` 이후의 이 저장소 코드에 AGPL-3.0-only가 적용됩니다.
+2. **할 수 있는 것**: AGPL 조건에 따라 누구나 사용·연구·수정·재배포할 수 있습니다.
+3. **소스 제공 의무**: 수정한 버전을 배포하거나, 수정한 버전을 네트워크로 다른 사람이 이용하게 하는 경우 등 AGPL이 요구하는 경우에는 그 버전의 해당 소스코드(Corresponding Source)를 AGPL로 제공해야 합니다.
+4. **상업적 이용**: AGPL은 판매·유료 제공 같은 상업적 이용 자체를 금지하지 않습니다. 이 프로젝트는 AGPL 원문 외의 추가 금지 조항을 두지 않습니다.
+5. **과거 MIT 배포본**: v1.2.0~v1.9.2(태그)와 전환 커밋 이전의 코드는 MIT License로 배포되었고, 그 버전을 받은 사람의 MIT 권리는 그대로 유지됩니다(철회하지 않습니다).
+6. **POSTECH GenAI API는 별개**: 이 소프트웨어 라이선스는 POSTECH GenAI API 이용 권한이나 POSTECH 명칭·상표 사용권을 주지 않습니다. API는 본인에게 발급된 키와 서비스 제공자의 이용 조건을 따릅니다.
+7. **제3자 구성 요소**: 번들 라이브러리와 설치 파일에 들어가는 패키지, 실행 중에 내려받는 모델·도구는 각자의 라이선스를 따릅니다.
 
 번들 라이브러리의 버전, 출처, 라이선스는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)에 정리했습니다. 원문은 `licenses/`에 보관하며, 제3자 파일은 각 원본 라이선스를 따릅니다.

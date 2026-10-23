@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """POSTECH GenAI Chat 설치 프로그램.
 
 build_installer.py가 앱 폴더를 payload.zip으로 묶어 이 스크립트와 함께 하나의 exe로 만든다.

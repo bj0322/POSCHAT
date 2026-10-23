@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bj0322/POSCHAT/docs/api/handoff.schema.json",
+  "title": "POSCHAT Agent Handoff",
+  "type": "object",
+  "required": ["task_id", "idempotency_key", "goal", "status"],
+  "properties": {
+    "task_id": {"type": "string", "pattern": "^h-[0-9a-f]{12}$"},
+    "idempotency_key": {"type": "string", "maxLength": 300, "description": "같은 키의 열린 인계는 새로 만들지 않고 갱신"},
+    "project": {"type": "string", "description": "<workspace>/<project> (ai-memory 규칙)"},
+    "goal": {"type": "string", "maxLength": 1000},
+    "status": {"enum": ["open", "accepted", "completed", "cancelled"]},
+    "from_agent": {"type": "string"},
+    "accepted_by": {"type": "string"},
+    "created": {"type": "number", "description": "Unix time"},
+    "updated": {"type": "number"},
+    "summary": {"type": "string", "maxLength": 4000},
+    "files_changed": {"type": "array", "items": {"type": "string"}, "maxItems": 100},
+    "commits": {"type": "array", "items": {"type": "string"}, "maxItems": 100},
+    "tools_run": {"type": "array", "items": {"type": "string"}, "maxItems": 100},
+    "tests": {"type": "array", "maxItems": 50, "items": {
+      "type": "object", "required": ["command"],
+      "properties": {"command": {"type": "string"}, "result": {"type": "string"}, "passed": {"type": ["boolean", "null"]}}}},
+    "todo": {"type": "array", "items": {"type": "string"}},
+    "next_steps": {"type": "array", "items": {"type": "string"}},
+    "approvals_needed": {"type": "array", "items": {"type": "string"}},
+    "open_questions": {"type": "array", "items": {"type": "string"}},
+    "result": {"type": "string"}
+  }
+}

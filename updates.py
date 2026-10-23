@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
 """GitHub Releases에서 새 버전을 확인하고 이 기기용 설치 파일을 내려받는다.
 
 공개 저장소의 Releases API(토큰 없음)를 쓴다. 저장소가 비공개인 동안은 404가 오므로 확인하지 못했다고만 알린다.

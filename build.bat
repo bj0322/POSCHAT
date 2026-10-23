@@ -1,4 +1,6 @@
 @echo off
+REM SPDX-FileCopyrightText: 2026 Beomjoon Kim
+REM SPDX-License-Identifier: AGPL-3.0-only
 rem Builds release\PostechChat-Setup.exe with python.org Python (not Anaconda) in .buildenv
 cd /d "%~dp0"
 if not exist ".buildenv\Scripts\python.exe" (

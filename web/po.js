@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Beomjoon Kim
+// SPDX-License-Identifier: AGPL-3.0-only
 "use strict";
 
 /* ---------- PO노트: 강의 녹음 → 실시간 전사 → 강의 자료와 함께 필기 노트 ----------
