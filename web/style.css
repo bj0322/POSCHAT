@@ -458,6 +458,11 @@ pre.bib div { white-space: pre-wrap; }
 .stat b { font-size: 16px; word-break: break-word; }
 .stat span { word-break: break-all; }
 .hub-panel textarea { width: 100%; resize: vertical; flex-basis: 100%; }
+.msg-actions button.active { color: var(--text); background: var(--hover); }
+.diag-table td, .diag-table th { font-size: 12.5px; padding: 4px 6px; text-align: right; white-space: nowrap; }
+.diag-table td:first-child, .diag-table th:first-child { text-align: left; font-family: var(--mono); white-space: normal; word-break: break-all; }
+.diag-table th { color: var(--text-3); font-weight: 600; border-bottom: 1px solid var(--border); }
+.table-scroll { overflow-x: auto; }
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 8px 0; }
 .stat { border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; }
 .stat b { display: block; font-size: 18px; }

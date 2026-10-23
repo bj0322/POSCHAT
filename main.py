@@ -22,6 +22,7 @@ import mcp_client
 import po_note
 import storage
 import stt
+import telemetry
 import updates
 from workspace_api import WorkspaceApi
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
@@ -94,10 +95,16 @@ class Bridge(WorkspaceApi):
         self._updating = False        # 업데이트 파일을 내려받는 중
         api.on_usage = storage.record_usage
         api.on_credit = self._on_credit
+        # 관측(사용량·진단 탭): 내용 없이 메타데이터만 이 기기에 기록한다. Langfuse 내보내기는 켰을 때만.
+        telemetry.config_getter = lambda: self._config
+        api.on_trace = telemetry.on_llm_call
+        connectors.on_event = telemetry.on_tool_call
+        telemetry.prune()
         storage.cleanup_staged()
         connectors.prune_audit()
         self._migrate_config()
         self._sync_schedule(10)  # 동기화를 켰으면 시작하고 조금 뒤 한 번
+        self._export_schedule(60)
 
     def _migrate_config(self):
         """1.9: a1/gpt가 서버 오류만 돌려주므로 OpenAI 호환 API(POSTECH 주소 내장)로 한 번 옮긴다. 잘못된 Claude 모델 ID도 고친다."""
@@ -1024,20 +1031,28 @@ class Bridge(WorkspaceApi):
             on_ai_memory_state=save_ai_memory_state,
             policy=connectors.Policy(dict(self._config)),
         )
+        started, outcome = time.monotonic(), "done"
         try:
             if command == "profile":
                 answer = agent.update_profile(task, attached)
             else:
                 answer = agent.run(history, task, forced, attached)
             if alive():
-                self._add(thread_id, "assistant", answer)
+                self._add(thread_id, "assistant", answer, model=agent.api_settings.model)
+            else:
+                outcome = "cancelled"
         except ApiError as e:
+            outcome = "error"
             if alive():
                 self._add(thread_id, "error", str(e))
         except Exception as e:
+            outcome = "error"
             if alive():
                 self._add(thread_id, "error", f"{type(e).__name__}: {e}")
         finally:
+            telemetry.record("agent_run", mode="agent" if agent_mode and workspace else "chat",
+                             model=agent.api_settings.model, ms=int((time.monotonic() - started) * 1000),
+                             outcome=outcome, steps=agent.steps, tools=len(agent.tools_run))
             if run_id == self._run_id:
                 self._busy = False
                 self._push({"type": "done", "thread_id": thread_id, "workspace": self._workspace_info()})

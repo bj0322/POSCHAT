@@ -27,7 +27,7 @@ val syncSharedPython by tasks.registering(Sync::class) {
             // 1.10: 통합 메모리·인계·동기화
             "memory_store.py", "memory_mcp.py", "handoff.py", "sync.py",
             // 1.10: 에이전트 자동화(안드로이드에서는 쓸 수 없음으로 표시)·관측
-            "runner_mcp.py",
+            "runner_mcp.py", "telemetry.py", "evals.py",
         )
     }
     into(sharedPythonDir)

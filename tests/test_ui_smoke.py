@@ -194,6 +194,38 @@ class UiSmokeTests(unittest.TestCase):
             finally:
                 browser.close()
 
+    def test_feedback_shows_up_in_diagnostics(self):
+        from playwright.sync_api import sync_playwright
+
+        import storage
+        import telemetry
+
+        thread = self.bridge.new_thread()
+        thread = storage.load_thread(thread["id"])
+        thread["title"] = "평가 테스트"
+        thread["messages"] += [storage.make_message("user", "안녕"),
+                               storage.make_message("assistant", "안녕하세요! 무엇을 도와드릴까요?", model="claude-sonnet-5-5")]
+        storage.save_thread(thread)
+        telemetry.record("llm_call", mode="chat_completions", model="claude-sonnet-5-5", ok=True, ms=850,
+                         input_tokens=500, output_tokens=150)
+        with sync_playwright() as p:
+            browser, page, errors = self.open(p)
+            try:
+                page.evaluate(f"openThread('{thread['id']}')")
+                page.wait_for_selector(".msg.assistant .msg-actions button[title='좋은 답변']")
+                page.click(".msg.assistant .msg-actions button[title='좋은 답변']")
+                page.wait_for_selector(".msg.assistant .msg-actions button.active")
+                self.assertEqual(storage.load_thread(thread["id"])["messages"][1]["feedback"], 1)
+                page.evaluate("showHub('diagnostics')")
+                page.wait_for_selector(".diag-table")
+                row = page.locator(".diag-table tr", has_text="claude-sonnet-5-5").first.inner_text()
+                self.assertIn("850ms", row)
+                self.assertIn("\t28\t", row)  # 크레딧: 24 + 500/250 + 150/75 = 28
+                self.shot(page, "hub-diagnostics")
+                self.assertEqual(errors, [])
+            finally:
+                browser.close()
+
     def test_hub_fits_a_phone_screen(self):
         from playwright.sync_api import sync_playwright
 

@@ -681,6 +681,118 @@ async function renderAutomation(panel) {
 
 HUB_TABS.push({ id: "automation", label: "에이전트 자동화", render: renderAutomation });
 
+/* ---------- 사용량·진단 탭 (Phase 5) ---------- */
+
+const DIAG = { days: 30, evalNote: "", models: null };
+const pct = (x) => x == null ? "-" : `${Math.round(x * 1000) / 10}%`;
+const ms = (x) => x == null ? "-" : x >= 1000 ? `${(x / 1000).toFixed(1)}s` : `${x}ms`;
+const num = (x) => x == null ? "-" : Number(x).toLocaleString();
+
+function diagTable(head, rows) {
+  return h("div", { class: "table-scroll" }, h("table", { class: "help-table diag-table" },
+    h("tr", {}, head.map((c) => h("th", {}, c))), rows.map((r) => h("tr", {}, r.map((c) => h("td", {}, c))))));
+}
+
+async function renderDiagnostics(panel) {
+  const st = await api().diagnostics_state(DIAG.days);
+  const sm = st.summary;
+  const days = h("select", { class: "policy-select" }, [7, 30, 90].map((d) => h("option", { value: d }, `최근 ${d}일`)));
+  days.value = String(DIAG.days);
+  days.addEventListener("change", () => { DIAG.days = Number(days.value); renderHub(); });
+  const calls = sm.models.reduce((a, m) => a + m.calls, 0);
+  const errors = sm.models.reduce((a, m) => a + m.errors, 0);
+  const agentRuns = sm.agent.agent || { runs: 0, success_rate: null, avg_steps: 0 };
+  const toolCalls = sm.tools.reduce((a, t) => a + t.calls, 0);
+  const toolOk = sm.tools.reduce((a, t) => a + t.ok, 0);
+  const lf = st.langfuse || {};
+  const lfOn = checkbox(lf.enabled, () => {});
+  const lfHost = h("input", { type: "url", value: lf.host || "", placeholder: "https://cloud.langfuse.com" });
+  const lfPub = h("input", { type: "password", placeholder: lf.has_public ? "공개 키 저장됨" : "공개 키(pk-lf-…)" });
+  const lfSec = h("input", { type: "password", placeholder: lf.has_secret ? "비밀 키 저장됨" : "비밀 키(sk-lf-…)" });
+  const lfContent = checkbox(lf.include_content, () => {});
+  const setSel = h("select", { class: "policy-select" }, st.eval_sets.map((e) => h("option", { value: e.name }, `${e.name} — ${e.description} (${e.cases}개)`)));
+  DIAG.models = DIAG.models || new Set(st.models.slice(0, 2).map((m) => m.id));
+  const modelBoxes = st.models.map((m) => h("label", { class: "inline-label sync-include" },
+    checkbox(DIAG.models.has(m.id), (on) => (on ? DIAG.models.add(m.id) : DIAG.models.delete(m.id))), m.label.split(" — ")[0]));
+  const progress = h("small", { class: "muted block" }, DIAG.evalNote || (st.evaluating ? "평가하는 중…" : ""));
+  DIAG.progressNode = progress;
+  fill(panel,
+    h("p", { class: "hub-intro" }, "이 앱이 보낸 모델 호출·도구 호출·에이전트 실행의 성공률·지연·토큰을 모아 봅니다. 기록에는 질문·답변·문서 내용이 없고 ",
+      "(메타데이터만) 이 기기에만 90일 보관합니다. 외부 관측 서비스(Langfuse)로 보내는 것은 직접 켤 때만 합니다."),
+    featureToggle({ observability: { label: "사용량·진단 기록", enabled: st.feature } }, "observability", "끄면 새 기록을 남기지 않습니다(이미 남은 기록은 그대로)."),
+    h("div", { class: "row wrap" }, days),
+    h("div", { class: "stat-grid" },
+      h("div", { class: "stat" }, h("b", {}, num(calls)), h("span", {}, "모델 호출")),
+      h("div", { class: "stat" }, h("b", {}, calls ? pct(errors / calls) : "-"), h("span", {}, "호출 오류율")),
+      h("div", { class: "stat" }, h("b", {}, sm.credits_total == null ? "추정 불가" : `약 ${num(sm.credits_total)}`), h("span", {}, "크레딧 추정(근거 있는 모델만)")),
+      h("div", { class: "stat" }, h("b", {}, agentRuns.runs ? pct(agentRuns.success_rate) : "-"), h("span", {}, `에이전트 성공률 (${agentRuns.runs}회, 평균 ${agentRuns.avg_steps}단계)`)),
+      h("div", { class: "stat" }, h("b", {}, toolCalls ? pct(toolOk / toolCalls) : "-"), h("span", {}, `MCP 도구 성공률 (${num(toolCalls)}회)`))),
+    h("section", { class: "hub-group" }, h("h3", {}, "모델별 비교"),
+      sm.models.length ? diagTable(["모델", "호출", "오류율", "평균", "p95", "입력 토큰", "출력 토큰", "크레딧(추정)", "재시도", "👍", "👎", "평가 점수"],
+        sm.models.map((m) => [m.model, num(m.calls), pct(m.error_rate), ms(m.avg_ms), ms(m.p95_ms), num(m.input_tokens), num(m.output_tokens),
+          m.credits == null ? "추정 불가" : num(m.credits), num(m.retries), num(m.feedback_up), num(m.feedback_down), m.eval_score == null ? "-" : pct(m.eval_score)]))
+        : h("small", { class: "muted block" }, "아직 기록이 없습니다."),
+      h("small", { class: "muted block" }, `크레딧은 앱 안내에 근거가 있는 모델(${st.documented_credit_models.join(", ")})만 추정합니다. 토큰 수는 서버가 알려 준 호출만 셉니다. `,
+        "답변 아래 👍·👎로 남긴 평가가 모델별로 모입니다.")),
+    h("section", { class: "hub-group" }, h("h3", {}, "MCP 도구"),
+      sm.tools.length ? diagTable(["도구", "종류", "호출", "성공률", "거부·차단", "재시도", "평균"],
+        sm.tools.map((t) => [t.tool, KIND_LABEL[t.kind] || t.kind || "-", num(t.calls), pct(t.success_rate), num(t.denied), num(t.retries), ms(t.avg_ms)]))
+        : h("small", { class: "muted block" }, "아직 도구 호출 기록이 없습니다.")),
+    h("section", { class: "hub-group" }, h("h3", {}, "자동 평가"),
+      h("small", { class: "muted block" }, "같은 질문 세트를 여러 모델에 보내 규칙(포함·정규식·JSON 형식·길이)으로 채점합니다. 모델이 채점하지 않으므로 같은 답이면 같은 점수입니다. ",
+        "호출 수(항목 수 × 모델 수)만큼 크레딧을 씁니다. 직접 만든 세트는 데이터 폴더의 evals/*.json에 둡니다."),
+      h("div", { class: "row wrap" }, setSel),
+      h("div", { class: "row wrap", style: "margin:6px 0" }, modelBoxes),
+      h("div", { class: "row wrap" },
+        h("button", { class: "btn", disabled: st.evaluating, onclick: async () => {
+          const chosen = [...DIAG.models];
+          const set = st.eval_sets.find((e) => e.name === setSel.value);
+          if (!chosen.length) return toast("모델을 고르세요");
+          if (!confirm(`${set.cases * chosen.length}번 모델을 부릅니다(크레딧 사용). 평가할까요?`)) return;
+          if (await hubCall(api().eval_run(setSel.value, chosen))) { DIAG.evalNote = "평가하는 중…"; renderHub(); }
+        } }, "평가 실행"),
+        st.evaluating ? h("button", { class: "btn", onclick: () => api().eval_cancel() }, "중지") : null),
+      progress,
+      (st.eval_results || []).length ? diagTable(["결과", "모델", "점수", "통과", "평균 지연"],
+        st.eval_results.flatMap((r) => Object.entries(r.models).map(([m, v]) => [`${fmtTime(r.started)} ${r.set}`, m, pct(v.score), `${v.passed}/${v.cases}`, ms(v.ms)])))
+        : null),
+    h("section", { class: "hub-group" }, h("h3", {}, "외부 관측 서비스 (Langfuse, 선택)"),
+      h("small", { class: "muted block" }, "켜면 위 기록(모델·토큰·지연·성공 여부)을 1분마다 Langfuse로 보냅니다. 키는 이 기기의 보안 저장소에만 둡니다."),
+      h("label", { class: "feature-toggle" }, lfOn, h("span", {}, "Langfuse로 보내기")),
+      h("div", { class: "field" }, h("label", {}, "주소 · 키"), h("div", { class: "row wrap" }, lfHost, lfPub, lfSec)),
+      h("label", { class: "feature-toggle" }, lfContent, h("span", {}, "질문·답변 앞부분도 보내기(권장하지 않음)",
+        h("small", {}, "켜도 키·토큰·이메일 같은 비밀 패턴은 가린 뒤 2,000자까지만 보냅니다. 개인 문서·민감한 대화가 외부 서비스에 남을 수 있습니다."))),
+      h("div", { class: "row wrap" },
+        h("button", { class: "btn", onclick: async () => {
+          if (lfContent.checked && !lf.include_content && !confirm("질문·답변 내용 일부가 Langfuse로 전송됩니다. 계속할까요?")) return;
+          if (await hubCall(api().set_telemetry_settings({ enabled: lfOn.checked, host: lfHost.value.trim(), include_content: lfContent.checked,
+            public_key: lfPub.value.trim(), secret_key: lfSec.value.trim() }), "저장했습니다")) renderHub();
+        } }, "저장"),
+        lf.enabled ? h("button", { class: "btn", onclick: async () => { const r = await hubCall(api().telemetry_export_now()); if (r) toast(`${r.sent}건 보냈습니다${r.export.last_error ? " · " + r.export.last_error : ""}`); } }, "지금 보내기") : null),
+      lf.enabled ? h("small", { class: "muted block" }, `보낸 이벤트 ${sm.export.sent}건 · 대기 ${sm.export.pending}건${sm.export.last_error ? ` · 마지막 오류: ${sm.export.last_error}` : ""}`) : null),
+    h("section", { class: "hub-group" }, h("h3", {}, "이 앱의 API 사용량(1.9부터)"),
+      diagTable(["기간", "호출", "토큰 입력", "토큰 출력"], [["오늘", st.usage.today], [`이번 달 (${st.usage.month_name})`, st.usage.month], ["최근 30일", st.usage.last30]]
+        .map(([label, u]) => [label, num(u.calls), num(u.input_tokens), num(u.output_tokens)]))));
+}
+
+HUB_TABS.push({ id: "diagnostics", label: "사용량·진단", render: renderDiagnostics });
+
+const _hubExtraEvent = window.hubExtraEvent;
+window.hubExtraEvent = (ev) => {
+  if (ev.kind === "eval_progress") {
+    DIAG.evalNote = `평가하는 중… ${ev.done}/${ev.total} (${ev.model})`;
+    if (DIAG.progressNode) DIAG.progressNode.textContent = DIAG.evalNote;
+  } else if (ev.kind === "eval_done") {
+    DIAG.evalNote = "평가를 마쳤습니다: " + Object.entries(ev.summary).map(([m, v]) => `${m} ${pct(v.score)}`).join(", ");
+    if (HUB.tab === "diagnostics") renderHub();
+  } else if (ev.kind === "eval_error") {
+    DIAG.evalNote = `평가 실패: ${ev.error}`;
+    if (HUB.tab === "diagnostics") renderHub();
+  } else if (_hubExtraEvent) {
+    _hubExtraEvent(ev);
+  }
+};
+
 /* ---------- 백엔드 이벤트 ---------- */
 
 function hubEvent(ev) {

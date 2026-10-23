@@ -297,6 +297,7 @@ class Agent:
         self.commands = []            # 이번 실행의 run 명령 {"command", "code"} — 테스트 결과로 인계에 남긴다
         self.denied = []              # 사용자가 거부한 단계 — 인계의 '필요한 승인'
         self.project = ""             # 통합 메모리의 프로젝트 키("workspace/project")
+        self.steps = 0                # 이번 실행에서 모델이 고른 단계 수(관측용)
 
     def _ask(self, prompt, on_delta=None, images=None):
         reply = ask(self.api_key, prompt, settings=self.api_settings, on_delta=on_delta, cancelled=self.cancelled,
@@ -588,6 +589,7 @@ class Agent:
             if self.cancelled():
                 return "(작업을 중지했습니다.)"
             self.on_status(f"생각하는 중... ({step + 1}단계)")
+            self.steps = step + 1
             prompt = static + self._format_log(log) + "\n\n다음 단계 JSON:"
             reply = self._ask(prompt, images=self.images)
             action = parse_action(reply)

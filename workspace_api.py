@@ -795,3 +795,136 @@ class WorkspaceApi:
             return {"ok": True, "info": runner_mcp.python_info()}
         except office_mcp.ToolFailure as e:
             return {"ok": False, "error": str(e)}
+
+    # ---- 사용량·진단 (Phase 5) ----
+
+    def feedback(self, thread_id, message_id, rating):
+        """답변 평가(👍 1 / 👎 -1, 0이면 지우기). 대화에 저장하고 모델별 품질 비교에 쓴다."""
+        import telemetry
+
+        try:
+            rating = max(-1, min(1, int(rating)))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "평가는 1, -1, 0 중 하나입니다."}
+        with self._lock:
+            thread = storage.load_thread(thread_id)
+            msg = next((m for m in (thread or {}).get("messages", []) if m.get("id") == message_id), None)
+            if msg is None or msg.get("role") != "assistant":
+                return {"ok": False, "error": "평가할 답변을 찾지 못했습니다."}
+            previous = msg.get("feedback", 0)
+            if rating:
+                msg["feedback"] = rating
+            else:
+                msg.pop("feedback", None)
+            storage.save_thread(thread, update_timestamp=False)
+        if rating and rating != previous:
+            telemetry.record("feedback", model=msg.get("model") or thread.get("model") or "?", rating=rating)
+        return {"ok": True, "feedback": rating}
+
+    def diagnostics_state(self, days=30):
+        import evals
+        import telemetry
+
+        days = max(1, min(90, int(days or 30)))
+        lf = dict((self._config.get("telemetry") or {}).get("langfuse") or {})
+        return {
+            "feature": connectors.feature_enabled(self._config, "observability"),
+            "summary": telemetry.summary(days), "usage": storage.usage_summary(),
+            "langfuse": {**lf, "has_public": secret_store.has("langfuse:public_key"),
+                         "has_secret": secret_store.has("langfuse:secret_key")},
+            "eval_sets": [{"name": e["name"], "description": e.get("description", ""), "cases": len(e["cases"])}
+                          for e in evals.sets().values()],
+            "eval_results": evals.recent(5), "evaluating": bool(getattr(self, "_evaluating", False)),
+            "models": [{"id": m, "label": label} for m, label in self._models(self._mode())],
+            "documented_credit_models": sorted(telemetry.DOCUMENTED_RATES),
+        }
+
+    def set_telemetry_settings(self, settings):
+        settings = settings or {}
+        host = str(settings.get("host") or "").strip().rstrip("/")
+        if settings.get("enabled") and not host.startswith("https://"):
+            return {"ok": False, "error": "Langfuse 주소는 https://로 시작해야 합니다(예: https://cloud.langfuse.com)."}
+        with self._lock:
+            tel = self._config.setdefault("telemetry", {})
+            tel["langfuse"] = {"enabled": bool(settings.get("enabled")), "host": host,
+                               "include_content": bool(settings.get("include_content"))}
+            storage.save_config(self._config)
+        for name in ("public_key", "secret_key"):
+            if settings.get(name):
+                secret_store.set(f"langfuse:{name}", str(settings[name]).strip())
+        if settings.get("clear_keys"):
+            secret_store.delete("langfuse:public_key")
+            secret_store.delete("langfuse:secret_key")
+        self._export_schedule(5)
+        return {"ok": True, **self.diagnostics_state()}
+
+    def telemetry_export_now(self):
+        import telemetry
+
+        sent = telemetry.export_pending()
+        return {"ok": True, "sent": sent, "export": telemetry.summary(1)["export"]}
+
+    def _export_schedule(self, delay):
+        """Langfuse 내보내기를 켰을 때만 1분마다 모아 보낸다."""
+        lf = (self._config.get("telemetry") or {}).get("langfuse") or {}
+        timer = getattr(self, "_export_timer", None)
+        if not lf.get("enabled") or (timer is not None and timer.is_alive()):
+            return
+
+        def run():
+            import telemetry
+
+            self._export_timer = None
+            try:
+                telemetry.export_pending()
+            finally:
+                self._export_schedule(60)
+
+        self._export_timer = threading.Timer(delay, run)
+        self._export_timer.daemon = True
+        self._export_timer.start()
+
+    def eval_run(self, set_name, models):
+        """평가 세트를 고른 모델들에 돌린다(모델을 케이스 수 × 모델 수만큼 부른다). 진행은 hub 이벤트."""
+        import evals
+
+        key = self._api_key()
+        if not key:
+            return {"ok": False, "error": "API 키를 먼저 입력하세요."}
+        eval_set = evals.sets().get(str(set_name))
+        allowed = self._model_ids(self._mode())
+        models = [m for m in (models or []) if m in allowed][:6]
+        if eval_set is None or not models:
+            return {"ok": False, "error": "평가 세트와 모델(최대 6개)을 고르세요."}
+        if getattr(self, "_evaluating", False):
+            return {"ok": False, "error": "이미 평가하고 있습니다."}
+        self._evaluating = True
+        self._eval_cancel = threading.Event()
+        threading.Thread(target=self._eval_work, args=(eval_set, models, key), daemon=True).start()
+        return {"ok": True, "calls": len(models) * len(eval_set["cases"])}
+
+    def _eval_work(self, eval_set, models, key):
+        import api
+        import evals
+
+        def ask(model, prompt):
+            settings = api.ApiSettings.from_config(self._config)
+            settings.model, settings.stream = model, False
+            return api.ask(key, prompt, settings=settings, timeout=120)
+
+        try:
+            report = evals.run(eval_set, models, ask, cancelled=self._eval_cancel.is_set,
+                               on_progress=lambda done, total, model, case: self._push(
+                                   {"type": "hub", "kind": "eval_progress", "done": done, "total": total, "model": model}))
+            self._push({"type": "hub", "kind": "eval_done",
+                        "summary": {m: {k: v for k, v in r.items() if k != "results"} for m, r in report["models"].items()}})
+        except Exception as e:
+            self._push({"type": "hub", "kind": "eval_error", "error": f"{type(e).__name__}: {e}"})
+        finally:
+            self._evaluating = False
+
+    def eval_cancel(self):
+        event = getattr(self, "_eval_cancel", None)
+        if event:
+            event.set()
+        return {"ok": True}

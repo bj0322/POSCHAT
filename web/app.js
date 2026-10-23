@@ -24,6 +24,8 @@ const ICONS = {
   mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>',
   spark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><path d="m6.3 6.3 2.1 2.1M15.6 15.6l2.1 2.1M6.3 17.7l2.1-2.1M15.6 8.4l2.1-2.1"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
+  up_thumb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v11H4V10Z"/><path d="M7 10l4-7a2 2 0 0 1 3 2l-1 5h6a2 2 0 0 1 2 2.3l-1.4 7A2 2 0 0 1 17.6 21H7"/></svg>',
+  down_thumb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V3h3v11Z"/><path d="M17 14l-4 7a2 2 0 0 1-3-2l1-5H5a2 2 0 0 1-2-2.3l1.4-7A2 2 0 0 1 6.4 3H17"/></svg>',
   retry: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
 };
 
@@ -285,6 +287,23 @@ async function newThread() {
   await openThread(thread.id);
 }
 
+// 답변 평가(👍/👎): 대화에 저장하고 사용량·진단 탭의 모델별 비교에 쓴다
+function feedbackButton(msg, rating) {
+  const btn = h("button", { title: rating > 0 ? "좋은 답변" : "아쉬운 답변", class: msg.feedback === rating ? "active" : "",
+    html: rating > 0 ? ICONS.up_thumb : ICONS.down_thumb });
+  btn.addEventListener("click", async () => {
+    if (!S.currentId) return;
+    const next = msg.feedback === rating ? 0 : rating;
+    const res = await api().feedback(S.currentId, msg.id, next);
+    if (res.ok === false) return toast(res.error);
+    msg.feedback = next || undefined;
+    btn.parentElement.querySelectorAll("button.active").forEach((b) => b.classList.remove("active"));
+    if (next) btn.classList.add("active");
+    toast(next ? "평가를 남겼습니다" : "평가를 지웠습니다");
+  });
+  return btn;
+}
+
 function messageNode(msg) {
   if (msg.role === "user") {
     const files = msg.attachments && msg.attachments.length ? attachmentList(msg.attachments) : null;
@@ -299,6 +318,7 @@ function messageNode(msg) {
         renderMarkdown(msg.content),
         h("div", { class: "msg-actions" },
           h("button", { title: "복사", html: ICONS.copy, onclick: () => copyText(msg.content) }),
+          feedbackButton(msg, 1), feedbackButton(msg, -1),
         ),
       ),
     );
