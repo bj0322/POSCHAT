@@ -246,6 +246,42 @@ class UiSmokeTests(unittest.TestCase):
             finally:
                 browser.close()
 
+    def test_settings_show_the_license_source_and_third_party_licenses(self):
+        from playwright.sync_api import sync_playwright
+        from version import APP_VERSION
+
+        with sync_playwright() as p:
+            for width, height in ((1240, 860), (390, 844)):
+                browser, page, errors = self.open(p, width, height)
+                try:
+                    page.evaluate("showSettings()")
+                    block = page.wait_for_selector(".license-block")
+                    block.scroll_into_view_if_needed()
+                    text = block.inner_text()
+                    for want in ("POSCHAT", "Copyright © 2026 Beomjoon Kim", "GNU Affero General Public License v3.0 only"):
+                        self.assertIn(want, text)
+                    source = page.get_by_text("소스 코드 보기")
+                    page.wait_for_function("document.querySelector('.license-block a.btn').href.includes('/tree/')")
+                    self.assertTrue(source.get_attribute("href").endswith(f"/tree/v{APP_VERSION}"))
+                    self.shot(page, f"license-settings-{width}")
+                    page.get_by_text("라이선스 보기").click()
+                    page.wait_for_selector(".license-text")
+                    self.assertIn("GNU AFFERO GENERAL PUBLIC LICENSE", page.locator(".license-text").first.inner_text())
+                    self.assertIn("AGPL-3.0-only", page.locator(".modal h2").last.inner_text())
+                    self.shot(page, f"license-text-{width}")
+                    page.locator(".modal-head .icon-btn").last.click()
+                    page.get_by_text("제3자 라이선스", exact=True).first.click()
+                    page.wait_for_selector("details summary")
+                    names = page.locator("details summary").all_inner_texts()
+                    self.assertIn("THIRD_PARTY_NOTICES.md", names)
+                    self.assertIn("KaTeX-LICENSE.txt", names)
+                    overflow = page.evaluate("Math.max(...[...document.querySelectorAll('.modal')].map(m => m.scrollWidth - m.clientWidth))")
+                    self.assertLessEqual(overflow, 1)
+                    self.shot(page, f"license-third-{width}")
+                    self.assertEqual(errors, [])
+                finally:
+                    browser.close()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1359,7 +1359,7 @@ ChatGPT·claude.ai 같은 웹 채팅 서비스의 기억은 이어받을 수 없
 // 설정 맨 아래: 라이선스(AGPL-3.0-only)와 이 버전의 소스코드·제3자 라이선스
 function licenseBlock() {
   const small = "margin:2px 0 0;color:var(--text-3);font-size:12px";
-  const source = h("a", { href: `${REPO_URL}/tree/v${S.version}`, target: "_blank", class: "btn" }, "소스 코드 보기");
+  const source = h("a", { href: `${REPO_URL}/tree/v${S.version}`, target: "_blank", class: "btn", style: "text-decoration:none;color:inherit" }, "소스 코드 보기");
   const box = h("div", { class: "license-block", style: "margin-top:12px" },
     h("p", { style: small }, "POSCHAT"),
     h("p", { style: small }, "Copyright © 2026 Beomjoon Kim"),
@@ -1379,7 +1379,7 @@ async function showLicense(kind) {
   } catch (e) {
     return toast("라이선스 정보를 불러오지 못했습니다: " + e.message);
   }
-  const pre = (text) => h("pre", { class: "license-text", style: "white-space:pre-wrap;font-size:12px;max-height:60vh;overflow:auto" },
+  const pre = (text) => h("pre", { class: "license-text", style: "white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:60vh;overflow:auto" },
     text || "(앱에 들어 있는 파일을 찾지 못했습니다. 저장소의 파일을 보세요.)");
   if (kind === "license") {
     return modal({ title: `${info.license} (${info.spdx})`, wide: true, body: h("div", {},

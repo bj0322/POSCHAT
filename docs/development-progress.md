@@ -1,6 +1,6 @@
 # 개발 진행 상황 (POSCHAT 2.0 / v1.10)
 
-다음 Claude Code 세션이 이어서 작업할 수 있도록 남기는 기록. 브랜치: `ccr-ecc78b3f-abovre`.
+다음 Claude Code 세션이 이어서 작업할 수 있도록 남기는 기록. 브랜치: `ccr-ecc78b3f-abovre` → `claude/bold-ritchie-x45m6j`에 합침(PR #14).
 
 ## 끝난 단계
 
@@ -14,6 +14,11 @@
 | Phase 4 | `d18466e` | Python·Jupyter·SSH 실행(기본 비활성, 데스크톱) |
 | Phase 5 | `9527506` | 관측·피드백·평가 |
 | 릴리스 준비 | `5beb84d` + 문서 커밋 | 1.10.0, selftest·CI, 첫 실행 백업, 문서 |
+
+## 2026-10-23 추가(PR #14)
+- 안드로이드 PO노트 녹음(RecordingService·sherpa_capi), 작은 소리 키우기(stt.level), sherpa-onnx 1.13.8 고정
+- AGPL 4~9: 앱 안 라이선스 표시, 배포본 라이선스(licenses/python), CI license 작업(tools/license_check.py), docs/license-audit.md
+- 음성 인식 정확도 측정 스크립트: tools/asr_eval.py
 
 ## 상태
 - 모든 Phase 구현 완료. 테스트 153개(Python 3.11·3.12·3.13 통과, 화면 6개는 Playwright가 있을 때).

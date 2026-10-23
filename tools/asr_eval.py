@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Beomjoon Kim
 # SPDX-License-Identifier: AGPL-3.0-only
-"""(임시, v1.10.0 출시 때 handoff/ 폴더째 지운다) 한국어 로컬 음성 인식 정확도 측정.
+"""한국어 로컬 음성 인식 정확도 측정(README의 'PO노트 → 로컬 AI 정확도' 표).
 
     pip install pyarrow soundfile        # requirements.txt 외에 필요
-    python handoff/asr_eval.py <작업 폴더> [--limit N]
+    python tools/asr_eval.py <작업 폴더> [--limit N]
 
 <작업 폴더>에 Zeroth-Korean test(457문장, 60MB)와 FLEURS ko_kr dev(226개, 126MB)를 받고(리비전 고정),
 stt.LocalEngine의 한국어(ko)·다국어(multi) 모델을 '소리 크기 맞춤' 방식별로 돌려 글자 오류율(CER)을 낸다.
