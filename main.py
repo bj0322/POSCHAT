@@ -17,11 +17,13 @@ import webview
 
 import api
 import attachments
+import connectors
 import mcp_client
 import po_note
 import storage
 import stt
 import updates
+from workspace_api import WorkspaceApi
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
 from api import DEFAULT_MODEL, MODELS, RESPONSES_MODELS, ApiError, ApiSettings
 from version import APP_VERSION
@@ -64,8 +66,8 @@ def _extend_mac_path():
     os.environ["PATH"] = os.pathsep.join(current + [d for d in extra if d not in current])
 
 
-class Bridge:
-    """JS에서 호출하는 API. 밑줄로 시작하는 이름은 JS에 노출되지 않는다."""
+class Bridge(WorkspaceApi):
+    """JS에서 호출하는 API. 밑줄로 시작하는 이름은 JS에 노출되지 않는다. '연결·도구' 창의 API는 WorkspaceApi에 있다."""
 
     def __init__(self):
         storage.ensure_dirs()
@@ -79,7 +81,7 @@ class Bridge:
         self._run_id = 0
         self._cancel = threading.Event()
         self._pending = {}            # confirm id -> [Event, decision]
-        self._session_allow = set()   # "edit" / "run" — 이번 실행 동안 항상 허용
+        self._session_allow = set()   # "edit" / "run" / "write" — 이번 실행(메시지 하나) 동안 항상 허용
         self._mcp = mcp_client.Manager()
         self._credit = None           # 응답 헤더로 받은 최근 크레딧 {"usage", "limit", "interval"}
         self._po_session = None       # 녹음 중인 stt.LiveSession
@@ -93,6 +95,7 @@ class Bridge:
         api.on_usage = storage.record_usage
         api.on_credit = self._on_credit
         storage.cleanup_staged()
+        connectors.prune_audit()
         self._migrate_config()
 
     def _migrate_config(self):
@@ -127,6 +130,9 @@ class Bridge:
             self._window.evaluate_js(f"window.onBackendEvent({json.dumps(event, ensure_ascii=False)})")
         except Exception:
             pass  # 창이 닫히는 중
+
+    def _open_url(self, url):
+        open_path(url)  # Windows os.startfile·macOS open·안드로이드 host.openPath 모두 https 주소를 브라우저로 연다
 
     def _workspace(self):
         ws = self._config.get("workspace", "")
@@ -472,7 +478,11 @@ class Bridge:
     # ---- MCP ----
 
     def get_mcp(self):
-        return self._mcp.status(self._config, self._workspace())
+        status = self._mcp.status(self._config, self._workspace())
+        policies = self._config.get("mcp_policy") or {}
+        for server in status["servers"]:
+            server["policy"] = (policies.get(server["name"]) or {}).get("mode", "")
+        return status
 
     def connect_mcp(self):
         """켜진 MCP 서버를 지금 연결해 본다(MCP 창의 '연결' 버튼)."""
@@ -954,6 +964,7 @@ class Bridge:
             self._run_id += 1
             run_id = self._run_id
             self._cancel.clear()
+            self._session_allow.clear()  # 1.10: "이번 실행 동안 모두 허용"은 실행이 끝나면 사라진다
 
         threading.Thread(target=self._work, daemon=True,
                          args=(run_id, thread_id, history, task, bool(agent_mode), forced, api_key, workspace,
@@ -1006,6 +1017,7 @@ class Bridge:
             on_delta=on_delta,
             ai_memory_state=thread.get("ai_memory"),
             on_ai_memory_state=save_ai_memory_state,
+            policy=connectors.Policy(dict(self._config)),
         )
         try:
             if command == "profile":
@@ -1036,20 +1048,26 @@ class Bridge:
         return settings
 
     def _confirm(self, thread_id, kind, title, detail, alive):
+        """kind: edit(파일 수정)·run(명령·외부 도구)·write(커넥터 쓰기)는 설정으로 자동 허용할 수 있고,
+        send(전송)·destructive(삭제)·exec(코드 실행)는 설정과 관계없이 매번 묻는다."""
         permission = self._config.get("permission", "ask")
-        if permission == "auto_all" or (permission == "auto_edit" and kind == "edit") or kind in self._session_allow:
+        always_ask = kind in connectors.ALWAYS_ASK
+        if not always_ask and (permission == "auto_all" or (permission == "auto_edit" and kind == "edit")
+                               or kind in self._session_allow):
             return True
         if not alive():
             return False
         cid = uuid.uuid4().hex
         entry = [threading.Event(), "deny"]
         self._pending[cid] = entry
-        self._push({"type": "confirm", "id": cid, "thread_id": thread_id, "kind": kind, "title": title, "detail": detail})
+        self._push({"type": "confirm", "id": cid, "thread_id": thread_id, "kind": kind, "title": title, "detail": detail,
+                    "allow_session": not always_ask})
         entry[0].wait()
         self._pending.pop(cid, None)
         if entry[1] == "always":
-            self._session_allow.add(kind)
-            return True
+            if not always_ask:
+                self._session_allow.add(kind)
+            return alive()
         return entry[1] == "allow" and alive()
 
     def resolve_confirm(self, cid, decision):
@@ -1082,6 +1100,8 @@ def selftest():
     except ImportError as e:
         lines.append(f"documents: FAIL {e}")
     lines.append(f"attachments: {attachments.selfcheck()}")
+    import secret_store
+    lines.append(f"secrets: {secret_store.backend_name()}")
     lines.append(f"stt: {stt.selfcheck()}")
     import tempfile
     manager = mcp_client.Manager()

@@ -19,6 +19,7 @@ from pathlib import Path
 
 import ai_memory
 import attachments
+import connectors
 import documents
 import storage
 from api import ApiSettings, ask
@@ -235,7 +236,7 @@ class ToolError(Exception):
 class Agent:
     def __init__(self, api_key, workspace, agent_mode, max_steps, history_messages,
                  on_status, on_tool, confirm, cancelled, thread_id=None, share_threads=True, mcp=None,
-                 api_settings=None, on_delta=None, ai_memory_state=None, on_ai_memory_state=None):
+                 api_settings=None, on_delta=None, ai_memory_state=None, on_ai_memory_state=None, policy=None):
         self.api_key = api_key
         self.workspace = Path(workspace).resolve() if workspace else None
         self.agent_mode = agent_mode
@@ -261,6 +262,8 @@ class Agent:
         self.on_ai_memory_state = on_ai_memory_state        # (state) — 대화에 저장한다
         self._touched = set()         # 이번 실행에서 저장한 파일(작업 폴더 기준)
         self._did_work = False        # 명령·도구 실행처럼 파일 밖의 작업을 했는지
+        self.policy = policy or connectors.Policy()   # MCP 도구 승인·차단 정책(커넥터 설정)
+        self.tools_run = []           # 이번 실행에서 부른 MCP 도구와 명령(인계 기록용)
 
     def _ask(self, prompt, on_delta=None, images=None):
         reply = ask(self.api_key, prompt, settings=self.api_settings, on_delta=on_delta, cancelled=self.cancelled,
@@ -573,7 +576,7 @@ class Agent:
             "JSON 객체 하나로만 답하세요. 설명 문장 금지. 최종 답변은 done의 answer에 한국어로 쓰세요.\n"
             + MATH_RULE + "\nanswer는 JSON 문자열이므로 LaTeX의 백슬래시는 두 번 쓰세요. 예: \"\\\\(x^2\\\\)\"",
             "[단계 종류]\n" + ACTION_DOCS + ("\n" + MCP_ACTION_DOC if self.mcp_servers else ""),
-            "[규칙]\n" + RULES + ("\n" + MCP_RULE if self.mcp_servers else "")
+            "[규칙]\n" + RULES + ("\n" + MCP_RULE + "\n" + connectors.UNTRUSTED_RULE if self.mcp_servers else "")
             + ("\n" + AI_MEMORY_RULE.format(name=self.ai_memory.server.name) if self.ai_memory else ""),
             f"[작업 폴더]\n{self.workspace}",
         ]
@@ -793,6 +796,7 @@ class Agent:
             return "사용자가 명령 실행을 거부했습니다."
         self.on_status(f"명령 실행 중: {command[:60]}")
         self._did_work = True
+        self.tools_run.append(f"run: {command[:200]}")
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
         try:
@@ -811,6 +815,8 @@ class Agent:
         lines = []
         for server in self.mcp_servers.values():
             for tool in server.tools:
+                if not self.policy.visible(server, tool):
+                    continue  # 사용자가 차단한 도구는 모델에게 보이지 않는다
                 schema = tool.get("inputSchema") or {}
                 required = set(schema.get("required") or [])
                 params = ", ".join(k + ("*" if k in required else "") for k in (schema.get("properties") or {}))
@@ -833,25 +839,29 @@ class Agent:
         if memory_tool:
             arguments = self.ai_memory.fill_args(spec, arguments)
         detail = json.dumps(arguments, ensure_ascii=False, indent=2)
-        annotations = spec.get("annotations") or {}
-        read_only = bool(annotations.get("readOnlyHint"))
-        if not read_only:
-            # 작업 폴더 안의 파일만 고치는 내장 도구는 파일 수정으로, 외부 서버와 바깥에 영향을 주는 내장 도구
-            # (Notion에 쓰기, npx 실행 등 openWorldHint)는 무엇이든 할 수 있으므로 명령 실행으로 묻는다.
-            kind = "edit" if server.builtin and not annotations.get("openWorldHint") else "run"
-            if not self.confirm(kind, f"MCP 도구: {tool}", _truncate(detail, 6000)):
+        # 승인 종류는 서버가 신고한 주석이 아니라 앱의 정책이 정한다(connectors.Policy): 읽기는 묻지 않고,
+        # 작업 폴더 파일만 고치는 내장 도구는 edit, 외부 서버는 run, 커넥터는 write·send·destructive·exec.
+        decision = self.policy.decide(server, spec)
+        if decision.denied:
+            connectors.audit_denied(server.name, tool_name, decision, arguments, "blocked")
+            raise ToolError(f"MCP 도구 '{tool}'는 설정에서 차단되어 있습니다.")
+        if decision.confirm:
+            if not self.confirm(decision.kind, f"MCP 도구: {tool}", _truncate(detail, 6000)):
+                connectors.audit_denied(server.name, tool_name, decision, arguments, "denied")
                 self.on_tool(f"⛔ mcp {tool} 거부됨", detail)
                 return "사용자가 이 MCP 도구 실행을 거부했습니다."
         self.on_status(f"MCP 도구 실행 중: {tool}")
-        if not memory_tool and not read_only:
+        if not memory_tool and decision.kind != "read":
             self._did_work = True
+        self.tools_run.append(tool)
         try:
-            text, is_error = server.call(tool_name, arguments)
+            text, is_error = connectors.invoke(server, tool_name, arguments, decision)
         except MCPError as e:
             raise ToolError(str(e))
         icon = "⚠" if is_error else "🔌"
         self.on_tool(f"{icon} mcp {tool}", _truncate(text, 4000) + "\n\n[인자]\n" + _truncate(detail, 3000))
-        return _truncate(text, MAX_OBS_CHARS)
+        text = _truncate(text, MAX_OBS_CHARS)
+        return connectors.wrap_untrusted(text, tool) if decision.untrusted and not memory_tool else text
 
     def _tool_skill(self, name):
         skill = self.skills.get(str(name).lower())

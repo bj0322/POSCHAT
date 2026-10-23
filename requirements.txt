@@ -1,5 +1,6 @@
 requests>=2.28
 truststore>=0.9
+keyring>=24  # 커넥터 토큰을 OS 보안 저장소(자격 증명 관리자·키체인)에 둔다. 없으면 앱 전용 파일
 pywebview>=5.0
 comtypes>=1.2; sys_platform == "win32"  # 설치 프로그램의 바로가기 생성(빌드할 때만 필요)
 # 문서 읽기(documents.py)와 내장 오피스 MCP 서버(office_mcp.py)

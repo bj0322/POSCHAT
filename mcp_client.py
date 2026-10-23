@@ -21,6 +21,8 @@ import sys
 import threading
 from pathlib import Path
 
+import connectors
+import secret_store
 import storage
 from version import APP_VERSION
 
@@ -49,10 +51,18 @@ def preset_servers():
     args = ["-y", f"@playwright/mcp@{PLAYWRIGHT_VERSION}", "--output-dir", ".playwright-mcp"]
     if os.name == "nt":
         args += ["--browser", "msedge"]  # Windows에 늘 있는 Edge를 써서 브라우저를 따로 받지 않는다
-    return {"playwright": {
+    presets = {"playwright": {
         "command": "npx", "args": args,
         "description": "브라우저 자동화(Microsoft Playwright): 페이지 열기·클릭·입력·스크린샷. PC에 Node.js 필요",
     }}
+    if shutil.which("github-mcp-server"):
+        # GitHub 공식 MCP 서버(Go 바이너리)가 설치돼 있을 때만. 기본은 읽기 전용이고 토큰은 GitHub 커넥터의 것을 쓴다.
+        presets["github-official"] = {
+            "command": "github-mcp-server", "args": ["stdio", "--read-only"],
+            "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": secret_store.get(connectors.secret_name("github", "token"))},
+            "description": "GitHub 공식 MCP 서버(읽기 전용). 토큰은 커넥터 → GitHub의 토큰을 씁니다",
+        }
+    return presets
 
 CONFIG_TEMPLATE = {
     "mcpServers": {},
@@ -139,8 +149,8 @@ class _InProcessServer:
 class Server:
     """표준 입출력으로 연결된 MCP 서버 하나."""
 
-    def __init__(self, name, command, args=(), env=None, cwd=None, builtin=False):
-        self.name, self.builtin = name, builtin
+    def __init__(self, name, command, args=(), env=None, cwd=None, builtin=False, connector=""):
+        self.name, self.builtin, self.connector = name, builtin, connector
         self.command, self.args, self.env, self.cwd = command, list(args), dict(env or {}), cwd
         self.proc = None
         self.tools = []
@@ -254,8 +264,8 @@ class Server:
             raise MCPError(f"{err.get('message', '알 수 없는 오류')} (코드 {err.get('code')})")
         return msg.get("result") or {}
 
-    def call(self, tool, arguments):
-        result = self.request("tools/call", {"name": tool, "arguments": arguments or {}})
+    def call(self, tool, arguments, timeout=CALL_TIMEOUT):
+        result = self.request("tools/call", {"name": tool, "arguments": arguments or {}}, timeout=timeout)
         parts = []
         for item in result.get("content") or []:
             kind = item.get("type")
@@ -304,9 +314,20 @@ class Manager:
                            "enabled": name not in disabled, "description": BUILTIN_SERVERS[name]}
         enabled = set(config.get("mcp_enabled", []))
         external, _ = load_external()
+        for cid, connector in connectors.CONNECTORS.items():
+            # 커넥터의 내장 서버는 켠 커넥터만. mcp.json에 같은 이름의 서버가 있으면 그쪽을 쓴다(status가 알린다).
+            if connector.server in external or connector.server in specs:
+                continue
+            if not connectors.is_enabled(config, cid, inprocess=INPROCESS_BUILTIN):
+                continue
+            cmd = [INPROCESS, connector.server] if INPROCESS_BUILTIN else builtin_command(connector.server)
+            specs[connector.server] = {
+                "command": cmd[0], "args": cmd[1:], "builtin": True, "enabled": True, "connector": cid,
+                "env": {"POSCHAT_CONNECTOR_REV": connectors.options_rev(config, cid)}, "description": connector.description}
         for name, spec in preset_servers().items():
             if name not in external:
-                specs[name] = {"command": spec["command"], "args": spec["args"], "env": {}, "builtin": False,
+                specs[name] = {"command": spec["command"], "args": spec["args"], "env": dict(spec.get("env") or {}),
+                               "builtin": False,
                                "preset": True, "enabled": name in enabled and name not in disabled,
                                "description": spec["description"]}
         for name, spec in external.items():
@@ -347,7 +368,8 @@ class Manager:
         return (spec["command"], tuple(spec["args"]), tuple(sorted((k, str(v)) for k, v in spec["env"].items())), spec["cwd"])
 
     def _start(self, name, spec):
-        server = Server(name, spec["command"], spec["args"], spec["env"], spec["cwd"], spec["builtin"])
+        server = Server(name, spec["command"], spec["args"], spec["env"], spec["cwd"], spec["builtin"],
+                        spec.get("connector", ""))
         server.spec_key = self._key(spec)
         try:
             server.start()
@@ -370,6 +392,7 @@ class Manager:
                 connected = server is not None and server.alive()
                 out.append({
                     "name": name, "builtin": spec["builtin"], "preset": spec.get("preset", False), "enabled": spec["enabled"],
+                    "connector": spec.get("connector", ""),
                     "description": spec["description"],
                     "command": " ".join([spec["command"], *spec["args"]]) if not spec["builtin"] else "",
                     "state": "connected" if connected else ("error" if name in self._errors and spec["enabled"] else "idle"),
