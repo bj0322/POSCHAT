@@ -39,6 +39,12 @@ document reading and the built-in Office MCP servers:
 | PortAudio (via sounddevice) | Audio I/O library | MIT-style (PortAudio license) |
 | sherpa-onnx (and its bundled ONNX Runtime) | On-device speech recognition and voice activity detection | Apache-2.0 (ONNX Runtime: MIT) |
 
+The Android app bundles numpy (BSD-3-Clause, built by Chaquopy) and the
+`libsherpa-onnx-c-api.so` and `libonnxruntime.so` libraries taken unchanged
+from the official sherpa-onnx 1.13.8 Android package
+(https://github.com/k2-fsa/sherpa-onnx/releases/tag/v1.13.8; sherpa-onnx:
+Apache-2.0, ONNX Runtime: MIT).
+
 HWP reading follows the publicly released Hancom HWP 5.0 file format
 specification; this project is not affiliated with Hancom.
 

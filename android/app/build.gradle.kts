@@ -18,10 +18,49 @@ val syncSharedPython by tasks.registering(Sync::class) {
         include(
             "agent.py", "ai_memory.py", "api.py", "attachments.py", "certs.py", "documents.py", "main.py",
             "mcp_client.py", "office_mcp.py", "paper_mcp.py", "notion_mcp.py", "firecrawl_mcp.py",
-            "po_note.py", "storage.py", "stt.py", "updates.py", "version.py",
+            "po_note.py", "sherpa_capi.py", "storage.py", "stt.py", "updates.py", "version.py",
         )
     }
     into(sharedPythonDir)
+}
+
+// PO노트 녹음의 로컬 음성 인식: sherpa-onnx 공식 AAR에서 C API 라이브러리와 ONNX Runtime만 꺼내 앱에 넣는다
+// (Kotlin API는 신뢰도(토큰 확률)를 주지 않아서 Python sherpa_capi가 C API를 직접 부른다). 버전은 sherpa_capi.VERSION과 같아야 한다.
+val sherpaVersion = "1.13.8"
+val sherpaAarSha256 = "633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96"
+val sherpaAar = layout.buildDirectory.file("downloads/sherpa-onnx-$sherpaVersion.aar")
+val sherpaJniDir = layout.buildDirectory.dir("generated/sherpaJniLibs")
+
+fun sha256(file: File): String = java.security.MessageDigest.getInstance("SHA-256")
+    .digest(file.readBytes()).joinToString("") { "%02x".format(it) }
+
+val downloadSherpaOnnx by tasks.registering {
+    val target = sherpaAar
+    outputs.file(target)
+    doLast {
+        val file = target.get().asFile
+        if (file.isFile && sha256(file) == sherpaAarSha256) return@doLast
+        file.parentFile.mkdirs()
+        val url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaVersion/sherpa-onnx-$sherpaVersion.aar"
+        val part = File(file.path + ".part")
+        java.net.URI(url).toURL().openStream().use { input -> part.outputStream().use { input.copyTo(it) } }
+        val actual = sha256(part)
+        if (actual != sherpaAarSha256) {
+            part.delete()
+            throw GradleException("sherpa-onnx AAR SHA-256 불일치: $actual")
+        }
+        part.renameTo(file)
+    }
+}
+
+val syncSherpaJniLibs by tasks.registering(Sync::class) {
+    dependsOn(downloadSherpaOnnx)
+    from(sherpaAar.map { zipTree(it) }) {
+        include("jni/*/libsherpa-onnx-c-api.so", "jni/*/libonnxruntime.so")
+        eachFile { path = path.removePrefix("jni/") }
+        includeEmptyDirs = false
+    }
+    into(sherpaJniDir)
 }
 
 val syncSharedAssets by tasks.registering(Sync::class) {
@@ -83,6 +122,7 @@ android {
     }
 
     sourceSets["main"].assets.srcDir(sharedAssetsDir)
+    sourceSets["main"].jniLibs.srcDir(sherpaJniDir)
 
     lint {
         checkReleaseBuilds = false  // CI 시간을 줄인다. 동작 검증은 에뮬레이터 계측 테스트가 한다
@@ -103,11 +143,12 @@ chaquopy {
     }
 }
 
-tasks.named("preBuild") { dependsOn(syncSharedPython, syncSharedAssets) }
+tasks.named("preBuild") { dependsOn(syncSharedPython, syncSharedAssets, syncSherpaJniLibs) }
 // Chaquopy·AGP의 소스 병합 작업이 복사보다 먼저 돌지 않게 한다.
 tasks.configureEach {
     if (name.contains("Python", ignoreCase = true) && name.startsWith("merge")) dependsOn(syncSharedPython)
     if (name.endsWith("Assets") && name.startsWith("merge")) dependsOn(syncSharedAssets)
+    if (name.endsWith("JniLibFolders") && name.startsWith("merge")) dependsOn(syncSherpaJniLibs)
 }
 
 dependencies {
@@ -118,4 +159,5 @@ dependencies {
     androidTestImplementation("androidx.test:core:1.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
 }

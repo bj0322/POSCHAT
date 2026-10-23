@@ -44,6 +44,7 @@ class AppSmokeTest {
         assertTrue(report.getJSONArray("skills").toString().contains("summarize"))
         assertEquals("OK", report.getString("attachments"))
         assertEquals("OK", report.getString("po_note"))
+        assertTrue(report.getString("stt"), report.getString("stt").startsWith("OK"))  // 녹음·로컬 인식 라이브러리
     }
 
     @Test

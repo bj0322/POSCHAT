@@ -8,7 +8,8 @@ olefile>=0.46
 openpyxl>=3.1
 python-docx>=1.1
 python-pptx>=1.0
-# PO노트의 마이크 녹음과 로컬 음성 인식(stt.py). 데스크톱 앱에만 넣는다(안드로이드는 녹음 없이 노트만).
+# PO노트의 마이크 녹음과 로컬 음성 인식(stt.py). 안드로이드 앱은 같은 버전의 sherpa-onnx C 라이브러리를 쓴다
+# (android/app/build.gradle.kts, sherpa_capi.VERSION). 버전을 올릴 때는 셋을 함께 올린다.
 numpy>=1.26
 sounddevice>=0.5
-sherpa-onnx>=1.12
+sherpa-onnx==1.13.8

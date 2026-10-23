@@ -34,6 +34,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * 데스크톱 앱의 web/ 화면을 WebView로 띄우고, 화면의 window.pywebview.api 호출을 Python(android_main.py)으로 넘긴다.
@@ -52,6 +53,9 @@ class MainActivity : ComponentActivity() {
 
     // 화면의 <input type="file">(채팅창 첨부 버튼)
     private lateinit var pickFiles: ActivityResultLauncher<Intent>
+    // PO노트 녹음: 마이크(필수)·알림(녹음 중 표시, 선택) 권한
+    private lateinit var micPermission: ActivityResultLauncher<Array<String>>
+    @Volatile private var micLatch: CountDownLatch? = null
     private lateinit var installPermission: ActivityResultLauncher<Intent>
     private var pendingApkUri: Uri? = null
     private var filesCallback: ValueCallback<Array<Uri>>? = null
@@ -71,6 +75,9 @@ class MainActivity : ComponentActivity() {
                 toast("이 위치는 작업 폴더로 쓸 수 없습니다. 내부 저장소나 SD 카드의 폴더를 고르세요.")
             }
             folderLatch?.countDown()
+        }
+        micPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            micLatch?.countDown()
         }
         pickFiles = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             val data = result.data
@@ -227,6 +234,24 @@ class MainActivity : ComponentActivity() {
             return pickedFolder
         }
 
+        /** PO노트 녹음 시작: 마이크 권한을 받고 녹음 서비스를 연다. 실패하면 이유, 성공하면 null. */
+        fun micStart(): String? {
+            if (!hasMic()) {
+                val latch = CountDownLatch(1)
+                micLatch = latch
+                val wanted = mutableListOf(Manifest.permission.RECORD_AUDIO)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) wanted += Manifest.permission.POST_NOTIFICATIONS
+                runOnUiThread { micPermission.launch(wanted.toTypedArray()) }
+                latch.await(2, TimeUnit.MINUTES)  // 답 없이 화면이 닫히면 녹음 시작만 실패한다
+                if (!hasMic()) return "마이크 권한이 없어 녹음할 수 없습니다. 설정 > 앱 > POSTECH GenAI Chat > 권한에서 마이크를 허용하세요."
+            }
+            return RecordingService.start(this@MainActivity)
+        }
+
+        fun micStop() {
+            RecordingService.stop(this@MainActivity)
+        }
+
         /** 데스크톱의 os.startfile: 파일은 알맞은 앱으로 열고, 폴더는 경로를 알려 준다. */
         fun openPath(path: String) {
             runOnUiThread {
@@ -277,6 +302,9 @@ class MainActivity : ComponentActivity() {
             toast("이 파일을 열 앱이 없습니다: ${file.name}")
         }
     }
+
+    private fun hasMic(): Boolean =
+        checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
     private fun hasStorageAccess(): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {

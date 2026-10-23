@@ -8,3 +8,5 @@ olefile>=0.46
 openpyxl>=3.1
 python-docx>=1.1
 python-pptx>=1.0
+# PO노트 녹음(음성 구간 검출·인식에 넘기는 소리 배열). Chaquopy 저장소의 안드로이드용 빌드
+numpy
