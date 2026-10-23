@@ -1,6 +1,8 @@
 # POSTECH GenAI Chat
 
-버전 1.8.2 — OpenAI 호환 API의 모델 목록을 서버에서 불러오기, 기본 주소(Base URL)만 넣어도 동작, 필수 API 주소 검증, 대화별 모델 선택. 앱 안의 자동 업데이트(CDN)는 빼고 새 버전은 Releases에서 받습니다
+버전 1.9.0 — **PO노트**: 강의를 녹음해 실시간으로 받아 적고(POSTECH GenAI 서버 또는 이 PC의 로컬 AI), 강의 자료(PPT·PDF·Word·한글)와 함께 Markdown 필기 노트를 만들어 앱 안에서 보고 고칩니다. **POSTECH GenAI 크레딧 확인**(이번 주 사용량·한도·남은 양). OpenAI 호환 API를 기본 방식으로 바꾸고 POSTECH 주소를 내장(a1/gpt는 현재 서버 오류만 돌려줌), 게이트웨이 인증(`x-api-key`)과 Claude 모델 ID(`claude-opus-5-5`) 수정, 주소의 `?쿼리` 유지, 설정 창에서 취소하면 불러온 모델 목록을 버림, 사용법 가이드의 표 깨짐 수정. 설치 파일 코드 서명 준비(인증서를 넣으면 빌드가 서명)
+
+1.8.2 — OpenAI 호환 API의 모델 목록을 서버에서 불러오기, 기본 주소(Base URL)만 넣어도 동작, 필수 API 주소 검증, 대화별 모델 선택. 앱 안의 자동 업데이트(CDN)는 빼고 새 버전은 Releases에서 받습니다
 
 1.7.0 — 다른 AI 코딩 에이전트(Claude Code·Codex 등)와 기억 이어 쓰기(ai-memory 연동: 인계 받기·남기기, 기억 범위 자동 지정), 설정 창의 사용법 가이드
 
@@ -23,7 +25,7 @@ POSTECH GenAI API를 쓰는 Windows·macOS 데스크톱·안드로이드 챗봇�
 설치 파일(`PostechChat-Setup.exe`)은 저장소의 [Releases](https://github.com/bj0322/POSCHAT/releases)에서 받습니다. 저장소 자체에는 exe를 넣지 않습니다. 설치 파일 하나에 Python, 화면 라이브러리(marked·DOMPurify·KaTeX), 문서 라이브러리, 내장 MCP 서버가 모두 들어 있으므로 npm·curl·Python을 따로 설치할 필요가 없습니다. 직접 빌드하려면 아래 [개발](#개발)을 보세요.
 
 1. Releases에서 받은 `PostechChat-Setup.exe`(또는 직접 빌드한 `release\PostechChat-Setup.exe`)를 실행합니다.
-2. 설치 프로그램에는 코드 서명이 없습니다. Windows 또는 보안 제품이 실행을 차단하면 경고 내용과 파일 출처를 확인하고, 필요하면 소스로 실행하세요. 보호 기능을 끄거나 예외를 추가하는 것을 설치 절차로 요구하지 않습니다.
+2. 설치 프로그램에는 아직 코드 서명이 없어서 Windows가 "Windows의 PC 보호" 경고를 띄울 수 있습니다. 파일을 Releases에서 받았는지 확인한 뒤 **추가 정보 → 실행**을 누르세요. 경고를 없애려면 코드 서명 인증서가 필요합니다([배포](#배포) 참고). 보호 기능을 끄거나 예외를 추가하는 것을 설치 절차로 요구하지 않습니다.
 3. **설치**를 누릅니다. 관리자 권한은 필요 없습니다.
    - 설치 위치: `%LOCALAPPDATA%\Programs\PostechChat`
    - 시작 메뉴와 바탕화면에 바로가기가 생깁니다.
@@ -75,8 +77,10 @@ Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 
 | 내 정보(USER.md) | 왼쪽 아래 **내 정보**, `/user` |
 | 메모리(memory.md) | 왼쪽 아래 **메모리**, `/remember 내용`, `/memory` |
 | MCP 서버 켜기·끄기, 외부 서버 추가 | 왼쪽 아래 **MCP** |
-| 대화별 모델 선택 | Responses 또는 OpenAI 호환 API를 선택하면 위쪽 **대화 모델** 메뉴에서 모델을 고릅니다. 각 대화의 선택은 따로 저장됩니다. |
-| 모델 API 사용량 보기 | 왼쪽 아래 **설정** → 모델 API 사용량. 이 앱에서 보낸 요청의 오늘·이번 달·최근 30일 호출 수와(서버가 알려 주면) 토큰 수. POSTECH GenAI API는 남은 한도를 알려 주지 않으므로 잔여량은 GenAI 콘솔에서 확인하세요. |
+| PO노트(강의 녹음·전사·필기 노트) | 왼쪽 위 **PO노트** ([아래](#po노트)) |
+| 대화별 모델 선택 | OpenAI 호환 또는 Responses API에서 위쪽 **대화 모델** 메뉴로 고릅니다. 각 대화의 선택은 따로 저장됩니다. |
+| 크레딧 확인 | 왼쪽 아래 **설정** → POSTECH GenAI 크레딧(PO노트 화면에도 표시). 이 키의 이번 주 사용량·한도·남은 양. 확인 자체는 크레딧을 쓰지 않습니다. |
+| 모델 API 사용량 보기 | 왼쪽 아래 **설정** → 모델 API 사용량. 이 앱에서 보낸 요청의 오늘·이번 달·최근 30일 호출 수와(서버가 알려 주면) 토큰 수. |
 
 ### 대화 간 정보 공유 (메모리 · 다른 대화 참고)
 
@@ -103,6 +107,35 @@ Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 
 - **이미지**(PNG·JPEG·GIF·WebP): 설정의 API 방식이 **OpenAI Responses API** 또는 **OpenAI 호환 API**일 때 모델이 이미지를 직접 봅니다. 기본 방식(a1)은 글자만 보낼 수 없습니다.
 - 첨부한 파일은 `%APPDATA%\PostechChat\attachments`에 복사해 두고, 대화를 지우면 함께 지웁니다. 보낸 메시지의 파일을 누르면 알맞은 앱으로 엽니다.
 
+### PO노트
+
+강의를 녹음해 실시간으로 받아 적고, 강의 자료와 함께 복습용 필기 노트를 만듭니다. 왼쪽 위 **PO노트**에서 강의마다 노트를 만듭니다.
+
+1. **새 강의 노트**를 만들고 **강의 자료**(PPT·PDF·Word·Excel·한글·텍스트, 노트 하나에 10개까지)를 올립니다.
+2. **녹음 시작**을 누르면 마이크 소리를 말 구간마다 끊어 받아 적고 **전사** 탭에 `[분:초] 글`로 쌓습니다. 강의 중 떠오른 질문이나 칠판 필기는 **메모** 탭에 적습니다. 멈췄다가 **이어서 녹음**할 수 있습니다.
+3. **노트 만들기**를 누르면 고른 모델이 강의 자료의 순서(슬라이드·페이지)를 뼈대로 전사와 메모를 합쳐 Markdown 필기 노트를 씁니다. 말로만 나온 설명은 `💬`, 시험·과제 같은 강조는 `⭐`로 표시하고, 끝에 핵심 정리·용어 정리·확인할 것을 둡니다. 전사가 길면 부분별로 정리한 뒤 합칩니다.
+4. 노트·전사·자료 내용은 앱 안에서 보고, 노트는 **고치기**로 직접 고칩니다. **폴더 열기**로 `note.md`·`transcript.md`를 다른 앱에서 열 수 있습니다.
+
+**음성 인식 설정**(PO노트 화면)에서 받아 적는 방식을 고릅니다.
+
+| 방식 | 처리 | 비용 | 특징 |
+|---|---|---|---|
+| 자동 (기본) | API 키가 있으면 POSTECH GenAI 서버, 실패하면 로컬 AI | 서버를 쓰면 크레딧 | |
+| POSTECH GenAI 서버 | OpenAI 호환 API의 Gemini 3.8 Flash가 음성(`input_audio`)을 받아 적습니다 | 1시간에 약 2,500크레딧(주간 한도 15,000의 약 17%) | 말 구간을 약 25초씩 모아 보내 호출 수를 줄입니다. 강의 자료의 용어를 힌트로 줍니다. |
+| 로컬 AI | 이 PC에서 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)로 처리 | 없음(인터넷도 필요 없음) | CPU 스레드 2개만 쓰는 가벼운 모델. 처음 한 번 모델을 내려받습니다. |
+
+POSTECH GenAI에는 음성 인식 전용 API(`/audio/transcriptions`)가 없어서 Chat Completions의 음성 입력으로 받아 적습니다. 로컬 AI 모델은 둘 중에서 고릅니다.
+
+| 모델 | 내려받기 | 언어 | 비고 |
+|---|---|---|---|
+| 한국어 (권장) | 약 76MB | 한국어 | k2-fsa Zipformer(KsponSpeech 학습). 가장 가볍고 한국어 띄어쓰기까지 정확합니다. |
+| 다국어 | 약 240MB | 한국어·영어·일본어·중국어 | SenseVoice Small. 영어 강의나 한영 혼용 강의용입니다. |
+
+- 말 구간은 음성 구간 검출(Silero VAD, 약 2MB, 첫 녹음 때 자동으로 내려받음)로 끊습니다. 녹음 소리 자체는 저장하지 않고 전사 글만 저장합니다.
+- 마이크는 설정에서 고릅니다(기본: 시스템 기본 마이크). macOS는 처음 녹음할 때 마이크 권한을 묻습니다.
+- 녹음은 Windows·macOS 앱에서 합니다. 안드로이드 앱에서는 노트·전사를 보고 노트를 만들 수 있지만 녹음은 아직 지원하지 않습니다.
+- 데이터는 `%APPDATA%\PostechChat\po_notes\<id>\`(`meta.json`, `transcript.json`, `note.md`, `memo.md`, `materials\`)에, 로컬 AI 모델은 `stt_models\`에 저장합니다.
+
 ### 에이전트 모드
 
 작업 폴더를 지정하고 에이전트를 켜면, AI가 목표를 이룰 때까지 단계를 반복합니다.
@@ -118,13 +151,13 @@ Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 
 
 ### 모델과 스트리밍
 
-**설정 → API 방식**에서 고릅니다. Responses 또는 OpenAI 호환 방식을 선택하면 해당 API의 전체 HTTPS 엔드포인트 주소를 반드시 입력해야 저장할 수 있습니다. 새 대화의 기본 모델은 설정에서 고르고, 현재 대화 모델은 화면 위쪽 **대화 모델** 메뉴에서 바꿉니다. 각 대화는 생성 당시의 기본 모델 또는 직접 선택한 모델을 따로 저장하므로, 기본 설정을 바꿔도 기존 대화의 모델은 유지됩니다.
+**설정 → API 방식**에서 고릅니다. 1.9부터 기본은 OpenAI 호환 API이며, 주소를 비워 두면 POSTECH GenAI 콘솔(에이전트 API → OpenAI Compatible API)의 `https://genai.postech.ac.kr/agent/openai_compatible/a1/v1/chat/completions`를 씁니다. Responses 방식은 콘솔에서 확인한 HTTPS 주소를 넣어야 저장할 수 있습니다. 새 대화의 기본 모델은 설정에서 고르고, 현재 대화 모델은 화면 위쪽 **대화 모델** 메뉴에서 바꿉니다. 각 대화는 생성 당시의 기본 모델 또는 직접 선택한 모델을 따로 저장하므로, 기본 설정을 바꿔도 기존 대화의 모델은 유지됩니다.
 
 | 방식 | 주소 | 모델 | 특징 |
 |---|---|---|---|
-| 기본 (a1/gpt) | `agent/api/a1/gpt` | 서버가 정함 | API 키만 있으면 바로 사용 |
-| 모델 선택 (Responses) | 콘솔에서 확인한 `.../a<번호>/openai/responses` | 아래 목록에서 선택 | OpenAI Responses API, 표준 SSE 스트리밍 |
-| OpenAI 호환 | POSTECH GenAI 콘솔에 표시된 Chat Completions HTTPS 주소 | GPT·Claude·Gemini | OpenAI 호환 Chat Completions API, Bearer 인증 |
+| OpenAI 호환 (기본, 권장) | 비워 두면 POSTECH 주소. 기본 주소(`.../v1`)만 넣어도 됨 | GPT·Claude·Gemini | Chat Completions, 표준 SSE 스트리밍. 인증은 `x-api-key`(다른 OpenAI 호환 서버를 위해 Bearer도 함께 보냄) |
+| Responses | 콘솔에서 확인한 `.../a<번호>/openai/responses` | GPT-5 계열 | OpenAI Responses API, 표준 SSE 스트리밍 |
+| a1/gpt (예전 기본값) | `agent/api/a1/gpt` | 서버가 정함 | 2026년 10월 현재 서버가 답변 대신 오류 코드 10000만 돌려줍니다. 1.9는 a1을 쓰던 설정을 한 번 OpenAI 호환으로 옮깁니다. |
 
 모델 선택 방식에서 고를 수 있는 GPT 모델은 POSTECH 게이트웨이가 허용하는 목록입니다. 가격은 OpenAI 공개 가격(입력/출력 100만 토큰당, USD)이며, 학교 계정의 실제 과금·한도는 POSTECH GenAI 콘솔에서 확인하세요.
 
@@ -141,7 +174,9 @@ Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 
 | Claude Sonnet 5.5 | POSTECH GenAI 2026년 10월 안내 모델 | 콘솔에서 확인 |
 | Gemini 3.8 Flash | POSTECH GenAI 2026년 10월 안내 모델 | 콘솔에서 확인 |
 
-신규 GPT·Claude·Gemini 모델은 OpenAI 호환 API 방식에서 사용할 수 있습니다. 모델 ID와 정확한 Chat Completions 주소는 서비스 콘솔 안내를 따르세요. GPT-5 계열은 Responses API에서도 계속 사용할 수 있습니다. 에이전트 모드는 단계마다 모델을 한 번씩 부릅니다.
+표의 10개 모델은 모두 OpenAI 호환 API에서 응답하는 것을 확인했습니다(2026년 10월). Claude 모델 ID는 점이 아니라 `-`를 씁니다(`claude-opus-5-5`, `claude-sonnet-5-5`). POSTECH 서버는 모델 목록(`GET .../models`)을 알려 주지 않으므로 기본 목록을 씁니다. 다른 OpenAI 호환 서버는 **모델 목록 불러오기**로 그 서버의 모델을 받아 저장할 때 반영합니다. GPT-5 계열은 Responses API에서도 계속 사용할 수 있습니다.
+
+**크레딧**: POSTECH GenAI는 모든 응답 헤더(`x-role-ratelimit-credit-usage`, `-limit`, `-interval`)에 이 키의 이번 주 크레딧 사용량과 한도를 담아 줍니다. 앱은 이 값을 설정 창과 PO노트에 보여 주고, **확인**을 누르면 크레딧을 쓰지 않는 요청(404가 나는 `GET .../models`)으로 새로 받습니다. 직접 잰 값(Claude Sonnet 5.5): 1크레딧 ≈ 입력 약 250토큰 또는 출력 약 75토큰이고, 짧은 질문도 호출마다 약 24크레딧이 듭니다. Claude Opus 5.5는 모두 두 배입니다. 에이전트 모드는 단계마다 모델을 한 번씩 부르므로 단계 수만큼 이 기본 비용이 붙습니다.
 
 **스트리밍**(설정 → 답변을 받는 대로 표시)을 켜면 일반 대화의 답변이 글자가 오는 대로 표시됩니다. 기본으로 켜져 있습니다. 에이전트 모드는 단계 선택이 JSON이라 단계 진행만 표시하고 최종 답변은 한 번에 표시합니다. 모델 선택 방식은 OpenAI 표준 SSE를 씁니다. a1 방식은 스트리밍 형식이 문서에 없어서 SSE·JSON Lines·일반 텍스트를 모두 받아 주며, 알 수 없는 형식이면 자동으로 한 번에 받는 방식으로 다시 요청합니다. 표시가 이상하면 스트리밍을 끄세요.
 
@@ -272,11 +307,14 @@ POSTECH GenAI 서버의 모델은 자체 시스템 프롬프트 때문에 "사�
 | `ai_memory.py` | ai-memory 연동: 작업 폴더의 workspace·project 결정, 인계 받기·남기기 |
 | `office_mcp.py` | 내장 MCP 서버(word·powerpoint·excel)와 모든 내장 서버의 공통 실행 루프. 앱 exe를 `--mcp-server <이름>`으로 실행하면 이 서버가 됩니다. |
 | `paper_mcp.py` · `notion_mcp.py` · `firecrawl_mcp.py` | 내장 MCP 서버 paper(arXiv·Semantic Scholar), notion(Notion API), firecrawl(Firecrawl API) |
-| `api.py` | POSTECH GenAI API 호출(a1 / OpenAI Responses / OpenAI 호환 Chat Completions), 스트리밍 해석, 이미지 입력, 사용량 기록 |
+| `api.py` | POSTECH GenAI API 호출(OpenAI 호환 Chat Completions / OpenAI Responses / a1), 스트리밍 해석, 이미지·음성 입력, 사용량·크레딧 기록 |
+| `po_note.py` | PO노트 저장(전사·노트·메모·강의 자료)과 필기 노트 프롬프트·생성(긴 전사는 나눠 정리 후 합치기) |
+| `stt.py` | PO노트 음성 인식: 마이크(sounddevice) → 음성 구간 검출(Silero VAD) → 로컬 AI(sherpa-onnx) 또는 POSTECH 서버, 모델 내려받기 |
 | `attachments.py` | 채팅창 첨부 파일: 조각 업로드, 종류 확인, 문서·텍스트 내용 뽑기, 이미지 |
 | `storage.py` | 대화·설정 저장(`%APPDATA%\PostechChat`), memory.md·USER.md, 첨부 파일 폴더, 모델 API 사용량, 다른 대화 검색 |
-| `web/` | 화면(HTML/CSS/JS, marked·DOMPurify·KaTeX 포함) |
-| `.github/workflows/build.yml` | Windows에서 설치 파일 빌드·자가 진단, 태그 push 때 Release에 첨부 |
+| `web/` | 화면(HTML/CSS/JS, marked·DOMPurify·KaTeX 포함). PO노트 화면은 `web/po.js` |
+| `tests/` | 단위 테스트(`python -m unittest discover -s tests`) |
+| `.github/workflows/build.yml` | 단위 테스트, Windows·macOS·Android 빌드와 플랫폼별 자가 진단, 태그 push 때 Release에 첨부 |
 | `android/` | 안드로이드 앱(Kotlin WebView + Chaquopy). 빌드할 때 저장소 최상위의 Python 모듈·`web/`·`skills/`를 복사해 넣고, `android_main.py`가 pywebview 대신 화면과 Python을 연결합니다. |
 | `certs.py` | 중간 인증서를 보내지 않는 서버를 위해 AIA로 중간 인증서를 받아 검증(Windows는 운영체제가 처리) |
 | `installer/installer.py` | 설치 프로그램(`--silent --dir=<경로> --no-desktop` 지원) |
@@ -320,7 +358,7 @@ py -3 -m venv .venv
 설치 파일은 GitHub Releases에 올립니다. `.github/workflows/build.yml`이 Windows·macOS·Android 빌드와 플랫폼별 검증을 자동으로 수행합니다.
 
 - PR을 올리거나 Actions에서 **Build installer**를 수동 실행하면, 빌드한 `PostechChat-Setup.exe`를 실행 결과의 Artifacts에서 받을 수 있습니다.
-- 버전 태그를 push하면 같은 빌드가 그 태그의 Release에 첨부됩니다.
+- 버전 태그를 push하면 같은 빌드가 그 태그의 Release에 첨부됩니다. 단위 테스트가 실패하면 Release를 만들지 않습니다.
 
   ```powershell
   git tag v1.2.0
@@ -331,7 +369,7 @@ py -3 -m venv .venv
 - 사용자에게는 항상 최신 버전을 가리키는 링크 `https://github.com/bj0322/POSCHAT/releases/latest/download/PostechChat-Setup.exe`를 안내하면 됩니다. 저장소가 비공개이면 저장소 권한이 있는 사용자만 받을 수 있습니다.
 - 앱 안에서 새 버전을 확인하거나 내려받는 기능은 없습니다. 새 버전은 Releases에서 받아 설치하면 대화·설정을 유지한 채 업데이트됩니다.
 
-- 설치 파일에는 코드 서명이 없어서 처음 실행할 때 Windows SmartScreen 경고가 뜰 수 있습니다. 경고를 없애려면 코드 서명 인증서로 서명해야 합니다.
+- 설치 파일에는 코드 서명이 없어서 처음 실행할 때 Windows SmartScreen 경고가 뜰 수 있습니다. 경고는 코드 서명 인증서로 서명해야만 없앨 수 있습니다. 인증서(.pfx)를 base64로 바꿔 저장소 Secrets의 `WINDOWS_SIGN_PFX_BASE64`에, 비밀번호를 `WINDOWS_SIGN_PASSWORD`에 넣으면 빌드가 앱 exe와 설치 파일에 서명합니다(로컬 빌드는 `WINDOWS_SIGN_PFX`·`WINDOWS_SIGN_PASSWORD` 환경 변수). 서명한 파일도 다운로드가 쌓여 평판이 생길 때까지는 경고가 남을 수 있습니다.
 
 ## v1.1.0 아키텍처
 
@@ -348,7 +386,7 @@ py -3 -m venv .venv
 - API 키를 설정 창에 입력하면 `%APPDATA%\PostechChat\config.json`에 평문으로 저장됩니다. 공용 PC에서는 환경 변수를 사용하는 등 보관 방식을 신중히 선택하세요.
 - 대화·공통 메모리·사용자 정보(USER.md)·첨부 파일 내용·관련 대화 발췌·읽은 파일 및 명령 출력은 답변 생성에 필요할 때 POSTECH GenAI API로 전달됩니다.
 - 사용자 대화, 메모리, 설정, 로그, 개인 API 키는 소스 저장소에 포함하지 않습니다. `.gitignore`는 이 파일들과 가상환경·캐시·빌드 결과·실행 파일을 제외합니다.
-- 앱 소스, 설치 프로그램 소스, 실행·빌드 스크립트, 기본 스킬 2종, 아이콘, 정적 UI와 번들 JavaScript 라이브러리를 포함합니다. `web/vendor/` 파일은 UI 실행에 필요한 배포 의존성이므로 포함하며, 원본 저작권·라이선스 주석을 유지합니다.
+- 앱 소스, 설치 프로그램 소스, 실행·빌드 스크립트, 기본 스킬 3종, 아이콘, 정적 UI와 번들 JavaScript 라이브러리를 포함합니다. `web/vendor/` 파일은 UI 실행에 필요한 배포 의존성이므로 포함하며, 원본 저작권·라이선스 주석을 유지합니다.
 - 이 저장소는 v1.1.0 소스 스냅샷을 시작점으로 합니다. 이전 버전의 코드·변경 이력은 가져오지 않습니다.
 
 ## 라이선스

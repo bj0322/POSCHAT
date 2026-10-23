@@ -43,6 +43,7 @@ class AppSmokeTest {
         assertTrue(report.getString("word_read").contains("제목"))
         assertTrue(report.getJSONArray("skills").toString().contains("summarize"))
         assertEquals("OK", report.getString("attachments"))
+        assertEquals("OK", report.getString("po_note"))
     }
 
     @Test

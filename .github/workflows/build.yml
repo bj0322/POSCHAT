@@ -19,6 +19,21 @@ permissions:
   contents: write
 
 jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
   windows:
     runs-on: windows-latest
     steps:
@@ -31,6 +46,20 @@ jobs:
 
       - name: Install dependencies
         run: python -m pip install -r requirements.txt pyinstaller
+
+      - name: Prepare code signing certificate
+        # 저장소 Secrets에 WINDOWS_SIGN_PFX_BASE64(.pfx를 base64로)와 WINDOWS_SIGN_PASSWORD가 있으면 빌드가 exe에 서명한다.
+        # 없으면 서명 없이 빌드한다(설치할 때 SmartScreen 경고가 뜬다).
+        shell: pwsh
+        env:
+          PFX_BASE64: ${{ secrets.WINDOWS_SIGN_PFX_BASE64 }}
+          PFX_PASSWORD: ${{ secrets.WINDOWS_SIGN_PASSWORD }}
+        run: |
+          if (-not $env:PFX_BASE64) { Write-Output "코드 서명 인증서가 없어 서명하지 않습니다."; exit 0 }
+          $pfx = Join-Path $env:RUNNER_TEMP "sign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX_BASE64))
+          "WINDOWS_SIGN_PFX=$pfx" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "WINDOWS_SIGN_PASSWORD=$env:PFX_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Build
         # 러너 콘솔은 cp1252라서 빌드 스크립트의 한글 출력에서 UnicodeEncodeError가 난다.
@@ -49,7 +78,7 @@ jobs:
           Get-Content $report
           $text = Get-Content $report -Raw
           $version = python -c "from version import APP_VERSION; print(APP_VERSION)"
-          foreach ($want in "version: $version", "web: True", "documents: OK", "attachments: OK", "word OK", "powerpoint OK", "excel OK", "paper OK", "notion OK", "firecrawl OK") {
+          foreach ($want in "version: $version", "web: True", "documents: OK", "attachments: OK", "word OK", "powerpoint OK", "excel OK", "paper OK", "notion OK", "firecrawl OK", "stt: OK") {
             if (-not $text.Contains($want)) { Write-Error "selftest에 '$want'이(가) 없습니다."; exit 1 }
           }
 
@@ -94,7 +123,7 @@ jobs:
           report="$HOME/Library/Application Support/PostechChat/selftest.txt"
           cat "$report"
           version=$(python -c "from version import APP_VERSION; print(APP_VERSION)")
-          for want in "version: $version" "web: True" "documents: OK" "attachments: OK" "word OK" "powerpoint OK" "excel OK" "paper OK" "notion OK" "firecrawl OK"; do
+          for want in "version: $version" "web: True" "documents: OK" "attachments: OK" "word OK" "powerpoint OK" "excel OK" "paper OK" "notion OK" "firecrawl OK" "stt: OK"; do
             grep -qF "$want" "$report" || { echo "selftest에 '$want'이(가) 없습니다."; exit 1; }
           done
           codesign --verify --deep --strict "$app"
@@ -176,7 +205,7 @@ jobs:
           path: android/app/build/reports/androidTests/
 
   publish:
-    needs: [windows, macos, android]
+    needs: [tests, windows, macos, android]
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release != '')
     runs-on: ubuntu-latest
     steps:

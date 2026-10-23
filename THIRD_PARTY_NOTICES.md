@@ -34,6 +34,10 @@ document reading and the built-in Office MCP servers:
 | XlsxWriter (via python-pptx) | Chart data | BSD-2-Clause |
 | et-xmlfile (via openpyxl) | XML writing | MIT |
 | typing_extensions | Typing backports | PSF-2.0 |
+| numpy | Audio buffers for PO노트 | BSD-3-Clause |
+| sounddevice | Microphone capture for PO노트 | MIT |
+| PortAudio (via sounddevice) | Audio I/O library | MIT-style (PortAudio license) |
+| sherpa-onnx (and its bundled ONNX Runtime) | On-device speech recognition and voice activity detection | Apache-2.0 (ONNX Runtime: MIT) |
 
 HWP reading follows the publicly released Hancom HWP 5.0 file format
 specification; this project is not affiliated with Hancom.
@@ -47,6 +51,16 @@ Institute for AI), the Notion API and the Firecrawl API. The recommended
 user's PC only when the user turns it on; it is not included in the
 installer. This project is not affiliated with arXiv, the Allen Institute
 for AI, Notion, Firecrawl or Microsoft.
+
+PO노트 speech models are not included in the installer. The app downloads
+them from Hugging Face, pinned by commit and checked by SHA-256: the small
+voice-activity model on the first recording, and a recognition model only
+when the user downloads it for local speech recognition. They remain under
+their publishers' terms: the Silero VAD model
+(https://huggingface.co/csukuangfj/vad), the k2-fsa Korean Zipformer model
+(https://huggingface.co/k2-fsa/sherpa-onnx-zipformer-korean-2024-06-24) and
+the SenseVoice Small model converted for sherpa-onnx
+(https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17).
 
 POSTECH names and marks belong to their respective owners. This project
 license grants no trademark rights or access rights to the POSTECH GenAI API.

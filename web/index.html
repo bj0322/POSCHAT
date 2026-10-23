@@ -15,6 +15,9 @@
       <button class="icon-btn" id="btn-collapse" title="사이드바 닫기" data-icon="sidebar"></button>
     </div>
     <button class="new-chat" id="btn-new"><span data-icon="edit"></span>새 채팅</button>
+    <button class="new-chat po-entry" id="btn-po" title="강의를 녹음해 받아 적고, 강의 자료와 함께 필기 노트를 만듭니다">
+      <span data-icon="mic"></span>PO노트<span class="rec-dot" id="po-rec-dot" hidden></span>
+    </button>
     <nav id="thread-list"></nav>
     <div class="sb-bottom">
       <button class="sb-item" id="btn-workspace">
@@ -49,6 +52,8 @@
       <div id="messages" class="column"></div>
     </section>
 
+    <section id="po-view" hidden></section>
+
     <footer id="composer-wrap">
       <div class="column">
         <div id="slash-menu" hidden></div>
@@ -76,5 +81,6 @@
 <script src="vendor/purify.min.js"></script>
 <script src="vendor/katex/katex.min.js"></script>
 <script src="app.js"></script>
+<script src="po.js"></script>
 </body>
 </html>

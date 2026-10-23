@@ -21,6 +21,9 @@ const ICONS = {
   clip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m21 11-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6L15 6.6"/></svg>',
   file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>',
   user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
+  mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>',
+  spark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><path d="m6.3 6.3 2.1 2.1M15.6 15.6l2.1 2.1M6.3 17.7l2.1-2.1M15.6 8.4l2.1-2.1"/></svg>',
+  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
   retry: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
 };
 
@@ -241,6 +244,7 @@ async function refreshThreads() {
 
 /* ---------- 대화 ---------- */
 async function openThread(id) {
+  if (window.poLeave) poLeave();
   const thread = await api().load_thread(id);
   if (!thread) return refreshThreads();
   S.currentId = id;
@@ -257,7 +261,7 @@ function renderThreadModel() {
   const select = $("#thread-model");
   const picker = $("#thread-model-picker");
   if (!select || !picker) return;
-  const mode = S.config.api_mode || "a1";
+  const mode = S.config.api_mode || "chat_completions";
   picker.hidden = !S.thread || mode === "a1";
   if (picker.hidden) return;
   const models = mode === "responses" ? (S.responsesModels || []) : (S.models || []);
@@ -270,6 +274,7 @@ function renderThreadModel() {
 async function newThread() {
   // 이미 비어 있는 새 대화가 열려 있으면 그대로 쓴다
   if (S.thread && !S.thread.messages.length) {
+    if (window.poLeave) poLeave();
     $("#input").focus();
     return;
   }
@@ -697,6 +702,11 @@ window.onBackendEvent = (ev) => {
     if (st && ev.thread_id === S.currentId) st.textContent = ev.text;
   } else if (ev.type === "confirm") {
     showConfirm(ev);
+  } else if (ev.type === "po") {
+    if (window.poEvent) poEvent(ev);
+  } else if (ev.type === "credit") {
+    S.credit = ev.credit;
+    document.querySelectorAll("[data-credit]").forEach((el) => { el.textContent = creditText(S.credit); });
   } else if (ev.type === "done") {
     S.busy = false;
     S.busyThread = null;
@@ -707,6 +717,44 @@ window.onBackendEvent = (ev) => {
     refreshThreads();
   }
 };
+
+/* ---------- 크레딧 ---------- */
+// POSTECH GenAI는 응답 헤더로 이번 주기(WEEKLY 등)의 크레딧 사용량과 한도를 알려 준다.
+const INTERVALS = { WEEKLY: "이번 주", DAILY: "오늘", MONTHLY: "이번 달" };
+
+function creditText(c) {
+  if (!c || c.usage == null) return "아직 확인하지 않았습니다";
+  const used = Math.round(c.usage).toLocaleString();
+  const when = INTERVALS[(c.interval || "").toUpperCase()] || "현재 주기";
+  if (!c.limit) return `${when} ${used} 크레딧 사용`;
+  const left = Math.max(0, Math.round(c.limit - c.usage)).toLocaleString();
+  return `${when} ${used} / ${Math.round(c.limit).toLocaleString()} 크레딧 사용 · 남은 ${left} (${Math.round(c.usage / c.limit * 100)}%)`;
+}
+
+/* 크레딧 표시 줄. 처음 그릴 때와 '확인'을 누를 때 크레딧을 쓰지 않는 요청으로 새로 받는다. */
+function creditLine(auto = true) {
+  const text = h("span", { "data-credit": "", style: "flex:1" }, creditText(S.credit));
+  const refresh = async () => {
+    btn.disabled = true;
+    try {
+      const res = await api().get_credit();
+      if (res.ok === false) text.textContent = res.error;
+      else {
+        S.credit = res;
+        document.querySelectorAll("[data-credit]").forEach((el) => { el.textContent = creditText(S.credit); });
+      }
+    } finally {
+      btn.disabled = false;
+    }
+  };
+  const btn = h("button", { class: "btn", type: "button", onclick: refresh }, "확인");
+  // 화면을 다시 그릴 때마다 묻지 않도록 1분에 한 번만 저절로 확인한다
+  if (auto && S.config.key_source && Date.now() - (S.creditAt || 0) > 60000) {
+    S.creditAt = Date.now();
+    setTimeout(refresh, 0);
+  }
+  return h("div", { class: "row credit-line" }, text, btn);
+}
 
 /* ---------- 모달 ---------- */
 function modal({ title, body, buttons = [], wide = false, onClose }) {
@@ -794,13 +842,13 @@ function showSettings() {
   );
   perm.value = c.permission || "ask";
   const mode = h("select", {},
-    h("option", { value: "a1" }, "기본 — a1/gpt (모델은 서버가 정함, 키만 있으면 사용)"),
-    h("option", { value: "responses" }, "모델 선택 — OpenAI Responses API"),
-    h("option", { value: "chat_completions" }, "OpenAI 호환 API — GPT·Claude·Gemini"),
+    h("option", { value: "chat_completions" }, "OpenAI 호환 API — GPT·Claude·Gemini (권장)"),
+    h("option", { value: "responses" }, "OpenAI Responses API — GPT-5 계열"),
+    h("option", { value: "a1" }, "a1/gpt 단일 호출 (예전 기본값, 모델은 서버가 정함)"),
   );
-  mode.value = c.api_mode || "a1";
+  mode.value = c.api_mode || "chat_completions";
   const url = h("input", { type: "url", placeholder: "https://.../agent/api/a번호/openai/responses", value: c.responses_url || "" });
-  const compatibleUrl = h("input", { type: "url", placeholder: "https://.../v1 또는 https://.../v1/chat/completions",
+  const compatibleUrl = h("input", { type: "url", placeholder: S.defaultChatUrl || "https://.../v1/chat/completions",
     value: c.chat_completions_url || "" });
   const responsesModels = S.responsesModels || [];
   const responsesModel = h("select", {}, responsesModels.map((m) => h("option", { value: m.id }, m.label)));
@@ -815,23 +863,26 @@ function showSettings() {
   fillCompatible(S.models || [], defaultModel);
   const modelsHint = h("small", {}, S.modelsSource === "server"
     ? "서버에서 받은 모델 목록입니다."
-    : "기본 목록입니다. '모델 목록 불러오기'를 누르면 서버가 실제로 제공하는 모델로 바꿉니다.");
+    : "기본 목록입니다. 다른 OpenAI 호환 서버를 쓴다면 '모델 목록 불러오기'로 그 서버의 모델로 바꿉니다(POSTECH 서버는 목록을 알려 주지 않습니다).");
+  // 불러온 목록은 저장을 눌러야 반영한다(취소하면 버린다). 주소를 다시 고치면 그 목록도 버린다.
+  let serverModels = null;
+  compatibleUrl.addEventListener("input", () => {
+    if (!serverModels) return;
+    serverModels = null;
+    fillCompatible(S.models || [], compatibleModel.value);
+    modelsHint.textContent = "주소를 바꿨으므로 저장하면 기본 목록을 씁니다.";
+  });
   const loadModels = h("button", { class: "btn", type: "button", style: "margin-top:8px", onclick: async () => {
-    if (!compatibleUrl.value.trim()) {
-      compatibleUrl.focus();
-      return toast("Chat Completions 주소를 입력하세요.");
-    }
     loadModels.disabled = true;
     try {
       const result = await api().refresh_models({ api_key: key.value.trim(), chat_completions_url: compatibleUrl.value.trim() });
       if (result.ok === false) return toast(result.error);
-      compatibleUrl.value = result.chat_completions_url;
+      if (compatibleUrl.value.trim()) compatibleUrl.value = result.chat_completions_url;
+      serverModels = result.models.map((m) => m.id);
       fillCompatible(result.models, compatibleModel.value);
-      S.models = result.models;
-      S.modelsSource = "server";
-      renderThreadModel();
-      modelsHint.textContent = `서버에서 받은 모델 목록입니다 (${result.models.length}개).`;
-      toast("모델 목록을 불러왔습니다");
+      modelsHint.textContent = `서버에서 받은 모델 목록입니다 (${result.models.length}개). 저장하면 반영됩니다.`;
+    } catch (error) {
+      toast(`모델 목록을 불러오지 못했습니다: ${error.message || error}`);
     } finally {
       loadModels.disabled = false;
     }
@@ -845,9 +896,9 @@ function showSettings() {
       h("small", {}, "GPT-5.1을 권장합니다. 에이전트는 단계마다 모델을 부르므로 비용을 줄이려면 GPT-5 mini를 고르세요.")),
   );
   const compatibleBox = h("div", {},
-    h("div", { class: "field" }, h("label", {}, "OpenAI 호환 Chat Completions 주소 (필수)"), compatibleUrl,
-      h("small", {}, "POSTECH GenAI 안내의 OpenAI 호환 API 주소를 붙여 넣으세요. 기본 주소(Base URL, 예: .../v1)만 넣어도 ",
-        "/chat/completions를 자동으로 붙입니다. API 키는 Bearer 인증으로 전달됩니다.")),
+    h("div", { class: "field" }, h("label", {}, "OpenAI 호환 API 주소"), compatibleUrl,
+      h("small", {}, "비워 두면 POSTECH GenAI 콘솔(에이전트 API → OpenAI Compatible API)의 주소를 씁니다. ",
+        "다른 서버를 쓸 때만 넣으세요. 기본 주소(Base URL, 예: .../v1)만 넣어도 /chat/completions를 자동으로 붙입니다.")),
     h("div", { class: "field" }, h("label", {}, "기본 모델"), compatibleModel, modelsHint, loadModels,
       h("small", {}, "새 대화의 기본 모델입니다. 기존 대화의 모델은 대화 상단에서 개별 선택하며 각각 저장됩니다.")),
   );
@@ -855,7 +906,6 @@ function showSettings() {
     responsesBox.hidden = mode.value !== "responses";
     compatibleBox.hidden = mode.value !== "chat_completions";
     url.required = mode.value === "responses";
-    compatibleUrl.required = mode.value === "chat_completions";
   };
   mode.addEventListener("change", syncMode);
   syncMode();
@@ -887,10 +937,12 @@ function showSettings() {
     h("div", { class: "row" },
       h("div", { class: "field", style: "flex:1" }, h("label", {}, "기억할 이전 메시지 수"), hist),
       h("div", { class: "field", style: "flex:1" }, h("label", {}, "에이전트 최대 단계 수"), steps)),
+    h("div", { class: "field" }, h("label", {}, "POSTECH GenAI 크레딧"), creditLine(),
+      h("small", {}, "POSTECH GenAI가 응답에 담아 주는 이 키의 크레딧 사용량과 한도입니다. 확인 자체는 크레딧을 쓰지 않습니다. ",
+        "Claude Sonnet 5.5 기준 1크레딧은 입력 약 250토큰·출력 약 75토큰이고, 호출마다 기본 약 24크레딧이 듭니다(Opus는 두 배).")),
     h("div", { class: "field" }, h("label", {}, "모델 API 사용량 (이 앱에서 보낸 요청)"),
       usageBox,
-      h("small", {}, "POSTECH GenAI API는 남은 한도를 알려 주지 않으므로 정확한 잔여량은 GenAI 콘솔에서 확인하세요. ",
-        "토큰 수는 서버가 응답에 사용량을 담아 준 요청만 셉니다.")),
+      h("small", {}, "토큰 수는 서버가 응답에 사용량을 담아 준 요청만 셉니다.")),
     h("div", { class: "field" }, h("label", {}, "데이터 폴더"),
       h("div", { class: "row" }, h("small", { style: "flex:1;margin:0;word-break:break-all" }, S.dataDir),
         h("button", { class: "btn", onclick: () => api().open_folder("data") }, "열기"))),
@@ -907,14 +959,10 @@ function showSettings() {
             url.focus();
             return toast("Responses API 주소를 입력하세요.");
           }
-          if (mode.value === "chat_completions" && !compatibleUrl.value.trim()) {
-            compatibleUrl.focus();
-            return toast("Chat Completions 주소를 입력하세요.");
-          }
           const state = await api().save_settings({
             api_key: key.value.trim(), history_messages: hist.value, max_steps: steps.value, permission: perm.value,
             api_mode: mode.value, responses_url: url.value.trim(),
-            chat_completions_url: compatibleUrl.value.trim(),
+            chat_completions_url: compatibleUrl.value.trim(), server_models: serverModels,
             model: mode.value === "responses" ? responsesModel.value : compatibleModel.value, stream: stream.checked,
             notion_token: notion.value.trim(), clear_notion: clearNotion.checked && !notion.value.trim(),
             firecrawl_key: firecrawl.value.trim(), clear_firecrawl: clearFirecrawl.checked && !firecrawl.value.trim(),
@@ -1132,172 +1180,106 @@ function showMcp() {
 }
 
 /* ---------- 사용법 가이드 (설정 → 사용법 가이드) ---------- */
-
 const GUIDE = [
-
   ["처음 시작하기", `
-
 1. **설정 → POSTECH GenAI API 키**에 본인의 키를 넣고 저장합니다.
-
 2. 입력창에 질문을 쓰고 **Enter**로 보냅니다(줄바꿈은 Shift+Enter).
-
 3. 파일을 다루게 하려면 왼쪽 아래 **작업 폴더**를 고르고 오른쪽 위 **에이전트** 스위치를 켭니다.
 
-
-
 새 대화는 왼쪽 위 **새 채팅**(Ctrl+Shift+O, 맥은 ⌘+Shift+O)으로 만들고, 대화 목록에 마우스를 올리면 이름 바꾸기·삭제 아이콘이 나옵니다.`],
-
   ["모델과 API 방식", `
-
 **설정 → API 방식**에서 고릅니다.
 
+- **OpenAI 호환 API (권장, 기본)**: 주소를 비워 두면 POSTECH GenAI 콘솔의 OpenAI Compatible API 주소를 씁니다. GPT·Claude·Gemini 모델을 고릅니다.
+- **OpenAI Responses API**: 콘솔의 \`.../a번호/openai/responses\` 주소를 넣고 GPT-5 계열 모델을 고릅니다.
+- **a1/gpt 단일 호출**: 예전 기본값입니다. 모델은 서버가 정합니다.
+- OpenAI 호환 또는 Responses 방식에서는 화면 위쪽 메뉴에서 대화별 모델을 지정합니다.
 
+**답변을 받는 대로 표시(스트리밍)**를 켜면 일반 대화의 답변이 글자가 오는 대로 나옵니다. 표시가 이상하면 끄세요.`],
+  ["크레딧 확인", `
+**설정 → POSTECH GenAI 크레딧**에서 이 키의 이번 주 크레딧 사용량·한도·남은 양을 봅니다. **확인**을 눌러도 크레딧은 줄지 않습니다. PO노트 화면 위쪽에도 같은 내용이 나옵니다.
 
-- **기본 (a1/gpt)**: 키만 있으면 바로 쓰며, 모델은 서버가 정합니다.
+Claude Sonnet 5.5 기준으로 1크레딧은 입력 약 250토큰, 출력 약 75토큰이고, 짧은 질문도 호출마다 약 24크레딧이 듭니다. Opus 5.5는 두 배입니다. 에이전트 모드는 단계마다 한 번씩 호출하므로 단계가 많을수록 크레딧을 많이 씁니다.`],
+  ["PO노트: 강의 녹음·필기 노트", `
+왼쪽 위 **PO노트**에서 강의마다 노트를 만듭니다.
 
-- **모델 선택 (Responses API)**: GenAI 콘솔의 \`.../a번호/openai/responses\` 주소를 넣고 GPT-5 계열 모델을 고릅니다.
+1. **새 강의 노트**를 만들고 **강의 자료**(PPT·PDF·Word·한글 등)를 올립니다.
+2. **녹음 시작**을 누르면 마이크 소리를 실시간으로 받아 적습니다(**전사** 탭). 강의 중 떠오른 질문은 **메모** 탭에 적어 둡니다.
+3. 녹음을 멈춘 뒤 **노트 만들기**를 누르면 강의 자료의 순서에 맞춰 전사·메모를 정리한 Markdown 필기 노트(**노트** 탭)를 만듭니다. 노트는 앱 안에서 고칠 수 있습니다.
 
-- **OpenAI 호환 API**: 콘솔의 OpenAI 호환 API 주소(기본 주소 \`.../v1\`도 됨)를 넣고 **모델 목록 불러오기**를 누르면 서버가 제공하는 GPT·Claude·Gemini 모델이 목록에 나옵니다.
+**음성 인식 설정**에서 받아 적는 방식을 고릅니다.
 
-- Responses 또는 OpenAI 호환 API에서는 화면 위쪽 메뉴에서 대화별 모델을 지정합니다.
+- **자동(기본)**: API 키가 있으면 POSTECH GenAI(Gemini 3.8 Flash)로 받아 적고, 실패하면 로컬 AI로 받아 적습니다. 1시간에 약 2,500크레딧이 듭니다.
+- **로컬 AI**: 이 PC에서 받아 적습니다. 크레딧·인터넷이 필요 없고 CPU를 조금만 씁니다. 처음 한 번 모델(한국어 약 76MB)을 내려받습니다.
 
-
-**답변을 받는 대로 표시(스트리밍)**를 켜면 일반 대화의 답변이 글자가 오는 대로 나옵니다. 표시가 이상하면 끄세요. 설정 창 아래쪽에서 이 앱이 보낸 요청의 **모델 API 사용량**을 볼 수 있습니다.`],
-
+녹음 기능은 Windows·macOS 앱에서 쓸 수 있습니다. 휴대폰 앱에서는 노트와 전사를 보고 노트를 만들 수 있습니다.`],
   ["파일 첨부", `
-
 입력창의 **+** 버튼, 파일 끌어다 놓기, 이미지 붙여 넣기(Ctrl+V, 맥은 ⌘+V)로 첨부합니다. 파일은 하나에 20MB, 한 번에 10개까지입니다.
 
-
-
 - PDF·Word·PowerPoint·Excel·한글 문서와 텍스트 파일은 내용을 읽어 질문과 함께 보냅니다.
-
-- 이미지는 Responses 또는 OpenAI 호환 API 방식에서 모델에게 전달됩니다. 기본 a1 방식은 이미지를 전달하지 않습니다.`],
+- 이미지는 OpenAI 호환 또는 Responses API 방식에서 모델에게 전달됩니다. a1 방식은 이미지를 전달하지 않습니다.`],
   ["에이전트 모드", `
-
 작업 폴더를 고르고 에이전트를 켜면 AI가 목표를 이룰 때까지 단계를 반복합니다: 폴더 보기·파일 읽기·검색, 파일 쓰기·수정, 명령 실행, 스킬 불러오기, MCP 도구 실행.
 
-
-
 - 각 단계는 대화에 한 줄로 표시되고, 누르면 파일 내용·변경 diff·명령 출력이 펼쳐집니다.
-
 - **파일 수정과 명령 실행은 실행 전에 승인을 받습니다.** 설정의 **에이전트 권한**에서 자동 허용으로 바꿀 수 있지만, 명령은 현재 사용자 권한으로 실행되므로 주의하세요.
-
 - 단계가 너무 많으면 설정의 **에이전트 최대 단계 수**에서 멈춥니다.
-
 - 작업 폴더가 없거나 에이전트를 끄면 일반 챗봇으로 동작합니다.`],
-
   ["명령어", `
-
 입력창에 \`/\`를 입력하면 목록이 뜹니다.
 
-
-
 | 명령 | 하는 일 |
-
 |---|---|
-
 | \`/init\` | 작업 폴더를 분석해 INIT.md(프로젝트 지침)를 만듭니다 |
-
 | \`/user 요청\` | 대화 내용으로 내 정보(USER.md)를 작성·업데이트합니다 |
-
 | \`/remember 내용\` | 모든 대화에서 기억할 내용을 저장합니다 |
-
 | \`/memory\` | 기억 목록을 보고 지웁니다 |
-
 | \`/스킬이름 요청\` | 그 스킬의 지침대로 요청을 수행합니다 |
-
 | \`/help\` | 간단한 도움말 |`],
-
   ["기억: 메모리·내 정보·다른 대화", `
-
 - **메모리(memory.md)**: "~를 기억해 줘"라고 하거나 \`/remember\`로 저장하면 모든 대화에 전달됩니다. 왼쪽 아래 **메모리**에서 보고 고칩니다.
-
 - **내 정보(USER.md)**: 하는 일, 관심 분야, 원하는 답변 방식 등을 적어 두면 답변이 나에게 맞춰집니다. **내 정보**에서 직접 쓰거나 \`/user\`로 AI에게 맡깁니다. 비밀번호·키 같은 비밀은 적지 마세요.
-
 - **다른 대화 참고**: 새 질문과 관련된 내용이 다른 대화에 있으면 자동으로 찾아 참고합니다(📎 표시). 메모리 창에서 끌 수 있습니다.`],
-
   ["INIT.md와 스킬", `
-
 - **INIT.md**: 작업 폴더 최상위의 INIT.md는 모든 대화에 프로젝트 지침으로 들어갑니다. \`/init\`으로 만들 수 있습니다.
-
 - **스킬**: \`<스킬이름>/SKILL.md\` 형식의 작업 지침입니다. 에이전트가 요청에 맞는 스킬을 스스로 불러오고, \`/스킬이름\`으로 직접 실행할 수도 있습니다. 앱 내장(요약, 코드 검토, 논문 읽기), 사용자 스킬 폴더(**스킬 → 새 스킬 만들기**), 작업 폴더의 \`skills\\\` 순서로 읽고, 이름이 같으면 뒤의 것이 우선합니다.`],
-
   ["MCP 도구", `
-
 왼쪽 아래 **MCP**에서 서버를 켜고 끕니다. 에이전트 모드에서 켜진 서버의 도구를 씁니다.
 
-
-
 - **내장 서버**(설치 필요 없음): word·powerpoint·excel(문서 만들기·고치기), paper(논문 찾기·섹션별 읽기), notion(설정에 Notion 토큰 필요), firecrawl(웹페이지 읽기·웹 검색, 설정에 Firecrawl 키 필요).
-
 - **추천 서버**: playwright(브라우저 자동화). PC에 Node.js가 있어야 합니다.
-
 - **외부 서버**: **MCP → 설정 파일 열기**로 \`mcp.json\`에 Claude Desktop과 같은 형식으로 추가합니다.
 
-
-
 바깥에 영향을 주는 도구는 명령 실행처럼 승인을 받습니다.`],
-
   ["다른 AI 에이전트와 기억 이어 쓰기 (ai-memory)", `
-
 Claude Code·Codex·Cursor·Gemini CLI 같은 코딩 에이전트에서 하던 작업을 POSCHAT에서 이어받고, POSCHAT에서 한 작업을 그 에이전트들이 이어받게 할 수 있습니다.
 
-
-
 1. PC에 [ai-memory](https://github.com/akitaonrails/ai-memory)를 설치하고 \`ai-memory setup\`을 실행합니다. 다른 에이전트들도 이때 함께 연결됩니다.
-
 2. **MCP → 설정 파일 열기**로 \`mcp.json\`에 다음을 추가하고 저장합니다.
 
-
-
 \`\`\`json
-
 { "mcpServers": { "ai-memory": { "command": "ai-memory", "args": ["mcp-bridge", "--no-session-id"] } } }
-
 \`\`\`
-
-
 
 3. 작업 폴더를 고르고 에이전트 모드로 대화합니다.
 
-
-
 그러면 앱이 자동으로 다음을 합니다.
 
-
-
 - **대화 시작**: 그 폴더에 다른 에이전트가 남긴 인계(한 일·남은 질문·다음 할 일)를 받고 최근 기억을 불러옵니다(🧠 표시). 인계는 한 번 받으면 사라집니다.
-
 - **작업 후**: 파일을 고치거나 명령·도구를 실행했다면, 다음 에이전트가 이어받을 인계를 남깁니다(📤 표시).
-
 - **검색**: "전에 이 버그 어떻게 고쳤지?"처럼 물으면 AI가 ai-memory에서 찾아봅니다.
 
-
-
 ChatGPT·claude.ai 같은 웹 채팅 서비스의 기억은 이어받을 수 없습니다.`],
-
   ["데이터와 개인정보", `
-
-대화·설정·메모리·첨부 파일은 이 기기의 데이터 폴더(설정 창 아래쪽 **데이터 폴더 → 열기**)에만 저장됩니다. 질문할 때 대화 내용, 첨부 내용, 메모리, 내 정보, INIT.md가 POSTECH GenAI API로 전달됩니다. API 키는 설정 파일(config.json)에 저장됩니다.`],
-
+대화·설정·메모리·첨부 파일·PO노트는 이 기기의 데이터 폴더(설정 창 아래쪽 **데이터 폴더 → 열기**)에만 저장됩니다. 질문할 때 대화 내용, 첨부 내용, 메모리, 내 정보, INIT.md가 POSTECH GenAI API로 전달됩니다. PO노트는 로컬 AI로 받아 적으면 녹음이 PC 밖으로 나가지 않고, POSTECH 서버로 받아 적으면 말 구간의 소리가 POSTECH GenAI로 전달됩니다. 녹음 소리 자체는 저장하지 않습니다. API 키는 설정 파일(config.json)에 저장됩니다.`],
 ];
 
-
-
 function showGuide() {
-
   const body = h("div", { class: "guide" },
-
     GUIDE.map(([title, text], i) => h("details", { open: i === 0 },
-
       h("summary", {}, title), renderMarkdown(text.trim()))));
-
   modal({ title: "사용법 가이드", body, wide: true, buttons: [{ label: "닫기", class: "primary" }] });
-
 }
-
-
 
 function showHelp() {
   const rows = [
@@ -1315,6 +1297,9 @@ function showHelp() {
     h("p", { style: "margin:0;color:var(--text-2)" },
       "작업 폴더를 고르고 에이전트를 켜면, AI가 파일을 읽고 검색하고 고치고 명령을 실행하면서 목표를 이룰 때까지 단계적으로 일합니다. ",
       "파일 수정과 명령 실행은 설정에 따라 실행 전에 승인을 받습니다."),
+    h("h3", { style: "margin:18px 0 6px;font-size:15px" }, "PO노트"),
+    h("p", { style: "margin:0;color:var(--text-2)" },
+      "왼쪽 위 PO노트에서 강의를 녹음해 실시간으로 받아 적고, 강의 자료(PPT·PDF 등)와 함께 Markdown 필기 노트를 만듭니다."),
     h("h3", { style: "margin:18px 0 6px;font-size:15px" }, "파일 첨부"),
     h("p", { style: "margin:0;color:var(--text-2)" },
       "입력창의 클립 버튼을 누르거나 파일을 끌어다 놓거나 이미지를 붙여 넣으면 첨부됩니다. ",
@@ -1345,6 +1330,9 @@ function applyState(state) {
   S.responsesModels = state.responses_models || [];
   S.modelsSource = state.models_source || "builtin";
   S.memory = state.memory || [];
+  S.defaultChatUrl = state.default_chat_completions_url || "";
+  if (state.credit) S.credit = state.credit;
+  S.poAvailable = !!state.po_available;
   if (state.attach_limits) S.attachLimits = state.attach_limits;
   $("#agent-toggle").checked = !!state.config.agent_mode;
   renderThreadModel();

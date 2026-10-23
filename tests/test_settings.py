@@ -55,9 +55,15 @@ class SettingsTests(unittest.TestCase):
                 loaded = bridge.load_thread(thread["id"])
                 self.assertEqual(loaded["model"], "gemini-3.8-flash")
                 self.assertEqual(loaded["updated"], thread["updated"])
-                changed = bridge.set_thread_model(thread["id"], "claude-sonnet-5.5")
-                self.assertEqual(changed["model"], "claude-sonnet-5.5")
-                self.assertEqual(bridge.load_thread(thread["id"])["model"], "claude-sonnet-5.5")
+                changed = bridge.set_thread_model(thread["id"], "claude-sonnet-5-5")
+                self.assertEqual(changed["model"], "claude-sonnet-5-5")
+                self.assertEqual(bridge.load_thread(thread["id"])["model"], "claude-sonnet-5-5")
+
+                # 1.9 이전에 저장한 잘못된 Claude ID(점)는 게이트웨이의 ID(-)로 바뀐다
+                old = app_main.storage.new_thread()
+                old["model"] = "claude-opus-5.5"
+                app_main.storage.save_thread(old)
+                self.assertEqual(bridge.load_thread(old["id"])["model"], "claude-opus-5-5")
 
                 legacy = app_main.storage.new_thread()
                 legacy_updated = legacy["updated"]
@@ -67,7 +73,7 @@ class SettingsTests(unittest.TestCase):
 
     def test_responses_mode_rejects_models_outside_its_supported_set(self):
         bridge = self.bridge({"api_mode": "responses"})
-        result = bridge.set_thread_model("missing", "claude-sonnet-5.5")
+        result = bridge.set_thread_model("missing", "claude-sonnet-5-5")
         self.assertFalse(result["ok"])
         self.assertIn("지원하지 않는", result["error"])
 
@@ -81,20 +87,39 @@ class SettingsTests(unittest.TestCase):
 
     @patch.object(app_main.storage, "save_config")
     @patch.object(app_main.api, "list_models", return_value=["gpt-6.1-sol", "new-model-x"])
-    def test_server_models_replace_the_builtin_list(self, list_models, _save_config):
+    def test_server_models_replace_the_builtin_list_when_saved(self, list_models, save_config):
         bridge = self.bridge({"api_mode": "chat_completions", "api_key": "saved-key"})
         result = bridge.refresh_models({"chat_completions_url": "https://api.example.edu/v1"})
 
         self.assertTrue(result["ok"])
         list_models.assert_called_once_with("saved-key", "https://api.example.edu/v1/chat/completions")
         self.assertEqual([m["id"] for m in result["models"]], ["gpt-6.1-sol", "new-model-x"])
-        self.assertEqual(bridge._model_ids("chat_completions"), {"gpt-6.1-sol", "new-model-x"})
-        self.assertEqual(bridge._default_model(), "gpt-6.1-sol")
-        self.assertEqual({m for m, _ in bridge._models("responses")}, {m for m, _ in app_main.RESPONSES_MODELS})
+        # 불러오기만 하고 저장하지 않으면(설정 창 취소) 아무것도 바뀌지 않는다
+        save_config.assert_not_called()
+        self.assertNotIn("server_models", bridge._config)
+        self.assertNotIn("chat_completions_url", bridge._config)
 
         bridge.get_state = lambda: {"ok": True}
+        bridge.save_settings({"chat_completions_url": result["chat_completions_url"],
+                              "server_models": [m["id"] for m in result["models"]], "model": "new-model-x"})
+        self.assertEqual(bridge._model_ids("chat_completions"), {"gpt-6.1-sol", "new-model-x"})
+        self.assertEqual(bridge._config["model"], "new-model-x")
+        self.assertEqual({m for m, _ in bridge._models("responses")}, {m for m, _ in app_main.RESPONSES_MODELS})
+
         bridge.save_settings({"chat_completions_url": "https://other.example.edu/v1"})
         self.assertNotIn("server_models", bridge._config)
+
+    @patch.object(app_main.storage, "save_config")
+    def test_old_a1_default_moves_to_the_openai_compatible_api_once(self, save_config):
+        bridge = self.bridge({"api_mode": "a1", "model": "claude-sonnet-5.5"})
+        bridge._migrate_config()
+        self.assertEqual(bridge._config["api_mode"], "chat_completions")
+        self.assertEqual(bridge._config["model"], "claude-sonnet-5-5")
+        self.assertEqual(app_main.ApiSettings.from_config(bridge._config).chat_completions_url,
+                         app_main.api.DEFAULT_CHAT_COMPLETIONS_URL)
+        bridge._config["api_mode"] = "a1"  # 옮긴 뒤 사용자가 다시 a1을 고르면 그대로 둔다
+        bridge._migrate_config()
+        self.assertEqual(bridge._config["api_mode"], "a1")
 
     def test_refresh_models_needs_key_and_https_url(self):
         with patch.dict(app_main.os.environ, {}, clear=True):
