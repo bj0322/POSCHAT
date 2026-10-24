@@ -1154,6 +1154,9 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
             paper=self._paper_for_agent(),
             # 1.15: Code 화면이 열려 있으면 파일 수정은 승인 창 대신 Code 화면의 변경 검토(덩어리별)로
             review=lambda *a: self._code_review_edit(thread_id, alive, workspace, *a),
+            # 1.16 브라우저 에이전트: 진행 상황은 브라우저 막대와 채팅에, 일시정지는 브라우저 막대의 버튼
+            browser_progress=lambda info: self._push({"type": "browser", "kind": "agent", "thread_id": thread_id, **info}),
+            browser_paused=self._browser_pause_event(),
         )
         started, outcome = time.monotonic(), "done"
         try:
@@ -1174,6 +1177,19 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
             if alive():
                 self._add(thread_id, "error", f"{type(e).__name__}: {e}")
         finally:
+            if agent.browser is not None:
+                agent.browser.watch = None
+            if getattr(agent, "_browser_agent", None) is not None:
+                self._push({"type": "browser", "kind": "agent", "status": "finished", "thread_id": thread_id,
+                            "count": agent._browser_agent.actions})
+                self._browser_pause_event().clear()
+            shots = getattr(agent, "screenshots", [])
+            if shots and alive():
+                try:
+                    committed = attachments.commit([x["id"] for x in shots])
+                    self._add(thread_id, "tool", f"📷 브라우저 화면 캡처 {len(committed)}장", detail="", attachments=committed)
+                except (attachments.AttachmentError, ValueError):
+                    pass
             telemetry.record("agent_run", mode="agent" if agent_mode and workspace else "chat",
                              model=agent.api_settings.model, ms=int((time.monotonic() - started) * 1000),
                              outcome=outcome, steps=agent.steps, tools=len(agent.tools_run))
@@ -1223,6 +1239,8 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
 
     def stop(self):
         self._cancel.set()
+        if getattr(self, "_browser_paused", None) is not None:
+            self._browser_paused.clear()  # 일시정지 중이어도 멈춘다
         for entry in list(self._pending.values()):
             entry[1] = "deny"
             entry[0].set()

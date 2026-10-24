@@ -166,6 +166,7 @@ class Browser:
         self.visible = False
         self.state = {"url": "", "title": "", "loading": False, "can_back": False, "can_forward": False}
         self.mode = ""  # native | docked | android
+        self.watch = None  # (url) -> None: 에이전트가 조작 중일 때 주소 변경을 알린다
 
     def _emit(self, **changes):
         self.state.update(changes)
@@ -186,6 +187,12 @@ class Browser:
         changes = {k: v for k, v in (("url", url), ("title", title), ("loading", loading), ("can_back", can_back),
                                      ("can_forward", can_forward)) if v is not None}
         self._emit(**changes)
+        watch = self.watch  # 1.16 브라우저 에이전트: 주소가 바뀌면 요소 ID를 무효로(표시만, 막지 않는다)
+        if watch is not None and url:
+            try:
+                watch(url)
+            except Exception:
+                pass
 
     def blocked(self, url, reason):
         if self.on_event:

@@ -186,6 +186,24 @@ class WKWebViewBackend:
             raise browser_mod.BrowserError(f"웹페이지를 읽지 못했습니다: {box['error']}")
         return str(box.get("result") or "")
 
+    def screenshot(self):
+        """보이는 웹페이지를 PNG로(1.16 브라우저 에이전트). 작업 스레드에서 부른다."""
+        box, done = {}, threading.Event()
+
+        def handler(image, error):
+            try:
+                if image is not None:
+                    rep = AppKit.NSBitmapImageRep.imageRepWithData_(image.TIFFRepresentation())
+                    box["png"] = bytes(rep.representationUsingType_properties_(AppKit.NSBitmapImageFileTypePNG, {}))
+                box["error"] = error
+            finally:
+                done.set()
+
+        self._run(lambda: self.view.takeSnapshotWithConfiguration_completionHandler_(None, handler), wait=False)
+        if not done.wait(READ_TIMEOUT) or not box.get("png"):
+            raise browser_mod.BrowserError("화면을 캡처하지 못했습니다.")
+        return box["png"]
+
     def close(self):
         def go():
             if self.split is not None and self.main_view is not None:

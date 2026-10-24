@@ -672,6 +672,15 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .browser-action { padding: 4px 12px; font-size: 12.5px; }
 .browser-action:disabled { opacity: .45; cursor: default; }
 .browser-status { flex: 1; min-width: 80px; color: var(--text-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+/* 1.16 브라우저 에이전트 진행 표시 */
+.browser-agent { gap: 8px; padding: 4px 8px; margin-top: 2px; border-radius: 8px; background: color-mix(in srgb, #2563eb 10%, var(--bg)); font-size: 12.5px; }
+.browser-agent.paused { background: color-mix(in srgb, #eab308 16%, var(--bg)); }
+.browser-agent.error { background: color-mix(in srgb, var(--danger) 12%, var(--bg)); }
+.browser-agent-dot { width: 8px; height: 8px; border-radius: 50%; background: #2563eb; flex: none; animation: br-pulse 1.2s ease-in-out infinite; }
+.browser-agent.paused .browser-agent-dot { background: #ca8a04; animation: none; }
+.browser-agent-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes br-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .browser-agent-dot { animation: none; } }
 @media (max-width: 720px) {
   .browser-status { display: none; }
   .browser-action { padding: 4px 10px; }

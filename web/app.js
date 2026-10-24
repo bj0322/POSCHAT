@@ -361,7 +361,9 @@ function messageNode(msg) {
     const summary = h("summary", { html: ICONS.chev }, h("span", { class: "t-sum" }, msg.content));
     const d = h("details", {}, summary);
     if (msg.detail) d.append(diffOrPre(msg.detail));
-    return h("div", { class: "msg tool" }, d);
+    // 1.16: 브라우저 에이전트의 화면 캡처처럼 도구가 남긴 파일
+    const files = msg.attachments && msg.attachments.length ? attachmentList(msg.attachments) : null;
+    return h("div", { class: "msg tool" }, d, files);
   }
   if (msg.role === "error") {
     return h("div", { class: "msg error" }, "⚠ " + msg.content);
@@ -864,6 +866,7 @@ const CONFIRM_TEXT = {
   send: ["에이전트가 다른 사람에게 보이는 작업(전송·리뷰 제출)을 하려고 합니다. 받는 사람과 내용을 확인하세요.", ""],
   destructive: ["에이전트가 지우거나 덮어쓰는 작업을 하려고 합니다. 되돌릴 수 없을 수 있습니다.", ""],
   exec: ["에이전트가 코드 또는 원격 명령을 실행하려고 합니다. 실행 대상과 내용을 확인하세요.", ""],
+  browser: ["에이전트가 옆 브라우저에서 다음 동작을 하려고 합니다. 주소와 대상을 확인하세요.", "이번 실행 동안 이런 브라우저 동작 허용"],
 };
 
 function showConfirm(ev) {

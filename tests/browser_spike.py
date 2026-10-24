@@ -61,6 +61,10 @@ const t = setInterval(() => {
 }, 1);
 </script>"""
 PAGE_SLOW = "<!doctype html><title>Slow</title><p>slow page</p>"
+# 1.16 브라우저 에이전트: 네이티브 뷰에서 스냅샷·입력·고르기·폼 제출·캡처
+PAGE_FORM = """<!doctype html><title>Form</title><main><form action="/result" method="get">
+<label for="q">검색어</label><input id="q" name="q"><select name="field"><option value="all">전체</option><option value="title">제목</option></select>
+<button type="submit">검색</button></form></main>"""
 APP_HTML = """<!doctype html><title>app</title><h1>app</h1>
 <script>window.__events = []; window.onBackendEvent = (e) => { window.__events.push(e); };</script>"""
 RESPONSIVE_SECONDS = 5
@@ -93,7 +97,19 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/slow"):
             time.sleep(4)  # 불러오는 중에 닫기
-        pages = {"/two": PAGE_TWO, "/flood": PAGE_FLOOD, "/slow": PAGE_SLOW}
+        if self.path.startswith("/result"):
+            from urllib.parse import parse_qs, urlparse
+
+            q = parse_qs(urlparse(self.path).query)
+            pages_result = f"<!doctype html><title>Result</title><main>RESULT {q.get('q', [''])[0]} {q.get('field', [''])[0]}</main>"
+            body = pages_result.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        pages = {"/two": PAGE_TWO, "/flood": PAGE_FLOOD, "/slow": PAGE_SLOW, "/form": PAGE_FORM}
         body = next((v for k, v in pages.items() if self.path.startswith(k)), PAGE).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -284,6 +300,31 @@ def main():
             step("event flood", flooded, f"events={len(events) - before} state={json.dumps(b.state)}")
             alive("during/after event flood")
             step("event queue drained", pump.flush(15), json.dumps(pump.stats))
+            print("... browser agent (1.16)", flush=True)
+            import browser_agent
+
+            asked = []
+            ag = browser_agent.BrowserAgent(b, lambda kind, title, detail: asked.append(kind) or True)
+            b.watch = ag.on_navigated
+            try:
+                ag.open(f"{url}form")
+                obs = ag.take_snapshot()
+                els = ag.snapshot["elements"].values()
+                q = next(e["id"] for e in els if e.get("text") == "검색어")
+                sel = next(e["id"] for e in els if e["tag"] == "select")
+                btn = next(e["id"] for e in els if e.get("text") == "검색")
+                step("agent snapshot", "검색어" in obs and len(ag.snapshot["elements"]) >= 3, obs[:300])
+                ag.type(q, "native")
+                ag.select(sel, "제목")
+                ag.click(btn)
+                done = wait_for(lambda: "RESULT native title" in str(js_value(b._backend.read("document.body.innerText"))), timeout=15)
+                step("agent type/select/submit", done and "send" in asked, f"asked={asked} state={json.dumps(b.state)}")
+                png = ag.screenshot()
+                step("agent screenshot", png[:4] == b"\x89PNG", f"{len(png)} bytes")
+            except Exception as e:
+                step("agent actions", False, f"{type(e).__name__}: {e}")
+            b.watch = None
+            alive("after browser agent")
             print("... closing while a page is loading", flush=True)
             b.open(f"{url}slow")
             time.sleep(0.5)

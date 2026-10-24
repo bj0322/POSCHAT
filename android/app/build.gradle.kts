@@ -42,7 +42,7 @@ val syncSharedPython by tasks.registering(Sync::class) {
             // 1.15: 화면 이벤트 큐(B1), POSCHAT Code(안드로이드는 열기·편집·저장·묻기만, Git·실행은 막는다)
             "ui_events.py", "code_api.py", "code_workspace.py", "code_diff.py", "code_git.py", "code_runner.py",
             // 1.16: POSCHAT Lab(안드로이드는 기록 보기·가져오기·그래프만, 실행은 막는다), Code 에이전트(PC 전용)
-            "lab_store.py", "lab_results.py", "lab_api.py", "code_agent.py",
+            "lab_store.py", "lab_results.py", "lab_api.py", "code_agent.py", "browser_agent.py",
         )
     }
     into(sharedPythonDir)

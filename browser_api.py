@@ -115,6 +115,20 @@ class BrowserApi:
             res["paper"] = page["paper"]
         return res
 
+    def _browser_pause_event(self):
+        if getattr(self, "_browser_paused", None) is None:
+            import threading
+
+            self._browser_paused = threading.Event()
+        return self._browser_paused
+
+    def browser_agent_pause(self, paused):
+        """브라우저 에이전트 일시정지·계속(1.16). 멈추기는 채팅의 중지(stop)를 쓴다."""
+        ev = self._browser_pause_event()
+        ev.set() if paused else ev.clear()
+        self._push({"type": "browser", "kind": "agent", "status": "paused" if paused else "resumed"})
+        return {"ok": True, "paused": bool(paused)}
+
     # 에이전트가 쓴다(main.Bridge._work가 Agent에 넘긴다)
     def _browser_for_agent(self):
         b = self._browser(create=False)
