@@ -35,6 +35,8 @@ val syncSharedPython by tasks.registering(Sync::class) {
             "plugins.py",
             // 1.13: 브라우저(웹페이지 뷰는 MainActivity가 만든다)
             "browser.py", "browser_api.py",
+            // 1.14: 논문 읽기(PDF.js 화면은 web/vendor/pdfjs)
+            "paper.py", "paper_api.py",
             // 1.10: 에이전트 자동화(안드로이드에서는 쓸 수 없음으로 표시)·관측
             "runner_mcp.py", "telemetry.py", "evals.py",
         )

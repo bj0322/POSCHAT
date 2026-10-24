@@ -402,6 +402,98 @@ class UiSmokeTests(unittest.TestCase):
                 browser.close()
                 self.bridge._browser_obj = None
 
+    def test_paper_pane_renders_pdf_and_attaches_selection_page_and_region(self):
+        import tempfile
+
+        from playwright.sync_api import sync_playwright
+
+        import research_library
+        from test_paper import PAGES, make_pdf
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pdf = os.path.join(tmp, "attention.pdf")
+            with open(pdf, "wb") as f:
+                f.write(make_pdf(PAGES))
+            other = research_library.add({"title": "UI Paper B", "doi": "10.1/uib", "abstract": "Results: 91%."})[0]
+            mine = research_library.add({"title": "UI Paper A", "pdf": pdf})[0]
+            with sync_playwright() as p:
+                browser, page, errors = self.open(p)
+                try:
+                    page.click("#btn-paper")
+                    page.wait_for_selector("#paper-pane:not([hidden])")
+                    self.assertEqual(page.get_attribute("#btn-paper", "aria-pressed"), "true")
+                    self.assertTrue(page.is_visible("#composer-wrap"))  # 채팅은 옆에 그대로
+                    page.wait_for_selector(".paper-lib-row:has-text('UI Paper A')")
+                    # 비교: 두 편을 골라 첨부와 질문을 만든다
+                    page.check(f"input[aria-label='비교에 넣기: UI Paper A']")
+                    page.check(f"input[aria-label='비교에 넣기: UI Paper B']")
+                    page.click("#paper-compare")
+                    page.wait_for_function("document.querySelectorAll('#attach-tray .tray-item.ready').length === 2")
+                    self.assertIn("표로", page.input_value("#input"))
+                    page.evaluate("clearTray(); document.querySelector('#input').value = ''")
+                    # 파일 열기 → PDF.js가 쪽과 글자 층을 그린다
+                    page.set_input_files("#paper-pane input[type=file]", pdf)
+                    page.wait_for_selector(".pdf-page[data-page='1'] canvas")
+                    page.wait_for_selector(".pdf-page[data-page='1'] .textLayer span")
+                    self.assertEqual(page.locator(".pdf-page").count(), 4)
+                    self.assertIn("/ 4", page.inner_text(".paper-pager"))
+                    self.shot(page, "paper-reader")
+                    # 3쪽으로 가서 글자를 드래그한 것처럼 고른 뒤 묻기
+                    page.fill("#paper-page", "3")
+                    page.dispatch_event("#paper-page", "change")
+                    page.wait_for_function("PAPER.page === 3 && document.querySelector('#paper-page').value === '3'")
+                    page.wait_for_timeout(600)  # 부드러운 스크롤이 끝나기를 기다린다
+                    page.wait_for_selector(".pdf-page[data-page='3'] .textLayer span")
+                    page.evaluate("""() => {
+                        const span = document.querySelector(".pdf-page[data-page='3'] .textLayer span");
+                        const r = document.createRange(); r.selectNodeContents(span);
+                        getSelection().removeAllRanges(); getSelection().addRange(r);
+                    }""")
+                    page.click("#paper-ask-selection")
+                    page.wait_for_selector("#attach-tray .tray-item.ready:has-text('선택 -')")
+                    self.assertIn("선택한 부분", page.input_value("#input"))
+                    page.evaluate("document.querySelector('#input').value = ''")
+                    page.click("#paper-ask-page")
+                    page.wait_for_selector("#attach-tray .tray-item.ready:has-text('p3 -')")
+                    # 영역 잘라 묻기: 1쪽 위쪽을 드래그한다
+                    page.evaluate("document.querySelector('#input').value = ''")
+                    page.click("#paper-capture")
+                    self.assertEqual(page.get_attribute("#paper-capture", "aria-pressed"), "true")
+                    page.evaluate("paperGo(1, true)")
+                    page.wait_for_timeout(300)
+                    box = page.locator(".pdf-page[data-page='1']").bounding_box()
+                    page.mouse.move(box["x"] + 20, box["y"] + 20)
+                    page.mouse.down()
+                    page.mouse.move(box["x"] + 260, box["y"] + 120, steps=5)
+                    page.mouse.up()
+                    page.wait_for_selector("#attach-tray .tray-item.ready:has-text('그림 p1')")
+                    self.assertEqual(page.get_attribute("#paper-capture", "aria-pressed"), "false")
+                    self.assertIn("그림", page.input_value("#input"))
+                    self.shot(page, "paper-attached")
+                    # 라이브러리에 저장(연구 라이브러리가 꺼져 있으면 안내)
+                    page.click("#paper-save")
+                    page.wait_for_function("document.querySelector('#toast').textContent.includes('연구 라이브러리')")
+                    # 휴대폰 폭: 논문 화면이 채팅을 덮고, 묻기를 누르면 채팅으로 돌아간다
+                    page.set_viewport_size({"width": 400, "height": 800})
+                    page.wait_for_timeout(300)
+                    self.assertFalse(page.is_visible("#composer-wrap"))
+                    page.evaluate("setCollapsed(true)")  # 창 크기만 바꾼 경우: 휴대폰처럼 서랍을 닫는다
+                    self.shot(page, "paper-phone")
+                    page.click("#paper-ask-page")
+                    page.wait_for_selector("#paper-pane", state="hidden")
+                    self.assertTrue(page.is_visible("#composer-wrap"))
+                    page.set_viewport_size({"width": 1240, "height": 860})
+                    page.evaluate("paperShow()")  # 사이드바가 닫혀 있으므로 직접 다시 연다(같은 논문)
+                    page.wait_for_selector(".pdf-page[data-page='1'] canvas")
+                    page.click("button[aria-label='논문 화면 닫기']")
+                    page.wait_for_selector("#paper-pane", state="hidden")
+                    self.assertEqual(errors, [])
+                finally:
+                    browser.close()
+                    research_library.remove(mine["id"])
+                    research_library.remove(other["id"])
+                    self.bridge._paper_current = None
+
     def test_settings_switch_to_the_personal_claude_api(self):
         from playwright.sync_api import sync_playwright
 

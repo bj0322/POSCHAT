@@ -1,5 +1,7 @@
 # 개발 진행 상황 (POSCHAT 2.0 / v1.10)
 
+> 1.11 이후의 진행과 다음 작업은 [roadmap.md](roadmap.md), 작업 지침은 [CLAUDE.md](../CLAUDE.md)에 있다. 아래는 1.10 당시 기록.
+
 다음 Claude Code 세션이 이어서 작업할 수 있도록 남기는 기록. 브랜치: `ccr-ecc78b3f-abovre` → `claude/bold-ritchie-x45m6j`에 합침(PR #14).
 
 ## 끝난 단계

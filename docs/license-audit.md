@@ -11,7 +11,7 @@
 - **MIT로 배포된 태그**: v1.2.0, v1.3.0, v1.3.1, v1.4.0, v1.5.0, v1.6.0, v1.7.0, v1.7.1, v1.8.0, v1.8.2, v1.9.0, v1.9.1, v1.9.2.
   - 각 태그의 Release에 Windows 설치 파일, macOS DMG, Android APK가 있습니다.
 - **README**: "MIT License" 절이 있었고, 소스 파일에는 저작권·SPDX 머리말이 없었습니다.
-- **제3자 파일**: `web/vendor/`(marked, DOMPurify, KaTeX)와 그 원문(`licenses/`), `THIRD_PARTY_NOTICES.md`.
+- **제3자 파일**: `web/vendor/`(marked, DOMPurify, KaTeX, PDF.js)와 그 원문(`licenses/`), `THIRD_PARTY_NOTICES.md`.
 - **배포**:
   - Windows·macOS: `build_installer.py`(PyInstaller)가 앱에 `LICENSE`·`THIRD_PARTY_NOTICES.md`·`licenses/`를 넣었습니다.
   - Android: `android/app/build.gradle.kts`가 같은 파일을 APK assets에 넣었습니다.
