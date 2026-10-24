@@ -43,11 +43,13 @@ async function adaptiveRefreshModels() {
 function routeBadge(route) {
   if (!route) return null;
   const local = route.provider === "local";
-  const cls = "route-badge " + (route.escalated ? "esc" : local ? "local" : "cloud") + (route.status === "unverified" ? " warn" : "");
+  const cls = "route-badge " + (route.escalated ? "esc" : local ? "local" : route.provider === "light" ? "light" : "cloud") +
+    (route.consulted ? " consult" : "") + (route.status === "unverified" ? " warn" : "");
   const details = h("div", { class: "route-detail", hidden: true });
   const fmtMs = (x) => (x == null ? "-" : x >= 1000 ? `${(x / 1000).toFixed(1)}초` : `${x}ms`);
   const rows = [
-    ["실행", route.escalated ? "로컬 → Cloud" : local ? "로컬(이 PC)" : "Cloud"],
+    ["실행", route.chain && route.chain.length > 1 ? route.chain.map((t) => ({ local: "로컬", light: "경량 Cloud", frontier: "프런티어" }[t] || t)).join(" → ")
+      : route.consulted ? "경량 Cloud ⇄ 프런티어 상담" : route.escalated ? "로컬 → Cloud" : local ? "로컬(이 PC)" : route.provider === "light" ? "경량 Cloud" : "Cloud"],
     ["모델", route.model || "-"],
     ["이유", route.reason || "-"],
     ["작업·난이도", `${route.task_label || route.task || "-"} · ${route.difficulty_label || route.difficulty || "-"}`],
@@ -60,9 +62,14 @@ function routeBadge(route) {
   if (route.gate && route.gate.checks) {
     rows.push(["검증", route.gate.ok ? `통과 (${route.gate.checks.length}개 항목)` : `실패: ${route.gate.detail || ""}`]);
   }
+  if (route.consulted && route.consult) {
+    const c = route.consult;
+    rows.push(["프런티어 상담", `${route.frontier_model || "프런티어"}에 질문 ${c.question_chars}자·발췌 ${c.context_chars}자만 보냄 ` +
+      `(입력 약 ${c.frontier_tokens_est} 토큰, 대화 전체면 약 ${c.full_tokens_est} 토큰 — 추정)`]);
+  }
   if (route.escalated) rows.push(["승격 이유", route.escalation_reason || "-"]);
   if (route.escalation_error) rows.push(["승격 실패", route.escalation_error]);
-  if (route.calls > 1 && route.counts) rows.push(["이번 실행의 모델 호출", `${route.calls}번 (로컬 ${route.counts.local}, Cloud ${route.counts.cloud}, 승격 ${route.counts.escalated})`]);
+  if (route.calls > 1 && route.counts) rows.push(["이번 실행의 모델 호출", `${route.calls}번 (로컬 ${route.counts.local}, 경량 ${route.counts.light || 0}, Cloud ${route.counts.cloud}, 승격 ${route.counts.escalated}, 상담 ${route.counts.consulted || 0})`]);
   details.append(h("table", { class: "route-table" }, rows.map(([k, v]) => h("tr", {}, h("th", {}, k), h("td", {}, String(v))))));
   if (route.provisional) {
     details.append(h("details", { class: "route-provisional" }, h("summary", {}, "검증에 실패한 로컬 임시 답 보기"),
@@ -84,6 +91,9 @@ function streamingRouteNode() {
     return h("div", { class: "route-live esc" }, h("span", {}, `로컬 답이 검증을 통과하지 못해(${live.reason || "검증 실패"}) Cloud로 다시 답하는 중`),
       live.provisional ? h("details", { class: "route-provisional" }, h("summary", {}, "로컬 임시 답(검증 실패)"), h("pre", {}, live.provisional)) : null);
   }
+  if (live.kind === "consulted") {
+    return h("div", { class: "route-live consult" }, "경량 모델이 프런티어에 상담한 뒤 답하는 중");
+  }
   if (live.kind === "provisional" || live.kind === "retry") {
     return h("div", { class: "route-live local" }, live.kind === "retry" ? "로컬 답 형식이 맞지 않아 다시 받는 중" : "로컬 답 · 검증 전");
   }
@@ -96,6 +106,9 @@ function routeEvent(ev) {
   } else if (ev.kind === "escalating") {
     ADAPT.live = { thread_id: ev.thread_id, kind: "escalating", reason: ev.reason,
       provisional: (typeof streaming !== "undefined" && streaming.text) || (ev.route && ev.route.provisional) || "" };
+    if (ev.thread_id === S.currentId && typeof showStreaming === "function") showStreaming("");
+  } else if (ev.kind === "consulted") {
+    ADAPT.live = { thread_id: ev.thread_id, kind: "consulted" };
     if (ev.thread_id === S.currentId && typeof showStreaming === "function") showStreaming("");
   } else if (ev.kind === "verified" || ev.kind === "final" || ev.kind === "unverified") {
     if (ADAPT.live && ADAPT.live.kind !== "escalating") ADAPT.live = null;
@@ -273,6 +286,14 @@ async function showAdaptive() {
   retries.checked = (s.local_retries ?? 1) > 0;
   const manualFallback = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
   manualFallback.checked = !!s.manual_fallback;
+  // 3단계: 경량 Cloud 모델(사용자 → 경량 모델 → 프런티어)
+  const lightModel = h("select", {}, h("option", { value: "" }, "쓰지 않음 (로컬 → 프런티어 2단계)"),
+    (st.cloud_models || []).map((m) => h("option", { value: m.id }, m.label + ((st.light_suggestions || []).includes(m.id) ? " — 경량 추천" : ""))));
+  lightModel.value = st.light_model || "";
+  const consult = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
+  consult.checked = s.consult !== false;
+  const consultMax = h("select", {}, [0, 1, 2].map((n) => h("option", { value: n }, `${n}번`)));
+  consultMax.value = String(s.consult_max ?? 1);
 
   // 비용·지연
   const weeklyCalls = h("input", { type: "number", min: 0, value: s.budget.weekly_calls || 0 });
@@ -318,7 +339,14 @@ async function showAdaptive() {
       h("div", { class: "field" }, h("label", {}, "모델 받기"), h("div", { class: "row" }, pullName, previewBtn), pullBox,
         h("small", {}, "누를 때만 받습니다. 받기 전에 크기·출처·라이선스를 먼저 보여 줍니다. 받은 모델은 Ollama 폴더에 저장됩니다."))),
     section("Cloud와 승격",
-      h("div", { class: "field" }, h("label", {}, "기본 Cloud 모델"), cloudModel),
+      h("div", { class: "field" }, h("label", {}, "프런티어(기본 Cloud) 모델"), cloudModel),
+      h("div", { class: "field" }, h("label", {}, "경량 Cloud 모델 (중간 단계)"), lightModel,
+        h("small", {}, "Haiku·GPT-5 mini처럼 싸고 빠른 모델을 고르면 사용자 → 경량 모델 → 프런티어의 3단계가 됩니다. ",
+          "가벼운 일은 로컬, 보통 일은 경량 모델이 답하고, 어려운 일은 경량 모델이 대화를 이끌며 필요한 부분만 프런티어에 짧게 묻습니다. ",
+          "파일·명령·외부 작업으로 이어지는 에이전트 단계는 언제나 프런티어가 맡습니다.")),
+      check(consult, "경량 모델이 필요할 때 프런티어에 상담 (Economy·Balanced)",
+        "프런티어에는 대화 전체 대신 경량 모델이 고른 짧은 질문과 발췌만 보냅니다(이 대화의 지난 상담 기록과 함께). 상담하면 경량 모델을 한 번 더 부르므로 조금 느려집니다."),
+      h("div", { class: "field" }, h("label", {}, "요청 하나에서 상담 최대 횟수"), consultMax),
       check(escalation, "로컬 답이 검증을 통과하지 못하면 Cloud로 다시 답하기", "Local Only에서는 하지 않습니다. 이미 받은 로컬 답은 접어서 함께 보여 줍니다."),
       h("div", { class: "field" }, h("label", {}, "요청 하나에서 Cloud 승격 최대 횟수"), maxEsc),
       check(retries, "형식 문제(빈 답·JSON 아님)면 같은 로컬 모델로 한 번 더", null),
@@ -350,6 +378,7 @@ async function showAdaptive() {
           budget: { weekly_calls: weeklyCalls.value, weekly_credits: weeklyCredits.value }, max_cost_per_request: perRequest.value,
           latency: latency.value, privacy: { sensitive_local_only: sensitiveLocal.checked, attachments_to_cloud: attachCloud.checked },
           local_only_tools: tools.value, show_badge: badge.checked,
+          light_model: lightModel.value, consult: consult.checked, consult_max: consultMax.value,
         };
         if (values.enabled && values.policy === "local_only" && !values.default_model) {
           return toast("Local Only 정책을 쓰려면 기본 로컬 모델을 고르세요.");

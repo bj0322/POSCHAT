@@ -30,7 +30,8 @@ class AnalyzerTests(unittest.TestCase):
         self.check("이 리뷰가 긍정인지 부정인지 분류해 줘", "classification", "easy")
         self.check("이 공지에서 날짜와 장소만 뽑아 줘", "extraction", "easy")
         self.check("파이썬 함수에서 KeyError가 나는 버그 고쳐 줘", "coding", "hard")
-        self.check("리스트와 튜플의 차이를 코드로 설명해 줘", "coding", "moderate")
+        self.check("리스트와 튜플의 차이를 코드로 설명해 줘", "coding", "easy")  # 고치지 않는 짧은 설명
+        self.check("이 모듈 전체 구조와 각 함수가 서로 어떻게 연결되는지, 예외가 어디서 생겨 어디서 처리되는지, 스레드 사이에 어떤 자료를 주고받는지까지 자세히 코드로 설명해 줘", "coding", "moderate")
         self.check("이 실험 결과로 가설을 검증할 수 있는지 통계적으로 따져 줘", "research", "hard")
         self.check("고마워 오늘도 수고했어", "general_chat", "easy")
 
@@ -39,7 +40,10 @@ class AnalyzerTests(unittest.TestCase):
         self.check("이 페이지 요약해 줘", "browser", "easy", prompt="[현재 요청]\n이 페이지 요약해 줘\n" + page)
         pdf = connectors.wrap_untrusted("본문", "논문 PDF 'Attention' p. 3")
         self.check("3쪽 실험 설정을 설명해 줘", "paper", "hard", prompt="x\n" + pdf)
-        self.check("이 논문 요약해 줘", "paper", "moderate", prompt="x\n" + pdf)
+        self.check("이 논문 요약해 줘", "paper", "easy", prompt="x\n" + pdf)  # 짧은 원문
+        long_pdf = connectors.wrap_untrusted("본문 " * 4000, "논문 PDF 'Attention' pp. 1-15")
+        self.check("이 논문 요약해 줘", "paper", "moderate", prompt="x\n" + long_pdf)
+        self.check("검증 정확도가 가장 높은 epoch은?", "data_lab", "easy", prompt="x\n" + connectors.wrap_untrusted("epoch,val_acc", "Lab 실험 기록 a"))
         lab = connectors.wrap_untrusted("acc,0.9", "Lab 실험 기록 AIMC")
         self.check("두 Run의 정확도 차이를 정리해 줘", "data_lab", prompt="x\n" + lab)
         code = connectors.wrap_untrusted("def f(): pass", "작업 폴더 파일 a.py")

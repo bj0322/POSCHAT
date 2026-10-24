@@ -7,6 +7,9 @@
 .route-badge:hover { background: var(--hover); }
 .route-badge:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .route-badge.local { border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); }
+.route-badge.light { border-color: color-mix(in srgb, #3b82f6 45%, var(--border)); }
+.route-badge.consult { border-style: dashed; }
+.route-live.consult::before { content: "⇄ "; color: #3b82f6; }
 .route-badge.esc { border-color: color-mix(in srgb, #b7791f 55%, var(--border)); }
 .route-badge.warn { border-color: color-mix(in srgb, var(--danger) 55%, var(--border)); color: var(--danger); }
 .route-detail { margin-top: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); max-width: 640px; }

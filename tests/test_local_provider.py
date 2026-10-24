@@ -179,6 +179,29 @@ class ProviderTests(unittest.TestCase):
         self.assertIsNotNone(m["first_ms"])
 
 
+class CheckScriptTests(unittest.TestCase):
+    def test_local_check_script_runs_every_local_step(self):
+        """tools/local_ai_check.py(사용자 PC용 실제 점검)가 끝까지 돌고, Cloud 단계는 통과로 적지 않고 '건너뜀'으로 남기는지."""
+        import contextlib
+        import io
+
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+        import local_ai_check
+
+        fake = FakeOllama()
+        self.addCleanup(fake.close)
+        fake.replies.extend(["속도 측정용 답입니다.", "391", "포항은 바다 도시입니다. 포스텍이 있습니다. 해맞이가 유명합니다.",
+                             {"text": "1\n2\n3\n" * 300, "delay": 0.02}, "약 6000자입니다.",
+                             "회의에서 예산 300만 원을 확정했고 금요일까지 자료를 만들기로 했습니다."])
+        local_ai_check.RESULTS.clear()
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = local_ai_check.main(["--endpoint", fake.url, "--model", "qwen2.5:7b"])
+        status = {step.split()[0]: st for step, st, _ in local_ai_check.RESULTS}
+        self.assertEqual(code, 0, local_ai_check.RESULTS)
+        self.assertEqual([status[str(i)] for i in range(1, 9)], ["PASS"] * 8)
+        self.assertEqual((status["9"], status["10"]), ("SKIP", "SKIP"))
+
+
 class PreviewAndResourceTests(unittest.TestCase):
     def test_pull_preview_reads_size_and_license_from_the_registry(self):
         calls = []

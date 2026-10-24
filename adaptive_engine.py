@@ -17,16 +17,22 @@
 
 기록(telemetry, 내용 없이): routing_decision · local_inference · cloud_inference · quality_check · escalation · routing_failure
 """
+import json
+import re
 import threading
 import time
 
 import adaptive_router as router
+import connectors
 import local_ai
 import quality_gate
 import telemetry
 
 DEFAULTS = {
-    "enabled": False, "policy": "balanced", "escalation": True, "max_escalations": 1, "local_retries": 1,
+    "enabled": False, "policy": "balanced", "escalation": True, "max_escalations": 2, "local_retries": 1,
+    # 3단계(1.17): 경량 Cloud 모델(예: Claude Haiku 5.5·GPT-5 mini). 비우면 쓰지 않는다(로컬 → 프런티어 2단계).
+    # consult: 경량 모델이 필요할 때 프런티어에 짧은 질문만 보내 상담. consult_max: 요청 하나에서 상담 횟수(0~2).
+    "light_model": "", "consult": True, "consult_max": 1,
     "local": {"endpoint": local_ai.DEFAULT_ENDPOINT, "allow_remote": False, "default_model": "", "num_ctx": 8192, "speed": {}},
     "cloud_model": "", "budget": {"weekly_calls": 0, "weekly_credits": 0}, "max_cost_per_request": 0, "latency": "normal",
     "privacy": {"sensitive_local_only": False, "attachments_to_cloud": True}, "local_only_tools": "allow",
@@ -35,6 +41,17 @@ DEFAULTS = {
 MAX_ESCALATIONS = 2          # 요청 하나에서 Cloud 승격 상한(설정이 더 커도)
 RUN_ESCALATION_CAP = 6       # 에이전트 실행 하나(여러 단계)에서 승격 상한: 끝없는 비용을 막는다
 EST_OUTPUT_TOKENS = 600      # Cloud 비용 추정에 쓰는 답 길이(토큰, 어림)
+RUN_CONSULT_CAP = 6         # 실행 하나에서 프런티어 상담 상한
+CONSULT_PURPOSES = ("chat", "po_note", "thread_summary")   # 상담을 쓰는 호출(JSON 단계·메모리 추출은 쓰지 않는다)
+CONSULT_MARK = "<<CONSULT>>"
+CONSULT_RE = re.compile(r"^\s*<<CONSULT>>\s*(\{.*\})\s*$", re.S)
+CONSULT_RULE = (
+    "[상위 모델 상담 — 이 안내는 앱이 붙였습니다]\n"
+    "당신은 빠른 경량 모델입니다. 혼자 정확히 답할 수 있으면 바로 사용자에게 답하세요(이 안내는 말하지 마세요).\n"
+    "깊은 추론·검증·계산이 필요해 확신이 없을 때만, 답 대신 아래 꼴의 한 줄만 쓰세요. 상위(프런티어) 모델이 그 질문에만 답하고, "
+    "그 답을 받아 당신이 사용자에게 최종 답을 씁니다.\n"
+    '<<CONSULT>>{"question": "상위 모델에게 물을 구체적인 질문 하나", "context": "질문에 꼭 필요한 원문·조건만 짧게(대화 전체를 붙이지 마세요)"}')
+MAX_CONSULT_QUESTION, MAX_CONSULT_CONTEXT = 1500, 4000
 RETRY_HINTS = {
     "json": "[형식 안내] 설명 없이 JSON 객체 하나로만 답하세요.",
     "action": '[형식 안내] {"action": ...} 형식의 JSON 객체 하나로만 답하세요. action은 [단계 종류]에 있는 이름만 씁니다.',
@@ -61,6 +78,7 @@ def settings(config):
         out["policy"] = "balanced"
     out["max_escalations"] = max(0, min(MAX_ESCALATIONS, int(out.get("max_escalations") or 0)))
     out["local_retries"] = max(0, min(1, int(out.get("local_retries") or 0)))
+    out["consult_max"] = max(0, min(2, int(out.get("consult_max") or 0)))
     return out
 
 
@@ -198,8 +216,10 @@ class AdaptiveEngine:
     """에이전트 실행 하나 동안 쓴다. ask()는 모델 답(글)을 돌려주고, 고른 경로는 self.routes에 쌓는다."""
 
     def __init__(self, config, runtime, cloud_ask, cloud_model, cloud_available, mode="auto", on_event=None,
-                 cancelled=None, area_hint=""):
-        """cloud_ask(prompt, model, on_delta, images) -> 글(api.ask로 보낸다). mode: "auto" | "local:<모델>"."""
+                 cancelled=None, area_hint="", light_model="", frontier_session=None):
+        """cloud_ask(prompt, model, on_delta, images) -> 글(api.ask로 보낸다). mode: "auto" | "local:<모델>".
+        light_model: 3단계의 경량 Cloud 모델(같은 API 방식에서 고를 수 있는 모델, 없으면 ""). frontier_session: 이 대화의
+        지난 프런티어 상담 기록 [{"q", "a", "at"}](Bridge가 대화에 저장해 두었다가 넘긴다)."""
         self.config = config
         self.s = settings(config)
         self.runtime = runtime
@@ -212,7 +232,10 @@ class AdaptiveEngine:
         self.area_hint = area_hint
         self.routes = []
         self.escalations = 0
+        self.consults = 0
         self._budget = None
+        self.light_model = light_model if (light_model and self.cloud_available and light_model != cloud_model) else ""
+        self.frontier_session = list(frontier_session or [])[-6:]
 
     # ---- 도우미 ----
 
@@ -246,26 +269,35 @@ class AdaptiveEngine:
                          load_ms=res.load_ms, done_reason=res.done_reason)
         return res
 
-    def _cloud(self, prompt, on_delta, images, model=None, escalated=False):
+    def _cloud(self, prompt, on_delta, images, model=None, escalated=False, tier="frontier", purpose=""):
         model = model or self.cloud_model
         start = time.monotonic()
+        tokens = router.estimate_tokens(prompt)
         try:
             text = self.cloud_ask(prompt, model, on_delta, images)
         except Exception as e:
             telemetry.record("cloud_inference", model=model, ms=int((time.monotonic() - start) * 1000), ok=False,
-                             error=type(e).__name__, area=self.area_hint, escalated=escalated)
+                             error=type(e).__name__, area=self.area_hint, escalated=escalated, tier=tier, est_tokens=tokens,
+                             purpose=purpose)
             raise
-        est = cloud_cost(model, router.estimate_tokens(prompt), self._rates())
+        est = cloud_cost(model, tokens, self._rates())
         telemetry.record("cloud_inference", model=model, ms=int((time.monotonic() - start) * 1000), ok=True, error="",
-                         area=self.area_hint, credits_est=est, escalated=escalated)
+                         area=self.area_hint, credits_est=est, escalated=escalated, tier=tier, est_tokens=tokens, purpose=purpose)
         return text
 
-    @staticmethod
-    def _label(provider, task, escalated=False, failed=False):
+    def _name(self, tier):
+        return {"local": "Local", "light": "Light"}.get(tier) or ("Frontier" if self.light_model else "Cloud")
+
+    def _label(self, provider, task, escalated=False, failed=False, chain=None, consulted=False):
         task_label = router.TASK_LABELS.get(task, task)
+        if chain and len(chain) > 1:
+            return " → ".join(self._name(t) for t in chain) + f" · {task_label}" + (" · 검증 실패" if failed else "")
         if escalated:
-            return f"Local → Cloud · {task_label}"
-        return ("Local" if provider == "local" else "Cloud") + f" · {task_label}" + (" · 검증 실패" if failed else "")
+            return f"Local → {self._name('frontier')} · {task_label}"
+        if consulted:
+            return f"Light ⇄ Frontier · {task_label}"
+        tier = "local" if provider == "local" else "light" if provider == "light" else "frontier"
+        return self._name(tier) + f" · {task_label}" + (" · 검증 실패" if failed else "")
 
     # ---- 본체 ----
 
@@ -282,14 +314,15 @@ class AdaptiveEngine:
                                  escalation=bool(self.s.get("manual_fallback")) and self.cloud_available,
                                  fallback_model=self.cloud_model if self.cloud_available else "")
         else:
-            route = self._route(a)
+            route = self._route(a, purpose)
         record.update(provider=route.provider, model=route.model, reason=route.reason, reason_code=route.reason_code,
-                      stage=route.stage, constraints=list(route.constraints))
+                      stage=route.stage, constraints=list(route.constraints), tier=route.tier or "")
         telemetry.record("routing_decision", area=self.area_hint or purpose, purpose=purpose, task=a.task, difficulty=a.difficulty,
                          method=a.method, confidence=a.confidence, provider=route.provider,
                          model=(f"local:{route.model}" if route.provider == "local" else route.model), policy=self.s["policy"],
                          reason=route.reason_code, stage=route.stage, constraints=list(route.constraints),
-                         ms=int((time.monotonic() - started) * 1000), est_tokens=a.est_tokens,
+                         ms=int((time.monotonic() - started) * 1000), est_tokens=a.est_tokens, tier=route.tier or "",
+                         consult=bool(route.consult),
                          cloud_cost_est=cloud_cost(self.cloud_model, a.est_tokens, self._rates()) if self.cloud_model else None)
         if route.provider == "none":
             telemetry.record("routing_failure", kind=route.reason_code, policy=self.s["policy"], purpose=purpose)
@@ -301,7 +334,7 @@ class AdaptiveEngine:
             record.update(api_call=True, est_cost=route.est_cost, label=self._label("cloud", a.task), status="cloud")
             self._emit(kind="route", route=record)
             t0 = time.monotonic()
-            text = self._cloud(prompt, on_delta, images, route.model)
+            text = self._cloud(prompt, on_delta, images, route.model, purpose=purpose)
             record["attempts"].append({"provider": "cloud", "model": route.model, "ok": True, "ms": int((time.monotonic() - t0) * 1000)})
             gate = quality_gate.check(quality_gate.area_for(a.task, purpose), text, self._gate_ctx(prompt, a, purpose))
             telemetry.record("quality_check", provider="cloud", model=route.model, task=a.task, area=quality_gate.area_for(a.task, purpose),
@@ -309,15 +342,21 @@ class AdaptiveEngine:
             record.update(gate=gate.to_dict(), ms=int((time.monotonic() - started) * 1000))
             self.routes.append(record)
             return text
+        if route.provider == "light":
+            record.update(api_call=True, est_cost=route.est_cost, chain=["light"])
+            return self._run_light(prompt, purpose, a, route, record, on_delta, images, started)
         return self._run_local(prompt, purpose, a, route, record, on_delta, images, started)
 
-    def _route(self, a):
+    def _route(self, a, purpose="chat"):
         local, why_not = self.runtime.candidate(self.s["local"].get("default_model")) if local_ai.SUPPORTED else (None, "")
         cloud = None
         if self.cloud_available and self.cloud_model:
             cloud = router.Candidate(provider="cloud", model=self.cloud_model,
                                      cost=cloud_cost(self.cloud_model, a.est_tokens, self._rates()))
         route = router.route(a, self.s["policy"], local, cloud, self.s, router.load_stats(), self._budget_state())
+        light = router.Candidate(provider="cloud", model=self.light_model, cost=cloud_cost(self.light_model, a.est_tokens, self._rates())) \
+            if self.light_model else None
+        route = router.tier(route, a, light, self.s, allow_consult=purpose in CONSULT_PURPOSES and self.consults < RUN_CONSULT_CAP)
         if local is None and why_not and route.provider != "local" and "local_unavailable" not in route.constraints:
             route.constraints.append("local_unavailable")
             if route.provider == "none" or route.reason_code in ("local_unavailable", "local_required_unavailable"):
@@ -376,17 +415,29 @@ class AdaptiveEngine:
         can_escalate = (route.escalation and self.cloud_available and self.cloud_model
                         and self.escalations < RUN_ESCALATION_CAP and self.s["max_escalations"] > 0
                         and not self.cancelled() and not self._budget_state()["exceeded"])
+        if can_escalate and self.light_model and router.light_ok_for(self.s["policy"], a):
+            # 3단계: 로컬이 실패하면 경량 모델로 먼저(그것도 실패하면 _run_light가 프런티어로 올린다)
+            self.escalations += 1
+            telemetry.record("escalation", from_model=f"local:{route.model}", to_model=self.light_model, task=a.task, purpose=purpose,
+                             reason=(gate.failures if gate is not None else [local_error.kind]), policy=self.s["policy"])
+            record.update(escalated=True, provisional=text[:4000], escalation_reason=reason, api_call=True, chain=["local", "light"],
+                          label=self._label("local", a.task, chain=["local", "light"]))
+            self._emit(kind="escalating", route=record, reason=reason, to=self.light_model)
+            light_route = router.Route(provider="light", model=self.light_model, policy=self.s["policy"], tier="light",
+                                       consult=False, escalation=True)
+            return self._run_light(prompt, purpose, a, light_route, record, on_delta, images, started, fallback_text=text)
         if can_escalate:
             self.escalations += 1
             telemetry.record("escalation", from_model=f"local:{route.model}", to_model=self.cloud_model, task=a.task, purpose=purpose,
                              reason=(gate.failures if gate is not None else [local_error.kind]), policy=self.s["policy"])
             provisional = text[:4000]
             record.update(escalated=True, provisional=provisional, escalation_reason=reason, label=self._label("local", a.task, True),
-                          api_call=True, status="escalating", est_cost=cloud_cost(self.cloud_model, a.est_tokens, self._rates()))
+                          api_call=True, status="escalating", est_cost=cloud_cost(self.cloud_model, a.est_tokens, self._rates()),
+                          chain=["local", "frontier"])
             self._emit(kind="escalating", route=record, reason=reason, to=self.cloud_model)
             t0 = time.monotonic()
             try:
-                answer = self._cloud(prompt, on_delta, images, self.cloud_model, escalated=True)
+                answer = self._cloud(prompt, on_delta, images, self.cloud_model, escalated=True, purpose=purpose)
             except Exception as e:
                 record["attempts"].append({"provider": "cloud", "model": self.cloud_model, "ok": False, "error": type(e).__name__,
                                            "ms": int((time.monotonic() - t0) * 1000)})
@@ -418,19 +469,158 @@ class AdaptiveEngine:
         self._emit(kind="unverified", route=record, reason=reason)
         return text
 
+    # ---- 3단계: 경량 Cloud 모델과 프런티어 상담 ----
+
+    def _run_light(self, prompt, purpose, a, route, record, on_delta, images, started, fallback_text=""):
+        """경량 모델이 답한다. 상담을 허용했으면 '<<CONSULT>>' 한 줄로 프런티어에 짧게 물을 수 있다. 검증에 실패하면 프런티어로."""
+        area = quality_gate.area_for(a.task, purpose)
+        chain = record.get("chain") or ["light"]
+        consult_ok = route.consult and self.s["consult_max"] > 0 and purpose in CONSULT_PURPOSES and self.consults < RUN_CONSULT_CAP
+        record.update(label=self._label("light", a.task, chain=chain if len(chain) > 1 else None), status="light")
+        self._emit(kind="route", route=record)
+        attempt = prompt + ("\n\n" + CONSULT_RULE if consult_ok else "")
+
+        def delta(text):  # 상담 요청 줄은 화면에 흘려보내지 않는다
+            head = text.lstrip()
+            if not on_delta or CONSULT_MARK.startswith(head[:len(CONSULT_MARK)]) or head.startswith(CONSULT_MARK):
+                return
+            on_delta(text)
+
+        t0 = time.monotonic()
+        try:
+            text = self._cloud(attempt, delta if on_delta else None, images, self.light_model, tier="light", purpose=purpose)
+        except Exception as e:
+            record["attempts"].append({"provider": "light", "model": self.light_model, "ok": False, "error": type(e).__name__,
+                                       "ms": int((time.monotonic() - t0) * 1000)})
+            return self._light_to_frontier(prompt, purpose, a, record, on_delta, images, started, fallback_text,
+                                           "경량 모델 호출 실패", error=e)
+        record["attempts"].append({"provider": "light", "model": self.light_model, "ok": True, "ms": int((time.monotonic() - t0) * 1000)})
+        if CONSULT_MARK in text:
+            m = CONSULT_RE.match(text)
+            req = None
+            if m and consult_ok:
+                try:
+                    req = json.loads(m.group(1))
+                except ValueError:
+                    req = None
+            question = str((req or {}).get("question") or "").strip() if isinstance(req, dict) else ""
+            if not question:
+                return self._light_to_frontier(prompt, purpose, a, record, on_delta, images, started, fallback_text,
+                                               "상담 요청 형식이 맞지 않음")
+            context = str(req.get("context") or "")
+            try:
+                answer = self._consult(question, context, a, purpose, record)
+            except Exception as e:
+                return self._light_to_frontier(prompt, purpose, a, record, on_delta, images, started, fallback_text,
+                                               "프런티어 상담 실패", error=e)
+            final_prompt = (prompt + "\n\n[상위 모델(프런티어)의 답 — 참고 자료]\n" + answer +
+                            "\n\n[지침] 위 답을 바탕으로 사용자에게 최종 답을 쓰세요. 상위 모델의 결론과 다르게 말하지 말고, "
+                            "상담했다는 말이나 <<CONSULT>>는 쓰지 마세요.")
+            record.update(consulted=True, label=self._label("light", a.task, chain=chain if len(chain) > 1 else None, consulted=True))
+            self._emit(kind="consulted", route=record)
+            t0 = time.monotonic()
+            text = self._cloud(final_prompt, on_delta, images, self.light_model, tier="light", purpose=purpose)
+            record["attempts"].append({"provider": "light", "model": self.light_model, "ok": True, "ms": int((time.monotonic() - t0) * 1000),
+                                       "after_consult": True})
+            if CONSULT_MARK in text:
+                return self._light_to_frontier(prompt, purpose, a, record, on_delta, images, started, fallback_text,
+                                               "상담 뒤에도 답하지 못함")
+        gate = quality_gate.check(area, text, self._gate_ctx(prompt, a, purpose))
+        telemetry.record("quality_check", provider="light", model=self.light_model, task=a.task, area=area, ok=gate.ok,
+                         verifiable=gate.verifiable, failures=gate.failures, purpose=purpose)
+        router.record_outcome(self.light_model, a.task, gate.ok)
+        record["attempts"][-1].update(ok=gate.ok, detail=gate.detail)
+        if gate.ok:
+            record.update(status="verified" if gate.verifiable else "unchecked", gate=gate.to_dict(), model=self.light_model,
+                          provider="light", ms=int((time.monotonic() - started) * 1000))
+            self.routes.append(record)
+            self._emit(kind="final", route=record)
+            return text
+        return self._light_to_frontier(prompt, purpose, a, record, on_delta, images, started, text, gate.detail, gate=gate)
+
+    def _consult(self, question, context, a, purpose, record):
+        """프런티어에 짧은 질문만 보낸다(대화 전체 대신). 이 대화의 지난 상담 기록을 함께 붙여 프런티어가 앞의 결론을 잇게 한다."""
+        self.consults += 1
+        session = "\n".join(f"- 질문: {x.get('q', '')}\n  답: {x.get('a', '')}" for x in self.frontier_session[-6:])
+        fprompt = ("[상담 요청 — 다른 AI 모델(경량 모델)이 사용자 질문에 답하다가 이 부분만 묻습니다]\n"
+                   + (f"[이전 상담 기록(이 대화)]\n{session}\n\n" if session else "")
+                   + "[질문]\n" + question[:MAX_CONSULT_QUESTION]
+                   + ("\n\n" + connectors.wrap_untrusted(context[:MAX_CONSULT_CONTEXT], "상담에 붙인 발췌") if context.strip() else "")
+                   + "\n\n[지침] 이 질문에만 정확하고 간결하게 답하세요. 근거와 불확실한 점을 밝히세요.")
+        t0 = time.monotonic()
+        answer = self._cloud(fprompt, None, None, self.cloud_model, tier="frontier", purpose="consult")
+        tokens = router.estimate_tokens(fprompt)
+        telemetry.record("consult", light_model=self.light_model, frontier_model=self.cloud_model, task=a.task, purpose=purpose,
+                         full_tokens_est=a.est_tokens, consult_tokens_est=tokens, ok=True)
+        self.frontier_session.append({"q": question[:500], "a": answer[:1500], "at": round(time.time())})
+        self.frontier_session = self.frontier_session[-6:]
+        record["attempts"].append({"provider": "frontier", "model": self.cloud_model, "ok": True, "consult": True,
+                                   "ms": int((time.monotonic() - t0) * 1000)})
+        record["consult"] = {"question_chars": len(question), "context_chars": len(context), "frontier_tokens_est": tokens,
+                             "full_tokens_est": a.est_tokens}
+        return answer
+
+    def _light_to_frontier(self, prompt, purpose, a, record, on_delta, images, started, prev_text, reason, gate=None, error=None):
+        """경량 모델 답이 실패·검증 실패: 허용되면 프런티어가 전체를 다시 답한다. 아니면 경량 답을 '검증 실패'로 표시해 돌려준다."""
+        area = quality_gate.area_for(a.task, purpose)
+        chain = (record.get("chain") or ["light"]) + ["frontier"]
+        can = (self.cloud_model and bool(self.s.get("escalation", True)) and self.escalations < RUN_ESCALATION_CAP
+               and len(chain) - 1 <= self.s["max_escalations"] and not self.cancelled() and not self._budget_state()["exceeded"])
+        if not can:
+            if prev_text.strip():
+                record.update(status="unverified", gate=gate.to_dict() if gate else None, provider="light", model=self.light_model,
+                              label=self._label("light", a.task, failed=True, chain=record.get("chain") if len(record.get("chain") or []) > 1 else None),
+                              ms=int((time.monotonic() - started) * 1000), escalation_reason=reason)
+                self.routes.append(record)
+                self._emit(kind="unverified", route=record, reason=reason)
+                return prev_text
+            telemetry.record("routing_failure", kind="light_failed", policy=self.s["policy"], purpose=purpose)
+            record.update(status="failed", ms=int((time.monotonic() - started) * 1000))
+            self.routes.append(record)
+            raise AdaptiveError(f"경량 모델이 답하지 못했고 프런티어로 올릴 수 없습니다({reason}).")
+        self.escalations += 1
+        telemetry.record("escalation", from_model=self.light_model, to_model=self.cloud_model, task=a.task, purpose=purpose,
+                         reason=(gate.failures if gate is not None else [reason[:40]]), policy=self.s["policy"])
+        record.update(escalated=True, escalation_reason=reason, chain=chain, label=self._label("light", a.task, chain=chain),
+                      status="escalating", provisional=(record.get("provisional") or prev_text[:4000]))
+        self._emit(kind="escalating", route=record, reason=reason, to=self.cloud_model)
+        t0 = time.monotonic()
+        try:
+            answer = self._cloud(prompt, on_delta, images, self.cloud_model, escalated=True, purpose=purpose)
+        except Exception as e:
+            record["attempts"].append({"provider": "frontier", "model": self.cloud_model, "ok": False, "error": type(e).__name__,
+                                       "ms": int((time.monotonic() - t0) * 1000)})
+            telemetry.record("routing_failure", kind="escalation_failed", policy=self.s["policy"], purpose=purpose)
+            if prev_text.strip():
+                record.update(status="unverified", escalation_error=str(e)[:200], ms=int((time.monotonic() - started) * 1000))
+                self.routes.append(record)
+                return prev_text
+            raise
+        record["attempts"].append({"provider": "frontier", "model": self.cloud_model, "ok": True, "ms": int((time.monotonic() - t0) * 1000)})
+        cg = quality_gate.check(area, answer, self._gate_ctx(prompt, a, purpose))
+        telemetry.record("quality_check", provider="cloud", model=self.cloud_model, task=a.task, area=area, ok=cg.ok,
+                         verifiable=cg.verifiable, failures=cg.failures, purpose=purpose, escalated=True)
+        record.update(status="escalated", gate=cg.to_dict(), provider="cloud", model=self.cloud_model,
+                      ms=int((time.monotonic() - started) * 1000))
+        self.routes.append(record)
+        self._emit(kind="final", route=record)
+        return answer
+
     def summary(self):
         """대화에 남길 이번 실행의 라우팅 요약(화면의 작은 표시와 펼친 이유). 프롬프트·답 내용은 없다(임시 답 앞부분만)."""
         if not self.routes:
             return None
         main = next((r for r in reversed(self.routes) if r.get("purpose") in ("chat", "agent_final", "po_note")), self.routes[-1])
-        counts = {"local": 0, "cloud": 0, "escalated": 0}
+        counts = {"local": 0, "light": 0, "cloud": 0, "escalated": 0, "consulted": 0}
         for r in self.routes:
             if r.get("escalated"):
                 counts["escalated"] += 1
+            if r.get("consulted"):
+                counts["consulted"] += 1
             if r.get("provider") in counts:
                 counts[r["provider"]] += 1
         keep = ("provider", "model", "label", "reason", "task", "difficulty", "task_label", "difficulty_label", "policy", "status", "ms",
-                "api_call", "est_cost",
+                "api_call", "est_cost", "tier", "chain", "consulted", "consult",
                 "escalated", "escalation_reason", "provisional", "attempts", "gate", "stage", "constraints", "escalation_error")
         return {**{k: main.get(k) for k in keep}, "calls": len(self.routes), "counts": counts}
 
@@ -448,7 +638,7 @@ def summary(days=30, now=None, config=None):
     """Adaptive AI 통계. 측정하지 않은 값은 None으로 둔다(화면은 '-'·'추정 불가'). 크레딧은 근거 있는 모델만 추정한다."""
     events = telemetry.load(days, now)
     decisions = [e for e in events if e.get("type") == "routing_decision"]
-    by_provider = {"local": 0, "cloud": 0, "none": 0}
+    by_provider = {"local": 0, "light": 0, "cloud": 0, "none": 0}
     saved, saved_unknown = 0.0, 0
     for e in decisions:
         by_provider[e.get("provider", "cloud")] = by_provider.get(e.get("provider", "cloud"), 0) + 1
@@ -490,15 +680,31 @@ def summary(days=30, now=None, config=None):
                 "rate": round(sum(1 for c in rows if c.get("ok")) / len(rows), 3) if rows else None}
 
     total = len(decisions)
-    local_done = max(0, by_provider.get("local", 0) - len(esc))
-    cloud_done = by_provider.get("cloud", 0) + len(esc)
+    esc_from_local = [e for e in esc if str(e.get("from_model", "")).startswith("local:")]
+    local_done = max(0, by_provider.get("local", 0) - len(esc_from_local))
+    cloud_done = max(0, total - local_done - by_provider.get("none", 0))
+    # 3단계: 프런티어가 받은 입력 토큰(추정)과 '모든 요청을 프런티어로' 보냈을 때(요청 입력 토큰의 합)를 비교한다.
+    baseline_tokens = sum(int(e.get("est_tokens") or 0) for e in decisions if e.get("provider") != "none")
+    ok_cloud = [e for e in cloud_runs if e.get("ok")]
+    frontier_tokens = sum(int(e.get("est_tokens") or 0) for e in ok_cloud if (e.get("tier") or "frontier") == "frontier")
+    light_tokens = sum(int(e.get("est_tokens") or 0) for e in ok_cloud if e.get("tier") == "light")
+    consults = [e for e in events if e.get("type") == "consult"]
     cloud_credit_rows = [e for e in cloud_runs if e.get("credits_est") is not None and e.get("ok")]
     return {
         "days": days, "requests": total, "local": local_done, "cloud": cloud_done, "routed_local": by_provider.get("local", 0),
-        "blocked": by_provider.get("none", 0),
+        "blocked": by_provider.get("none", 0), "light": by_provider.get("light", 0),
+        "light_ratio": round(by_provider.get("light", 0) / total, 3) if total else None,
+        "consults": len(consults),
+        "consult_tokens_est": sum(int(e.get("consult_tokens_est") or 0) for e in consults),
+        "consult_full_tokens_est": sum(int(e.get("full_tokens_est") or 0) for e in consults),
+        "frontier_tokens_est": frontier_tokens if baseline_tokens else None, "light_tokens_est": light_tokens if baseline_tokens else None,
+        "baseline_tokens_est": baseline_tokens or None,
+        "frontier_token_saving_est": round(1 - frontier_tokens / baseline_tokens, 3) if baseline_tokens else None,
         "local_ratio": round(local_done / total, 3) if total else None,
         "cloud_ratio": round(cloud_done / total, 3) if total else None,
-        "escalations": len(esc), "escalation_ratio": round(len(esc) / by_provider["local"], 3) if by_provider.get("local") else None,
+        "escalations": len(esc),
+        "escalation_ratio": round(len(esc) / (by_provider["local"] + by_provider["light"]), 3)
+        if by_provider.get("local") or by_provider.get("light") else None,
         "latency_local": lat(local_runs), "latency_cloud": lat(cloud_runs),
         "success_local": success("local"), "success_cloud": success("cloud"),
         "credits_per_cloud_request": round(sum(e["credits_est"] for e in cloud_credit_rows) / len(cloud_credit_rows), 1)

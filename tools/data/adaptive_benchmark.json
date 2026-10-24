@@ -1,0 +1,5084 @@
+{
+ "name": "poschat-adaptive-v1",
+ "version": 1,
+ "description": "POSCHAT 1.17 Adaptive AI 벤치마크: 일반·브라우저·논문/연구·코드·Lab·에이전트 요청과 정답·검증 방법·라우팅 정답",
+ "license": "AGPL-3.0-only (이 저장소의 일부, 예문은 직접 작성)",
+ "cases": [
+  {
+   "id": "gen-sum-00",
+   "category": "general",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 '예산 회의' 글을 한 문장으로 요약해 줘.\n\n다음 주 금요일까지 발표 자료를 만들고, 예산은 300만 원으로 확정했다. 담당은 김 연구원이다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "300만",
+     "금요일"
+    ]
+   },
+   "reference": "다음 주 금요일까지 발표 자료를 만들고, 예산은 300만 원으로 확정했다. 담당은 김 연구원이다.",
+   "verify": "핵심 사실 두 가지가 들어 있는지(포함 검사)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-sum-01",
+   "category": "general",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 '세미나 공지' 글을 한 문장으로 요약해 줘.\n\n3월 14일 오후 4시 무은재기념관 101호에서 반도체 소자 세미나가 열린다. 사전 신청은 필요 없다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "3월 14일",
+     "101호"
+    ]
+   },
+   "reference": "3월 14일 오후 4시 무은재기념관 101호에서 반도체 소자 세미나가 열린다. 사전 신청은 필요 없다.",
+   "verify": "핵심 사실 두 가지가 들어 있는지(포함 검사)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-sum-02",
+   "category": "general",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 '동아리 모임' 글을 한 문장으로 요약해 줘.\n\n이번 모임은 토요일 오전 10시 학생회관 앞에서 출발하며 회비는 2만 원이다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "토요일",
+     "2만"
+    ]
+   },
+   "reference": "이번 모임은 토요일 오전 10시 학생회관 앞에서 출발하며 회비는 2만 원이다.",
+   "verify": "핵심 사실 두 가지가 들어 있는지(포함 검사)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-sum-03",
+   "category": "general",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 '실험실 안전' 글을 한 문장으로 요약해 줘.\n\n레이저 실험 전에는 보안경을 반드시 쓰고, 실험 일지에 시작 시각을 적어야 한다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "보안경",
+     "일지"
+    ]
+   },
+   "reference": "레이저 실험 전에는 보안경을 반드시 쓰고, 실험 일지에 시작 시각을 적어야 한다.",
+   "verify": "핵심 사실 두 가지가 들어 있는지(포함 검사)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-sum-04",
+   "category": "general",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 '기숙사 공지' 글을 한 문장으로 요약해 줘.\n\n기숙사 정기 점검은 5월 2일에 있으며 그날 오후 1시부터 3시까지 방을 비워야 한다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "5월 2일",
+     "1시"
+    ]
+   },
+   "reference": "기숙사 정기 점검은 5월 2일에 있으며 그날 오후 1시부터 3시까지 방을 비워야 한다.",
+   "verify": "핵심 사실 두 가지가 들어 있는지(포함 검사)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-sum-05",
+   "category": "general",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 '수강 신청' 글을 한 문장으로 요약해 줘.\n\n수강 정정 기간은 2월 26일부터 3월 4일까지이고, 정정은 하루 세 번까지 가능하다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "2월 26일",
+     "3월 4일"
+    ]
+   },
+   "reference": "수강 정정 기간은 2월 26일부터 3월 4일까지이고, 정정은 하루 세 번까지 가능하다.",
+   "verify": "핵심 사실 두 가지가 들어 있는지(포함 검사)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-sum-06",
+   "category": "general",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 '도서관' 글을 한 문장으로 요약해 줘.\n\n중앙도서관은 시험 기간 동안 24시간 열고, 4층 열람실은 대학원생 전용으로 바뀐다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "24시간",
+     "4층"
+    ]
+   },
+   "reference": "중앙도서관은 시험 기간 동안 24시간 열고, 4층 열람실은 대학원생 전용으로 바뀐다.",
+   "verify": "핵심 사실 두 가지가 들어 있는지(포함 검사)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-sum-07",
+   "category": "general",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 '연구 미팅' 글을 한 문장으로 요약해 줘.\n\n다음 미팅에서는 ADC 해상도 실험 결과를 발표하고, 박사과정 학생이 노이즈 분석을 맡는다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "ADC",
+     "노이즈"
+    ]
+   },
+   "reference": "다음 미팅에서는 ADC 해상도 실험 결과를 발표하고, 박사과정 학생이 노이즈 분석을 맡는다.",
+   "verify": "핵심 사실 두 가지가 들어 있는지(포함 검사)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-sum-08",
+   "category": "general",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 '장학금' 글을 한 문장으로 요약해 줘.\n\n성적 우수 장학금은 직전 학기 평점 3.8 이상이고 18학점 이상 들은 학생에게 준다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "3.8",
+     "18학점"
+    ]
+   },
+   "reference": "성적 우수 장학금은 직전 학기 평점 3.8 이상이고 18학점 이상 들은 학생에게 준다.",
+   "verify": "핵심 사실 두 가지가 들어 있는지(포함 검사)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-sum-09",
+   "category": "general",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 '학회 출장' 글을 한 문장으로 요약해 줘.\n\n학회 출장비는 항공료와 숙박비를 합쳐 150만 원까지 지원하며 영수증을 꼭 내야 한다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "150만",
+     "영수증"
+    ]
+   },
+   "reference": "학회 출장비는 항공료와 숙박비를 합쳐 150만 원까지 지원하며 영수증을 꼭 내야 한다.",
+   "verify": "핵심 사실 두 가지가 들어 있는지(포함 검사)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-tr-00",
+   "category": "general",
+   "task": "translation",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장을 자연스러운 영어로 번역해 줘. 번역문만 써 줘.\n오늘 회의는 3시에 시작합니다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "3"
+    ],
+    "any": [
+     "meeting",
+     "Meeting"
+    ]
+   },
+   "reference": "Today's meeting starts at 3 o'clock.",
+   "verify": "핵심 낱말이 영어로 있는지(any)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-tr-01",
+   "category": "general",
+   "task": "translation",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장을 자연스러운 영어로 번역해 줘. 번역문만 써 줘.\n실험 결과를 다음 주에 공유하겠습니다.",
+   "context": null,
+   "expect": {
+    "contains": [],
+    "any": [
+     "result",
+     "next week",
+     "Result",
+     "Next week"
+    ]
+   },
+   "reference": "I will share the result of the experiment next week.",
+   "verify": "핵심 낱말이 영어로 있는지(any)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-tr-02",
+   "category": "general",
+   "task": "translation",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장을 자연스러운 영어로 번역해 줘. 번역문만 써 줘.\n이 논문은 새로운 학습 방법을 제안한다.",
+   "context": null,
+   "expect": {
+    "contains": [],
+    "any": [
+     "paper",
+     "propos",
+     "Paper",
+     "Propos"
+    ]
+   },
+   "reference": "This paper proposes a new learning method.",
+   "verify": "핵심 낱말이 영어로 있는지(any)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-tr-03",
+   "category": "general",
+   "task": "translation",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장을 자연스러운 영어로 번역해 줘. 번역문만 써 줘.\n배터리가 거의 다 떨어졌어요.",
+   "context": null,
+   "expect": {
+    "contains": [],
+    "any": [
+     "battery",
+     "Battery"
+    ]
+   },
+   "reference": "My battery is almost dead.",
+   "verify": "핵심 낱말이 영어로 있는지(any)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-tr-04",
+   "category": "general",
+   "task": "translation",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장을 자연스러운 영어로 번역해 줘. 번역문만 써 줘.\n도서관은 밤 11시에 닫습니다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "11"
+    ],
+    "any": [
+     "library",
+     "Library"
+    ]
+   },
+   "reference": "The library closes at 11 p.m.",
+   "verify": "핵심 낱말이 영어로 있는지(any)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-tr-05",
+   "category": "general",
+   "task": "translation",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장을 자연스러운 영어로 번역해 줘. 번역문만 써 줘.\n시험 범위는 5장부터 8장까지입니다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "5",
+     "8"
+    ],
+    "any": [
+     "chapter",
+     "Chapter"
+    ]
+   },
+   "reference": "The exam covers chapter 5 through chapter 8.",
+   "verify": "핵심 낱말이 영어로 있는지(any)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-tr-06",
+   "category": "general",
+   "task": "translation",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장을 자연스러운 영어로 번역해 줘. 번역문만 써 줘.\n데이터를 백업해 두세요.",
+   "context": null,
+   "expect": {
+    "contains": [],
+    "any": [
+     "back",
+     "Back"
+    ]
+   },
+   "reference": "Please back up the data.",
+   "verify": "핵심 낱말이 영어로 있는지(any)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-tr-07",
+   "category": "general",
+   "task": "translation",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장을 자연스러운 영어로 번역해 줘. 번역문만 써 줘.\n교수님께 메일을 보냈습니다.",
+   "context": null,
+   "expect": {
+    "contains": [],
+    "any": [
+     "professor",
+     "email",
+     "Professor",
+     "Email"
+    ]
+   },
+   "reference": "I sent an email to the professor.",
+   "verify": "핵심 낱말이 영어로 있는지(any)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-tr-08",
+   "category": "general",
+   "task": "translation",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장을 자연스러운 영어로 번역해 줘. 번역문만 써 줘.\n이 모델은 정확도가 높지만 느립니다.",
+   "context": null,
+   "expect": {
+    "contains": [],
+    "any": [
+     "accura",
+     "slow",
+     "Accura",
+     "Slow"
+    ]
+   },
+   "reference": "This model has high accuracy but it is slow.",
+   "verify": "핵심 낱말이 영어로 있는지(any)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-tr-09",
+   "category": "general",
+   "task": "translation",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장을 자연스러운 영어로 번역해 줘. 번역문만 써 줘.\n내일 비가 올 것 같아요.",
+   "context": null,
+   "expect": {
+    "contains": [],
+    "any": [
+     "rain",
+     "tomorrow",
+     "Rain",
+     "Tomorrow"
+    ]
+   },
+   "reference": "I think it will rain tomorrow.",
+   "verify": "핵심 낱말이 영어로 있는지(any)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-cls-00",
+   "category": "general",
+   "task": "classification",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장의 감정을 JSON 객체 하나로만 답해 줘. 형식: {\"label\": \"긍정|부정|중립\"}\n문장: 배송이 빠르고 품질도 기대 이상이에요.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "label"
+    ],
+    "contains": [
+     "긍정"
+    ]
+   },
+   "reference": "{\"label\": \"긍정\"}",
+   "verify": "JSON 형식과 정답 라벨(포함 검사)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-cls-01",
+   "category": "general",
+   "task": "classification",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장의 감정을 JSON 객체 하나로만 답해 줘. 형식: {\"label\": \"긍정|부정|중립\"}\n문장: 두 번 썼는데 바로 고장 났습니다.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "label"
+    ],
+    "contains": [
+     "부정"
+    ]
+   },
+   "reference": "{\"label\": \"부정\"}",
+   "verify": "JSON 형식과 정답 라벨(포함 검사)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-cls-02",
+   "category": "general",
+   "task": "classification",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장의 감정을 JSON 객체 하나로만 답해 줘. 형식: {\"label\": \"긍정|부정|중립\"}\n문장: 그냥 무난합니다. 특별한 건 없어요.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "label"
+    ],
+    "contains": [
+     "중립"
+    ]
+   },
+   "reference": "{\"label\": \"중립\"}",
+   "verify": "JSON 형식과 정답 라벨(포함 검사)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-cls-03",
+   "category": "general",
+   "task": "classification",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장의 감정을 JSON 객체 하나로만 답해 줘. 형식: {\"label\": \"긍정|부정|중립\"}\n문장: 강의가 정말 알차고 재미있었어요!",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "label"
+    ],
+    "contains": [
+     "긍정"
+    ]
+   },
+   "reference": "{\"label\": \"긍정\"}",
+   "verify": "JSON 형식과 정답 라벨(포함 검사)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-cls-04",
+   "category": "general",
+   "task": "classification",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장의 감정을 JSON 객체 하나로만 답해 줘. 형식: {\"label\": \"긍정|부정|중립\"}\n문장: 설명서가 엉망이라 하나도 못 알아듣겠네요.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "label"
+    ],
+    "contains": [
+     "부정"
+    ]
+   },
+   "reference": "{\"label\": \"부정\"}",
+   "verify": "JSON 형식과 정답 라벨(포함 검사)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-cls-05",
+   "category": "general",
+   "task": "classification",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장의 감정을 JSON 객체 하나로만 답해 줘. 형식: {\"label\": \"긍정|부정|중립\"}\n문장: 가격 대비 괜찮은 편이에요.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "label"
+    ],
+    "contains": [
+     "긍정"
+    ]
+   },
+   "reference": "{\"label\": \"긍정\"}",
+   "verify": "JSON 형식과 정답 라벨(포함 검사)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-cls-06",
+   "category": "general",
+   "task": "classification",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장의 감정을 JSON 객체 하나로만 답해 줘. 형식: {\"label\": \"긍정|부정|중립\"}\n문장: 다시는 이 식당에 안 갑니다.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "label"
+    ],
+    "contains": [
+     "부정"
+    ]
+   },
+   "reference": "{\"label\": \"부정\"}",
+   "verify": "JSON 형식과 정답 라벨(포함 검사)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-cls-07",
+   "category": "general",
+   "task": "classification",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장의 감정을 JSON 객체 하나로만 답해 줘. 형식: {\"label\": \"긍정|부정|중립\"}\n문장: 평범한 하루였다.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "label"
+    ],
+    "contains": [
+     "중립"
+    ]
+   },
+   "reference": "{\"label\": \"중립\"}",
+   "verify": "JSON 형식과 정답 라벨(포함 검사)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-cls-08",
+   "category": "general",
+   "task": "classification",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장의 감정을 JSON 객체 하나로만 답해 줘. 형식: {\"label\": \"긍정|부정|중립\"}\n문장: 발표가 생각보다 잘 끝나서 기분이 좋다.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "label"
+    ],
+    "contains": [
+     "긍정"
+    ]
+   },
+   "reference": "{\"label\": \"긍정\"}",
+   "verify": "JSON 형식과 정답 라벨(포함 검사)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-cls-09",
+   "category": "general",
+   "task": "classification",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 문장의 감정을 JSON 객체 하나로만 답해 줘. 형식: {\"label\": \"긍정|부정|중립\"}\n문장: 서버가 또 멈춰서 실험을 다시 해야 한다.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "label"
+    ],
+    "contains": [
+     "부정"
+    ]
+   },
+   "reference": "{\"label\": \"부정\"}",
+   "verify": "JSON 형식과 정답 라벨(포함 검사)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-ext-00",
+   "category": "general",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 글에서 날짜와 장소만 뽑아 줘.\n김민수(kim.ms@example.org)가 4월 3일 오후 2시에 연구실 B204에서 면담을 요청했다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "4월 3일",
+     "B204"
+    ]
+   },
+   "reference": "4월 3일 B204",
+   "verify": "뽑은 값이 원문과 같은지(포함 검사)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-ext-01",
+   "category": "general",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 글에서 주문 번호와 총액만 뽑아 줘.\n주문 번호 A-1029, 수량 3개, 총액 45,000원, 배송지는 포항시 남구.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "A-1029",
+     "45,000"
+    ]
+   },
+   "reference": "A-1029 45,000",
+   "verify": "뽑은 값이 원문과 같은지(포함 검사)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-ext-02",
+   "category": "general",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 글에서 마감일과 발표일만 뽑아 줘.\nICML 2026 마감은 1월 30일, 결과 발표는 5월 8일, 학회는 7월 서울에서 열린다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "1월 30일",
+     "5월 8일"
+    ]
+   },
+   "reference": "1월 30일 5월 8일",
+   "verify": "뽑은 값이 원문과 같은지(포함 검사)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-ext-03",
+   "category": "general",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 글에서 전압과 전류만 뽑아 줘.\n측정 결과: 전압 3.3V, 전류 120mA, 온도 41도.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "3.3",
+     "120"
+    ]
+   },
+   "reference": "3.3 120",
+   "verify": "뽑은 값이 원문과 같은지(포함 검사)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-ext-04",
+   "category": "general",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 글에서 발표자만 뽑아 줘.\n참가자는 이지은, 박준호, 최서연 세 명이며 박준호가 발표를 맡는다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "박준호"
+    ]
+   },
+   "reference": "박준호",
+   "verify": "뽑은 값이 원문과 같은지(포함 검사)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-ext-05",
+   "category": "general",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 글에서 마지막 차 시각만 뽑아 줘.\n버스는 07:40, 08:10, 08:40에 출발하고 마지막 차는 22:30이다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "22:30"
+    ]
+   },
+   "reference": "22:30",
+   "verify": "뽑은 값이 원문과 같은지(포함 검사)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-ext-06",
+   "category": "general",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 글에서 조교 이름과 상담 요일만 뽑아 줘.\n이번 학기 조교는 정하늘(대학원 2년차)이고 상담 시간은 화요일 3시다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "정하늘",
+     "화요일"
+    ]
+   },
+   "reference": "정하늘 화요일",
+   "verify": "뽑은 값이 원문과 같은지(포함 검사)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-ext-07",
+   "category": "general",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 글에서 위원장만 뽑아 줘.\n논문 심사위원은 세 명이며, 위원장은 한도윤 교수, 외부 위원은 KAIST 소속이다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "한도윤"
+    ]
+   },
+   "reference": "한도윤",
+   "verify": "뽑은 값이 원문과 같은지(포함 검사)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-ext-08",
+   "category": "general",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 글에서 가장 큰 모델만 뽑아 줘.\n모델 A는 파라미터 7B, 모델 B는 13B, 모델 C는 70B이다.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "70B"
+    ]
+   },
+   "reference": "70B",
+   "verify": "뽑은 값이 원문과 같은지(포함 검사)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-ext-09",
+   "category": "general",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "다음 글에서 날짜와 시각만 뽑아 줘.\n예약: 3명, 6월 12일 저녁 7시, 창가 자리 요청.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "6월 12일",
+     "7시"
+    ]
+   },
+   "reference": "6월 12일 7시",
+   "verify": "뽑은 값이 원문과 같은지(포함 검사)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-chat-00",
+   "category": "general",
+   "task": "general_chat",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "POSTECH의 정식 한국어 이름을 한 줄로 알려 줘.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "포항공과대학교"
+    ]
+   },
+   "reference": "포항공과대학교",
+   "verify": "정답 글자·정규식",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-chat-01",
+   "category": "general",
+   "task": "general_chat",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "17 × 23은 얼마야? 숫자만 답해 줘.",
+   "context": null,
+   "expect": {
+    "regex": "^\\D*391\\D*$",
+    "max_chars": 20
+   },
+   "reference": "391",
+   "verify": "정답 글자·정규식",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-chat-02",
+   "category": "general",
+   "task": "general_chat",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "물의 화학식을 알려 줘.",
+   "context": null,
+   "expect": {
+    "any": [
+     "H2O",
+     "H₂O"
+    ]
+   },
+   "reference": "H2O",
+   "verify": "정답 글자·정규식",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-chat-03",
+   "category": "general",
+   "task": "general_chat",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "한 주는 며칠이야? 숫자로만.",
+   "context": null,
+   "expect": {
+    "regex": "7",
+    "max_chars": 20
+   },
+   "reference": "7",
+   "verify": "정답 글자·정규식",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-chat-04",
+   "category": "general",
+   "task": "general_chat",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "'인공지능'을 영어로 한두 단어로만.",
+   "context": null,
+   "expect": {
+    "any": [
+     "Artificial Intelligence",
+     "artificial intelligence",
+     "AI"
+    ],
+    "max_chars": 40
+   },
+   "reference": "Artificial Intelligence",
+   "verify": "정답 글자·정규식",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-chat-05",
+   "category": "general",
+   "task": "general_chat",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "1부터 10까지 더하면? 숫자만.",
+   "context": null,
+   "expect": {
+    "regex": "^\\D*55\\D*$",
+    "max_chars": 20
+   },
+   "reference": "55",
+   "verify": "정답 글자·정규식",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-chat-06",
+   "category": "general",
+   "task": "general_chat",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "빛의 삼원색을 알려 줘.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "빨",
+     "초",
+     "파"
+    ]
+   },
+   "reference": "빨강, 초록, 파랑",
+   "verify": "정답 글자·정규식",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-chat-07",
+   "category": "general",
+   "task": "general_chat",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "대한민국의 수도는?",
+   "context": null,
+   "expect": {
+    "contains": [
+     "서울"
+    ]
+   },
+   "reference": "서울",
+   "verify": "정답 글자·정규식",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "gen-chat-08",
+   "category": "general",
+   "task": "general_chat",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "2의 10제곱은? 숫자만.",
+   "context": null,
+   "expect": {
+    "regex": "1024|1,024",
+    "max_chars": 20
+   },
+   "reference": "1024",
+   "verify": "정답 글자·정규식",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "gen-chat-09",
+   "category": "general",
+   "task": "general_chat",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "고마워! 오늘도 수고했어.",
+   "context": null,
+   "expect": {
+    "not_contains": [
+     "```"
+    ]
+   },
+   "reference": "천만에요. 오늘도 수고 많으셨어요!",
+   "verify": "정답 글자·정규식",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "web-00",
+   "category": "browser",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "이 페이지의 핵심을 한 문장으로 요약해 줘.",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://lab.example.ac.kr/news/42",
+    "text": "주소: https://lab.example.ac.kr/news/42\nAIMC 연구실은 2026년 10월 아날로그 인메모리 컴퓨팅 칩을 발표했다. 칩은 8비트 ADC를 쓰며 전력 효율은 25 TOPS/W이다. 자세한 내용은 https://lab.example.ac.kr/paper 에 있다."
+   },
+   "expect": {
+    "contains": [
+     "칩"
+    ]
+   },
+   "reference": "AIMC 연구실이 8비트 ADC를 쓴 25 TOPS/W 칩을 발표했다.",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "web-01",
+   "category": "browser",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "이 칩의 전력 효율은 얼마라고 적혀 있어?",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://lab.example.ac.kr/news/42",
+    "text": "주소: https://lab.example.ac.kr/news/42\nAIMC 연구실은 2026년 10월 아날로그 인메모리 컴퓨팅 칩을 발표했다. 칩은 8비트 ADC를 쓰며 전력 효율은 25 TOPS/W이다. 자세한 내용은 https://lab.example.ac.kr/paper 에 있다."
+   },
+   "expect": {
+    "contains": [
+     "25"
+    ]
+   },
+   "reference": "25 TOPS/W",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "web-02",
+   "category": "browser",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "ADC 비트 수를 알려 줘.",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://lab.example.ac.kr/news/42",
+    "text": "주소: https://lab.example.ac.kr/news/42\nAIMC 연구실은 2026년 10월 아날로그 인메모리 컴퓨팅 칩을 발표했다. 칩은 8비트 ADC를 쓰며 전력 효율은 25 TOPS/W이다. 자세한 내용은 https://lab.example.ac.kr/paper 에 있다."
+   },
+   "expect": {
+    "contains": [
+     "8"
+    ]
+   },
+   "reference": "8비트",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "web-03",
+   "category": "browser",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 발표가 업계 경쟁 구도에 어떤 영향을 줄지 근거를 들어 비판적으로 분석해 줘.",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://lab.example.ac.kr/news/42",
+    "text": "주소: https://lab.example.ac.kr/news/42\nAIMC 연구실은 2026년 10월 아날로그 인메모리 컴퓨팅 칩을 발표했다. 칩은 8비트 ADC를 쓰며 전력 효율은 25 TOPS/W이다. 자세한 내용은 https://lab.example.ac.kr/paper 에 있다."
+   },
+   "expect": {
+    "contains": [
+     "25"
+    ]
+   },
+   "reference": "25 TOPS/W는 ...",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "web-04",
+   "category": "browser",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "기사 요점만 알려 줘.",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://news.example.com/campus/123",
+    "text": "주소: https://news.example.com/campus/123\n포항공대 총학생회는 11월 3일부터 7일까지 축제를 연다고 밝혔다. 올해는 친환경 컵을 쓰고, 공연은 대운동장에서 열린다."
+   },
+   "expect": {
+    "contains": [
+     "11월"
+    ]
+   },
+   "reference": "11월 3일부터 7일까지 축제",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "web-05",
+   "category": "browser",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "공연 장소는 어디야?",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://news.example.com/campus/123",
+    "text": "주소: https://news.example.com/campus/123\n포항공대 총학생회는 11월 3일부터 7일까지 축제를 연다고 밝혔다. 올해는 친환경 컵을 쓰고, 공연은 대운동장에서 열린다."
+   },
+   "expect": {
+    "contains": [
+     "대운동장"
+    ]
+   },
+   "reference": "대운동장",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "web-06",
+   "category": "browser",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "축제 기간은?",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://news.example.com/campus/123",
+    "text": "주소: https://news.example.com/campus/123\n포항공대 총학생회는 11월 3일부터 7일까지 축제를 연다고 밝혔다. 올해는 친환경 컵을 쓰고, 공연은 대운동장에서 열린다."
+   },
+   "expect": {
+    "contains": [
+     "3일",
+     "7일"
+    ]
+   },
+   "reference": "11월 3일부터 7일까지",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "web-07",
+   "category": "browser",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "설치 단계를 순서대로 정리해 줘.",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://docs.example.org/install",
+    "text": "주소: https://docs.example.org/install\n설치 방법: 1) 파이썬 3.11을 설치한다. 2) pip install poschat-tools 를 실행한다. 3) 설정 파일 config.toml에 키를 넣는다. 윈도우에서는 관리자 권한이 필요 없다."
+   },
+   "expect": {
+    "contains": [
+     "3.11",
+     "config.toml"
+    ]
+   },
+   "reference": "1) 파이썬 3.11 2) pip 설치 3) config.toml",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "web-08",
+   "category": "browser",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "어떤 파이썬 버전이 필요해?",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://docs.example.org/install",
+    "text": "주소: https://docs.example.org/install\n설치 방법: 1) 파이썬 3.11을 설치한다. 2) pip install poschat-tools 를 실행한다. 3) 설정 파일 config.toml에 키를 넣는다. 윈도우에서는 관리자 권한이 필요 없다."
+   },
+   "expect": {
+    "contains": [
+     "3.11"
+    ]
+   },
+   "reference": "3.11",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "web-09",
+   "category": "browser",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "윈도우에서 관리자 권한이 필요해?",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://docs.example.org/install",
+    "text": "주소: https://docs.example.org/install\n설치 방법: 1) 파이썬 3.11을 설치한다. 2) pip install poschat-tools 를 실행한다. 3) 설정 파일 config.toml에 키를 넣는다. 윈도우에서는 관리자 권한이 필요 없다."
+   },
+   "expect": {
+    "any": [
+     "필요 없",
+     "필요하지 않"
+    ]
+   },
+   "reference": "필요 없다",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "web-10",
+   "category": "browser",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "이 상품의 가격과 평점을 알려 줘.",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://shop.example.com/item/77",
+    "text": "주소: https://shop.example.com/item/77\n무선 키보드 K7. 가격 59,000원. 배터리 6개월. 블루투스 5.3. 한글 각인. 리뷰 평점 4.6/5 (1,203개)."
+   },
+   "expect": {
+    "contains": [
+     "59,000",
+     "4.6"
+    ]
+   },
+   "reference": "59,000원, 4.6점",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "web-11",
+   "category": "browser",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "배터리는 얼마나 가?",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://shop.example.com/item/77",
+    "text": "주소: https://shop.example.com/item/77\n무선 키보드 K7. 가격 59,000원. 배터리 6개월. 블루투스 5.3. 한글 각인. 리뷰 평점 4.6/5 (1,203개)."
+   },
+   "expect": {
+    "contains": [
+     "6개월"
+    ]
+   },
+   "reference": "6개월",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "web-12",
+   "category": "browser",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "상품 정보를 한 줄로 요약해 줘.",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://shop.example.com/item/77",
+    "text": "주소: https://shop.example.com/item/77\n무선 키보드 K7. 가격 59,000원. 배터리 6개월. 블루투스 5.3. 한글 각인. 리뷰 평점 4.6/5 (1,203개)."
+   },
+   "expect": {
+    "contains": [
+     "K7"
+    ]
+   },
+   "reference": "무선 키보드 K7, 59,000원",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "web-13",
+   "category": "browser",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "이 문서를 세 줄로 요약해 줘.",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://wiki.example.org/transformer",
+    "text": "주소: https://wiki.example.org/transformer\n트랜스포머는 2017년에 소개된 모델 구조로, 순환 구조 없이 어텐션만으로 문장을 처리한다. 인코더와 디코더로 이루어지며 병렬 학습이 쉽다."
+   },
+   "expect": {
+    "contains": [
+     "2017",
+     "어텐션"
+    ]
+   },
+   "reference": "2017년, 어텐션만으로",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "web-14",
+   "category": "browser",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "트랜스포머가 소개된 해는?",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://wiki.example.org/transformer",
+    "text": "주소: https://wiki.example.org/transformer\n트랜스포머는 2017년에 소개된 모델 구조로, 순환 구조 없이 어텐션만으로 문장을 처리한다. 인코더와 디코더로 이루어지며 병렬 학습이 쉽다."
+   },
+   "expect": {
+    "contains": [
+     "2017"
+    ]
+   },
+   "reference": "2017년",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "web-15",
+   "category": "browser",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 설명에서 빠진 한계점과, 순환 신경망과의 비교 실험을 어떻게 설계할지 제안해 줘.",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://wiki.example.org/transformer",
+    "text": "주소: https://wiki.example.org/transformer\n트랜스포머는 2017년에 소개된 모델 구조로, 순환 구조 없이 어텐션만으로 문장을 처리한다. 인코더와 디코더로 이루어지며 병렬 학습이 쉽다."
+   },
+   "expect": {
+    "contains": [
+     "어텐션"
+    ]
+   },
+   "reference": "...",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "web-16",
+   "category": "browser",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "뉴로모픽 칩 세미나는 언제야?",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://seminar.example.ac.kr/2026",
+    "text": "주소: https://seminar.example.ac.kr/2026\n세미나 일정: 10/28 저전력 회로(김교수), 11/4 뉴로모픽 칩(이교수), 11/11 양자 소자(박교수). 장소는 모두 공학1동 112호."
+   },
+   "expect": {
+    "contains": [
+     "11/4"
+    ]
+   },
+   "reference": "11/4",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "web-17",
+   "category": "browser",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "세미나 장소는?",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://seminar.example.ac.kr/2026",
+    "text": "주소: https://seminar.example.ac.kr/2026\n세미나 일정: 10/28 저전력 회로(김교수), 11/4 뉴로모픽 칩(이교수), 11/11 양자 소자(박교수). 장소는 모두 공학1동 112호."
+   },
+   "expect": {
+    "contains": [
+     "112"
+    ]
+   },
+   "reference": "공학1동 112호",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "web-18",
+   "category": "browser",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "일정을 표로 정리해 줘.",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://seminar.example.ac.kr/2026",
+    "text": "주소: https://seminar.example.ac.kr/2026\n세미나 일정: 10/28 저전력 회로(김교수), 11/4 뉴로모픽 칩(이교수), 11/11 양자 소자(박교수). 장소는 모두 공학1동 112호."
+   },
+   "expect": {
+    "contains": [
+     "10/28",
+     "11/11"
+    ]
+   },
+   "reference": "|날짜|주제|...",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "web-19",
+   "category": "browser",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "바뀌는 금액을 알려 줘.",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://policy.example.go.kr/notice",
+    "text": "주소: https://policy.example.go.kr/notice\n2027년부터 대학원생 연구장려금은 월 80만 원에서 100만 원으로 오른다. 대상은 전일제 학생이며 신청은 학기 시작 2주 전까지다."
+   },
+   "expect": {
+    "contains": [
+     "80만",
+     "100만"
+    ]
+   },
+   "reference": "80만 원 → 100만 원",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "web-20",
+   "category": "browser",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "이 공지를 한 문장으로 요약해 줘.",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://policy.example.go.kr/notice",
+    "text": "주소: https://policy.example.go.kr/notice\n2027년부터 대학원생 연구장려금은 월 80만 원에서 100만 원으로 오른다. 대상은 전일제 학생이며 신청은 학기 시작 2주 전까지다."
+   },
+   "expect": {
+    "contains": [
+     "100만"
+    ]
+   },
+   "reference": "2027년부터 장려금이 월 100만 원으로 오른다",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "web-21",
+   "category": "browser",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 정책이 연구실 운영과 학생 수급에 미칠 영향을 장단점으로 분석해 줘.",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://policy.example.go.kr/notice",
+    "text": "주소: https://policy.example.go.kr/notice\n2027년부터 대학원생 연구장려금은 월 80만 원에서 100만 원으로 오른다. 대상은 전일제 학생이며 신청은 학기 시작 2주 전까지다."
+   },
+   "expect": {
+    "contains": [
+     "100만"
+    ]
+   },
+   "reference": "...",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "web-22",
+   "category": "browser",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "응답 시간이 어떻게 바뀌었어?",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://blog.example.com/post/9",
+    "text": "주소: https://blog.example.com/post/9\nRust로 바꾼 뒤 서버 응답 시간이 120ms에서 45ms로 줄었다. 메모리는 1.2GB에서 300MB로 줄었다. 대신 빌드 시간은 두 배가 되었다."
+   },
+   "expect": {
+    "contains": [
+     "120",
+     "45"
+    ]
+   },
+   "reference": "120ms → 45ms",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "web-23",
+   "category": "browser",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "단점은 뭐라고 했어?",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://blog.example.com/post/9",
+    "text": "주소: https://blog.example.com/post/9\nRust로 바꾼 뒤 서버 응답 시간이 120ms에서 45ms로 줄었다. 메모리는 1.2GB에서 300MB로 줄었다. 대신 빌드 시간은 두 배가 되었다."
+   },
+   "expect": {
+    "contains": [
+     "빌드"
+    ]
+   },
+   "reference": "빌드 시간이 두 배",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "web-24",
+   "category": "browser",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "글 요점을 정리해 줘.",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://blog.example.com/post/9",
+    "text": "주소: https://blog.example.com/post/9\nRust로 바꾼 뒤 서버 응답 시간이 120ms에서 45ms로 줄었다. 메모리는 1.2GB에서 300MB로 줄었다. 대신 빌드 시간은 두 배가 되었다."
+   },
+   "expect": {
+    "contains": [
+     "45"
+    ]
+   },
+   "reference": "응답 45ms, 메모리 300MB, 빌드 두 배",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "web-25",
+   "category": "browser",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "해결 방법을 알려 줘.",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://forum.example.com/t/55",
+    "text": "주소: https://forum.example.com/t/55\n질문: 파이썬에서 리스트를 복사하면 원본도 바뀌어요. 답변: b = a 는 같은 객체를 가리킵니다. a.copy() 나 copy.deepcopy(a) 를 쓰세요."
+   },
+   "expect": {
+    "any": [
+     "copy()",
+     "deepcopy"
+    ]
+   },
+   "reference": "a.copy() 또는 copy.deepcopy(a)",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "web-26",
+   "category": "browser",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "이 스레드를 요약해 줘.",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://forum.example.com/t/55",
+    "text": "주소: https://forum.example.com/t/55\n질문: 파이썬에서 리스트를 복사하면 원본도 바뀌어요. 답변: b = a 는 같은 객체를 가리킵니다. a.copy() 나 copy.deepcopy(a) 를 쓰세요."
+   },
+   "expect": {
+    "any": [
+     "copy",
+     "복사"
+    ]
+   },
+   "reference": "b = a는 같은 객체라 copy를 쓴다",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "web-27",
+   "category": "browser",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "자격 요건을 정리해 줘.",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://jobs.example.com/77",
+    "text": "주소: https://jobs.example.com/77\n채용: 반도체 설계 엔지니어. 자격: 석사 이상, Verilog 경력 2년. 근무지 판교. 마감 12월 15일."
+   },
+   "expect": {
+    "contains": [
+     "석사",
+     "Verilog"
+    ]
+   },
+   "reference": "석사 이상, Verilog 2년",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "web-28",
+   "category": "browser",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "마감일은?",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://jobs.example.com/77",
+    "text": "주소: https://jobs.example.com/77\n채용: 반도체 설계 엔지니어. 자격: 석사 이상, Verilog 경력 2년. 근무지 판교. 마감 12월 15일."
+   },
+   "expect": {
+    "contains": [
+     "12월 15일"
+    ]
+   },
+   "reference": "12월 15일",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "web-29",
+   "category": "browser",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 공고와 위 연구장려금 공지를 함께 보고 석사 졸업생의 진로를 비교 분석해 줘.",
+   "context": {
+    "kind": "web",
+    "source": "웹페이지 https://jobs.example.com/77",
+    "text": "주소: https://jobs.example.com/77\n채용: 반도체 설계 엔지니어. 자격: 석사 이상, Verilog 경력 2년. 근무지 판교. 마감 12월 15일."
+   },
+   "expect": {
+    "contains": [
+     "석사"
+    ]
+   },
+   "reference": "...",
+   "verify": "원문에 있는 사실·숫자인지(포함 검사), 답에 나온 주소가 원문에 있는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "paper-00",
+   "category": "paper",
+   "task": "summarization",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "이 논문이 제안한 것을 한 문장으로 요약해 줘.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Efficient AIMC' pp. 1-12",
+    "text": "[p. 3] We propose a 6-bit ADC sharing scheme for analog in-memory computing. [p. 7] Table 2: accuracy 91.2% on CIFAR-10 with 6-bit ADC, 88.4% with 4-bit ADC; energy 12.5 pJ/MAC. [p. 9] Limitations: device variation above 5% reduces accuracy by up to 3.1 points.",
+    "pages": 12
+   },
+   "expect": {
+    "contains": [
+     "ADC"
+    ]
+   },
+   "reference": "6비트 ADC 공유 방식",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "paper-01",
+   "category": "paper",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "6비트 ADC일 때 CIFAR-10 정확도는? 쪽 번호도.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Efficient AIMC' pp. 1-12",
+    "text": "[p. 3] We propose a 6-bit ADC sharing scheme for analog in-memory computing. [p. 7] Table 2: accuracy 91.2% on CIFAR-10 with 6-bit ADC, 88.4% with 4-bit ADC; energy 12.5 pJ/MAC. [p. 9] Limitations: device variation above 5% reduces accuracy by up to 3.1 points.",
+    "pages": 12
+   },
+   "expect": {
+    "contains": [
+     "91.2"
+    ],
+    "regex": "p\\.?\\s*7|7\\s*쪽"
+   },
+   "reference": "91.2% (p. 7)",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "paper-02",
+   "category": "paper",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "4비트와 6비트의 정확도 차이를 계산해 줘.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Efficient AIMC' pp. 1-12",
+    "text": "[p. 3] We propose a 6-bit ADC sharing scheme for analog in-memory computing. [p. 7] Table 2: accuracy 91.2% on CIFAR-10 with 6-bit ADC, 88.4% with 4-bit ADC; energy 12.5 pJ/MAC. [p. 9] Limitations: device variation above 5% reduces accuracy by up to 3.1 points.",
+    "pages": 12
+   },
+   "expect": {
+    "number": {
+     "value": 2.8,
+     "tol": 0.05
+    }
+   },
+   "reference": "2.8%p",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": 0.05,
+   "split": "dev"
+  },
+  {
+   "id": "paper-03",
+   "category": "paper",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "에너지 수치를 단위와 함께 알려 줘.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Efficient AIMC' pp. 1-12",
+    "text": "[p. 3] We propose a 6-bit ADC sharing scheme for analog in-memory computing. [p. 7] Table 2: accuracy 91.2% on CIFAR-10 with 6-bit ADC, 88.4% with 4-bit ADC; energy 12.5 pJ/MAC. [p. 9] Limitations: device variation above 5% reduces accuracy by up to 3.1 points.",
+    "pages": 12
+   },
+   "expect": {
+    "contains": [
+     "12.5",
+     "pJ"
+    ]
+   },
+   "reference": "12.5 pJ/MAC",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "paper-04",
+   "category": "paper",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "한계점을 정리해 줘.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Efficient AIMC' pp. 1-12",
+    "text": "[p. 3] We propose a 6-bit ADC sharing scheme for analog in-memory computing. [p. 7] Table 2: accuracy 91.2% on CIFAR-10 with 6-bit ADC, 88.4% with 4-bit ADC; energy 12.5 pJ/MAC. [p. 9] Limitations: device variation above 5% reduces accuracy by up to 3.1 points.",
+    "pages": 12
+   },
+   "expect": {
+    "contains": [
+     "5%",
+     "3.1"
+    ]
+   },
+   "reference": "소자 편차 5% 이상이면 최대 3.1점 하락",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "paper-05",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 결과로 ADC 비트 수와 정확도 사이의 인과 관계를 주장할 수 있는지 비판적으로 검토해 줘.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Efficient AIMC' pp. 1-12",
+    "text": "[p. 3] We propose a 6-bit ADC sharing scheme for analog in-memory computing. [p. 7] Table 2: accuracy 91.2% on CIFAR-10 with 6-bit ADC, 88.4% with 4-bit ADC; energy 12.5 pJ/MAC. [p. 9] Limitations: device variation above 5% reduces accuracy by up to 3.1 points.",
+    "pages": 12
+   },
+   "expect": {
+    "contains": [
+     "91.2",
+     "88.4"
+    ]
+   },
+   "reference": "...",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "paper-06",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "소자 편차를 줄이는 후속 실험을 설계하고, 통제 변수와 기대 결과를 제안해 줘.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Efficient AIMC' pp. 1-12",
+    "text": "[p. 3] We propose a 6-bit ADC sharing scheme for analog in-memory computing. [p. 7] Table 2: accuracy 91.2% on CIFAR-10 with 6-bit ADC, 88.4% with 4-bit ADC; energy 12.5 pJ/MAC. [p. 9] Limitations: device variation above 5% reduces accuracy by up to 3.1 points.",
+    "pages": 12
+   },
+   "expect": {
+    "any": [
+     "편차",
+     "variation"
+    ]
+   },
+   "reference": "...",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "paper-07",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 논문의 기여를 관련 연구와 비교해 한계점과 함께 평가해 줘.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Efficient AIMC' pp. 1-12",
+    "text": "[p. 3] We propose a 6-bit ADC sharing scheme for analog in-memory computing. [p. 7] Table 2: accuracy 91.2% on CIFAR-10 with 6-bit ADC, 88.4% with 4-bit ADC; energy 12.5 pJ/MAC. [p. 9] Limitations: device variation above 5% reduces accuracy by up to 3.1 points.",
+    "pages": 12
+   },
+   "expect": {
+    "any": [
+     "ADC"
+    ]
+   },
+   "reference": "...",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "paper-08",
+   "category": "paper",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "학습 설정(층 수, GPU, 기간)을 뽑아 줘.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Attention Study' pp. 1-12",
+    "text": "[p. 2] Transformers with 12 layers were trained on 4 GPUs for 3.5 days. [p. 5] BLEU 28.4 on WMT14 En-De, 41.0 on En-Fr. [p. 6] Dropout 0.1, label smoothing 0.1. [p. 8] Removing positional encoding drops BLEU by 2.2.",
+    "pages": 12
+   },
+   "expect": {
+    "contains": [
+     "12",
+     "3.5"
+    ]
+   },
+   "reference": "12층, GPU 4개, 3.5일",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "paper-09",
+   "category": "paper",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "En-De BLEU는? 쪽 번호와 함께.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Attention Study' pp. 1-12",
+    "text": "[p. 2] Transformers with 12 layers were trained on 4 GPUs for 3.5 days. [p. 5] BLEU 28.4 on WMT14 En-De, 41.0 on En-Fr. [p. 6] Dropout 0.1, label smoothing 0.1. [p. 8] Removing positional encoding drops BLEU by 2.2.",
+    "pages": 12
+   },
+   "expect": {
+    "contains": [
+     "28.4"
+    ],
+    "regex": "p\\.?\\s*5|5\\s*쪽"
+   },
+   "reference": "28.4 (p. 5)",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "paper-10",
+   "category": "paper",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "En-Fr와 En-De의 BLEU 차이를 계산해 줘.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Attention Study' pp. 1-12",
+    "text": "[p. 2] Transformers with 12 layers were trained on 4 GPUs for 3.5 days. [p. 5] BLEU 28.4 on WMT14 En-De, 41.0 on En-Fr. [p. 6] Dropout 0.1, label smoothing 0.1. [p. 8] Removing positional encoding drops BLEU by 2.2.",
+    "pages": 12
+   },
+   "expect": {
+    "number": {
+     "value": 12.6,
+     "tol": 0.05
+    }
+   },
+   "reference": "12.6",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": 0.05,
+   "split": "dev"
+  },
+  {
+   "id": "paper-11",
+   "category": "paper",
+   "task": "summarization",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "이 논문을 세 줄로 요약해 줘.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Attention Study' pp. 1-12",
+    "text": "[p. 2] Transformers with 12 layers were trained on 4 GPUs for 3.5 days. [p. 5] BLEU 28.4 on WMT14 En-De, 41.0 on En-Fr. [p. 6] Dropout 0.1, label smoothing 0.1. [p. 8] Removing positional encoding drops BLEU by 2.2.",
+    "pages": 12
+   },
+   "expect": {
+    "contains": [
+     "28.4"
+    ]
+   },
+   "reference": "BLEU 28.4 ...",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "paper-12",
+   "category": "paper",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "위치 인코딩을 빼면 어떻게 돼?",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Attention Study' pp. 1-12",
+    "text": "[p. 2] Transformers with 12 layers were trained on 4 GPUs for 3.5 days. [p. 5] BLEU 28.4 on WMT14 En-De, 41.0 on En-Fr. [p. 6] Dropout 0.1, label smoothing 0.1. [p. 8] Removing positional encoding drops BLEU by 2.2.",
+    "pages": 12
+   },
+   "expect": {
+    "contains": [
+     "2.2"
+    ]
+   },
+   "reference": "BLEU가 2.2 떨어진다",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "paper-13",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "위치 인코딩 제거 실험의 해석이 타당한지, 대안 가설과 추가 실험으로 검증해 줘.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Attention Study' pp. 1-12",
+    "text": "[p. 2] Transformers with 12 layers were trained on 4 GPUs for 3.5 days. [p. 5] BLEU 28.4 on WMT14 En-De, 41.0 on En-Fr. [p. 6] Dropout 0.1, label smoothing 0.1. [p. 8] Removing positional encoding drops BLEU by 2.2.",
+    "pages": 12
+   },
+   "expect": {
+    "contains": [
+     "2.2"
+    ]
+   },
+   "reference": "...",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "paper-14",
+   "category": "paper",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "정규화 설정(드롭아웃·라벨 스무딩)을 뽑아 줘.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Attention Study' pp. 1-12",
+    "text": "[p. 2] Transformers with 12 layers were trained on 4 GPUs for 3.5 days. [p. 5] BLEU 28.4 on WMT14 En-De, 41.0 on En-Fr. [p. 6] Dropout 0.1, label smoothing 0.1. [p. 8] Removing positional encoding drops BLEU by 2.2.",
+    "pages": 12
+   },
+   "expect": {
+    "contains": [
+     "0.1"
+    ]
+   },
+   "reference": "드롭아웃 0.1, 라벨 스무딩 0.1",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "paper-15",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 결과를 재현하려면 무엇이 더 필요한지, 보고되지 않은 정보와 그 영향을 분석해 줘.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Attention Study' pp. 1-12",
+    "text": "[p. 2] Transformers with 12 layers were trained on 4 GPUs for 3.5 days. [p. 5] BLEU 28.4 on WMT14 En-De, 41.0 on En-Fr. [p. 6] Dropout 0.1, label smoothing 0.1. [p. 8] Removing positional encoding drops BLEU by 2.2.",
+    "pages": 12
+   },
+   "expect": {
+    "any": [
+     "GPU",
+     "재현"
+    ]
+   },
+   "reference": "...",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "paper-16",
+   "category": "paper",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "소비 전력과 전압을 알려 줘.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Low-power SNN' pp. 1-12",
+    "text": "[p. 4] The SNN chip consumes 3.8 mW at 0.8 V. [p. 6] Latency is 1.2 ms per inference. [p. 10] Compared to a GPU baseline, energy is reduced 45 times, while accuracy is 1.4 points lower.",
+    "pages": 12
+   },
+   "expect": {
+    "contains": [
+     "3.8",
+     "0.8"
+    ]
+   },
+   "reference": "3.8 mW, 0.8 V",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "paper-17",
+   "category": "paper",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "추론 한 번의 지연은?",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Low-power SNN' pp. 1-12",
+    "text": "[p. 4] The SNN chip consumes 3.8 mW at 0.8 V. [p. 6] Latency is 1.2 ms per inference. [p. 10] Compared to a GPU baseline, energy is reduced 45 times, while accuracy is 1.4 points lower.",
+    "pages": 12
+   },
+   "expect": {
+    "contains": [
+     "1.2"
+    ]
+   },
+   "reference": "1.2 ms",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "paper-18",
+   "category": "paper",
+   "task": "summarization",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "GPU 대비 결과를 요약해 줘.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Low-power SNN' pp. 1-12",
+    "text": "[p. 4] The SNN chip consumes 3.8 mW at 0.8 V. [p. 6] Latency is 1.2 ms per inference. [p. 10] Compared to a GPU baseline, energy is reduced 45 times, while accuracy is 1.4 points lower.",
+    "pages": 12
+   },
+   "expect": {
+    "contains": [
+     "45"
+    ]
+   },
+   "reference": "에너지 45배 감소, 정확도 1.4점 낮음",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "paper-19",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "에너지 절감과 정확도 손실의 트레이드오프가 실제 응용에서 정당화되는지 비판적으로 논해 줘.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Low-power SNN' pp. 1-12",
+    "text": "[p. 4] The SNN chip consumes 3.8 mW at 0.8 V. [p. 6] Latency is 1.2 ms per inference. [p. 10] Compared to a GPU baseline, energy is reduced 45 times, while accuracy is 1.4 points lower.",
+    "pages": 12
+   },
+   "expect": {
+    "contains": [
+     "1.4"
+    ]
+   },
+   "reference": "...",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "paper-20",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 논문과 Efficient AIMC 논문의 에너지 효율을 공정하게 비교할 수 있는지 단위와 조건을 따져 검증해 줘.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Low-power SNN' pp. 1-12",
+    "text": "[p. 4] The SNN chip consumes 3.8 mW at 0.8 V. [p. 6] Latency is 1.2 ms per inference. [p. 10] Compared to a GPU baseline, energy is reduced 45 times, while accuracy is 1.4 points lower.",
+    "pages": 12
+   },
+   "expect": {
+    "any": [
+     "단위",
+     "조건"
+    ]
+   },
+   "reference": "...",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "paper-21",
+   "category": "paper",
+   "task": "summarization",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "초록을 한국어로 번역하듯 핵심을 두 문장으로 정리해 줘.",
+   "context": {
+    "kind": "paper",
+    "source": "논문 PDF 'Low-power SNN' pp. 1-12",
+    "text": "[p. 4] The SNN chip consumes 3.8 mW at 0.8 V. [p. 6] Latency is 1.2 ms per inference. [p. 10] Compared to a GPU baseline, energy is reduced 45 times, while accuracy is 1.4 points lower.",
+    "pages": 12
+   },
+   "expect": {
+    "contains": [
+     "3.8"
+    ]
+   },
+   "reference": "...",
+   "verify": "원문의 수치·쪽 번호와 같은지(포함·정규식·허용 오차), 원문에 없는 수치를 지어내지 않았는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "research-00",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "강화학습과 지도학습을 반도체 배치 최적화에 쓸 때 장단점을 비교하고 어떤 실험으로 검증할지 제안해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "research-01",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "아날로그 인메모리 컴퓨팅의 정확도 한계가 어디서 오는지 원인을 나눠 분석하고 각 원인을 검증할 실험을 설계해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "research-02",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "작은 언어 모델로 연구 요약을 자동화할 때 생길 수 있는 오류 유형과 이를 측정할 평가 방법을 제안해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "research-03",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "같은 데이터셋에서 두 모델의 정확도 차이가 0.5%p일 때 통계적으로 유의한지 판단하는 방법을 설명해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "research-04",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "뉴로모픽 칩과 GPU의 에너지 효율 비교에서 흔히 생기는 함정과 공정한 비교 기준을 제시해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "research-05",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "저전력 ADC 설계에서 해상도와 전력의 트레이드오프를 수식으로 유도하고 가정의 한계를 설명해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "research-06",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "연구실의 실험 기록 방식이 재현성에 주는 영향을 분석하고 개선안을 우선순위와 함께 제안해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "research-07",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "트랜스포머의 어텐션 복잡도를 줄이는 방법들을 비교하고 어떤 상황에서 무엇을 고를지 기준을 세워 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "research-08",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "양자 소자 연구에서 측정 잡음과 신호를 구분하는 실험 설계를 비판적으로 검토해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "research-09",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "모델 압축(가지치기·양자화·증류)이 정확도와 지연에 주는 영향을 인과적으로 분리해 측정하는 방법을 제안해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "research-10",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "같은 실험을 세 번 반복했을 때 결과가 크게 다르면 어떤 원인을 의심하고 어떻게 검증할지 단계별로 설명해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "research-11",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "논문 리뷰어 입장에서 '정확도 99%' 주장을 검증하려면 무엇을 요구해야 하는지 체크리스트로 만들어 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "research-12",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "온디바이스 AI와 클라우드 AI를 비용·지연·개인정보 측면에서 비교하고 연구실 도입 기준을 제안해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "research-13",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "데이터 누수(leakage)가 의심될 때 원인을 찾는 절차와 재발 방지책을 설명해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "research-14",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "하드웨어 가속기 논문에서 TOPS/W 수치를 비교할 때 주의할 점과 정규화 방법을 제시해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "research-15",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "작은 표본(n=8)으로 얻은 실험 결과를 일반화할 수 있는지 통계적·실험적 관점에서 비판해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "research-16",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "연구 가설 '정밀도를 낮춰도 정확도는 유지된다'를 반증하려면 어떤 실험이 필요한지 설계해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "research-17",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "두 가지 설계안 중 하나를 고를 때 의사결정 기준과 가중치를 정하고 민감도 분석을 해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "research-18",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "시뮬레이션 결과와 실제 칩 측정 결과가 다를 때 원인을 체계적으로 분석하는 방법을 설명해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "research-19",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "새 연구 주제를 정할 때 선행 연구 공백을 찾는 방법과 위험을 평가하는 기준을 제안해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "research-20",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "벤치마크 점수 향상이 실제 사용 품질 향상으로 이어지는지 검증하는 방법을 제안해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "research-21",
+   "category": "paper",
+   "task": "research",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "연구 데이터 공개 시 개인정보와 재현성 사이의 균형을 어떻게 맞출지 분석해 줘.",
+   "context": null,
+   "expect": {
+    "max_chars": 20000,
+    "not_contains": [
+     "```diff"
+    ]
+   },
+   "reference": "(사람이 평가: 논리·근거·한계 서술)",
+   "verify": "규칙으로는 형식만 본다. 내용 품질은 사람 평가(1~5점)가 필요하다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "code-exp-00",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "이 함수가 하는 일을 한 문장으로 설명해 줘.",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 a.py",
+    "text": "파일: a.py\n```python\ndef mean(xs):\n    return sum(xs) / len(xs)\n```"
+   },
+   "expect": {
+    "any": [
+     "평균",
+     "mean"
+    ]
+   },
+   "reference": "(정답 값)",
+   "verify": "출력값·설명 낱말(포함·정규식)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "code-exp-01",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "이 코드가 하는 일을 설명해 줘.",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 b.py",
+    "text": "파일: b.py\n```python\nimport json\nwith open('c.json') as f:\n    cfg = json.load(f)\n```"
+   },
+   "expect": {
+    "any": [
+     "JSON",
+     "json",
+     "설정"
+    ]
+   },
+   "reference": "(정답 값)",
+   "verify": "출력값·설명 낱말(포함·정규식)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "code-exp-02",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "출력 결과를 알려 줘.",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 c.py",
+    "text": "파일: c.py\n```python\nfor i in range(3):\n    print(i * i)\n```"
+   },
+   "expect": {
+    "contains": [
+     "0",
+     "1",
+     "4"
+    ]
+   },
+   "reference": "(정답 값)",
+   "verify": "출력값·설명 낱말(포함·정규식)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "code-exp-03",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "f(5)의 값은?",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 d.py",
+    "text": "파일: d.py\n```python\ndef f(n):\n    return 1 if n <= 1 else n * f(n - 1)\n```"
+   },
+   "expect": {
+    "contains": [
+     "120"
+    ]
+   },
+   "reference": "(정답 값)",
+   "verify": "출력값·설명 낱말(포함·정규식)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "code-exp-04",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "출력은?",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 e.py",
+    "text": "파일: e.py\n```python\nxs = [3, 1, 2]\nxs.sort()\nprint(xs[0])\n```"
+   },
+   "expect": {
+    "regex": "\\b1\\b"
+   },
+   "reference": "(정답 값)",
+   "verify": "출력값·설명 낱말(포함·정규식)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "code-exp-05",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "출력은?",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 f.py",
+    "text": "파일: f.py\n```python\ns = 'poschat'\nprint(s[::-1])\n```"
+   },
+   "expect": {
+    "contains": [
+     "tahcsop"
+    ]
+   },
+   "reference": "(정답 값)",
+   "verify": "출력값·설명 낱말(포함·정규식)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "code-exp-06",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "출력은?",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 g.py",
+    "text": "파일: g.py\n```python\nd = {'a': 1}\nprint(d.get('b', 0))\n```"
+   },
+   "expect": {
+    "regex": "\\b0\\b"
+   },
+   "reference": "(정답 값)",
+   "verify": "출력값·설명 낱말(포함·정규식)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "code-exp-07",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "출력은?",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 h.py",
+    "text": "파일: h.py\n```python\nprint(len(set([1, 1, 2, 3, 3])))\n```"
+   },
+   "expect": {
+    "regex": "\\b3\\b"
+   },
+   "reference": "(정답 값)",
+   "verify": "출력값·설명 낱말(포함·정규식)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "code-exp-08",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "출력은?",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 i.py",
+    "text": "파일: i.py\n```python\nx = 7\nprint('홀수' if x % 2 else '짝수')\n```"
+   },
+   "expect": {
+    "contains": [
+     "홀수"
+    ]
+   },
+   "reference": "(정답 값)",
+   "verify": "출력값·설명 낱말(포함·정규식)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "code-exp-09",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "출력은?",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 j.py",
+    "text": "파일: j.py\n```python\nprint(sum(range(1, 11)))\n```"
+   },
+   "expect": {
+    "contains": [
+     "55"
+    ]
+   },
+   "reference": "(정답 값)",
+   "verify": "출력값·설명 낱말(포함·정규식)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "code-exp-10",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "출력은?",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 k.py",
+    "text": "파일: k.py\n```python\ndef g(a, b=2):\n    return a ** b\nprint(g(3))\n```"
+   },
+   "expect": {
+    "contains": [
+     "9"
+    ]
+   },
+   "reference": "(정답 값)",
+   "verify": "출력값·설명 낱말(포함·정규식)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "code-exp-11",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "출력은?",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 l.py",
+    "text": "파일: l.py\n```python\nprint(' '.join(['a', 'b', 'c']).upper())\n```"
+   },
+   "expect": {
+    "contains": [
+     "A B C"
+    ]
+   },
+   "reference": "(정답 값)",
+   "verify": "출력값·설명 낱말(포함·정규식)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "code-write-00",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "두 수를 더하는 함수 add(a, b)를 파이썬으로 작성해 줘. 코드 블록 하나로만.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "def add"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "```python\ndef add(a, b):\n    return a + b\n```",
+   "verify": "코드 블록의 함수가 문법에 맞는지(QualityGate)와 시험 `assert add(2, 3) == 5`(--run-code를 켰을 때만 따로 실행)",
+   "tolerance": null,
+   "test": "assert add(2, 3) == 5",
+   "function": "add",
+   "split": "dev"
+  },
+  {
+   "id": "code-write-01",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "소수인지 판별하는 is_prime(n) 함수를 파이썬으로 작성해 줘.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "def is_prime"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "```python\ndef is_prime(n):\n    if n < 2:\n        return False\n    i = 2\n    while i * i <= n:\n        if n % i == 0:\n            return False\n        i += 1\n    return True\n```",
+   "verify": "코드 블록의 함수가 문법에 맞는지(QualityGate)와 시험 `assert is_prime(7) and not is_prime(9) and not is_prime(1)`(--run-code를 켰을 때만 따로 실행)",
+   "tolerance": null,
+   "test": "assert is_prime(7) and not is_prime(9) and not is_prime(1)",
+   "function": "is_prime",
+   "split": "test"
+  },
+  {
+   "id": "code-write-02",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "n번째 피보나치 수를 돌려주는 fib(n)을 반복문으로 작성해 줘(fib(0)=0).",
+   "context": null,
+   "expect": {
+    "contains": [
+     "def fib"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "```python\ndef fib(n):\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a\n```",
+   "verify": "코드 블록의 함수가 문법에 맞는지(QualityGate)와 시험 `assert fib(10) == 55`(--run-code를 켰을 때만 따로 실행)",
+   "tolerance": null,
+   "test": "assert fib(10) == 55",
+   "function": "fib",
+   "split": "dev"
+  },
+  {
+   "id": "code-write-03",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "문장의 단어 순서를 뒤집는 reverse_words(s) 함수를 작성해 줘.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "def reverse_words"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "```python\ndef reverse_words(s):\n    return ' '.join(s.split()[::-1])\n```",
+   "verify": "코드 블록의 함수가 문법에 맞는지(QualityGate)와 시험 `assert reverse_words('a b c') == 'c b a'`(--run-code를 켰을 때만 따로 실행)",
+   "tolerance": null,
+   "test": "assert reverse_words('a b c') == 'c b a'",
+   "function": "reverse_words",
+   "split": "test"
+  },
+  {
+   "id": "code-write-04",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "영어 모음 개수를 세는 count_vowels(s)를 작성해 줘.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "def count_vowels"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "```python\ndef count_vowels(s):\n    return sum(c in 'aeiouAEIOU' for c in s)\n```",
+   "verify": "코드 블록의 함수가 문법에 맞는지(QualityGate)와 시험 `assert count_vowels('Hello World') == 3`(--run-code를 켰을 때만 따로 실행)",
+   "tolerance": null,
+   "test": "assert count_vowels('Hello World') == 3",
+   "function": "count_vowels",
+   "split": "dev"
+  },
+  {
+   "id": "code-write-05",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "중첩 리스트를 한 단계 펼치는 flatten(xs)를 작성해 줘.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "def flatten"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "```python\ndef flatten(xs):\n    return [y for x in xs for y in x]\n```",
+   "verify": "코드 블록의 함수가 문법에 맞는지(QualityGate)와 시험 `assert flatten([[1], [2, 3]]) == [1, 2, 3]`(--run-code를 켰을 때만 따로 실행)",
+   "tolerance": null,
+   "test": "assert flatten([[1], [2, 3]]) == [1, 2, 3]",
+   "function": "flatten",
+   "split": "test"
+  },
+  {
+   "id": "code-write-06",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "순서를 지키며 중복을 없애는 dedupe(xs)를 작성해 줘.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "def dedupe"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "```python\ndef dedupe(xs):\n    seen = set()\n    out = []\n    for x in xs:\n        if x not in seen:\n            seen.add(x)\n            out.append(x)\n    return out\n```",
+   "verify": "코드 블록의 함수가 문법에 맞는지(QualityGate)와 시험 `assert dedupe([3, 1, 3, 2, 1]) == [3, 1, 2]`(--run-code를 켰을 때만 따로 실행)",
+   "tolerance": null,
+   "test": "assert dedupe([3, 1, 3, 2, 1]) == [3, 1, 2]",
+   "function": "dedupe",
+   "split": "dev"
+  },
+  {
+   "id": "code-write-07",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "값을 lo와 hi 사이로 자르는 clamp(x, lo, hi)를 작성해 줘.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "def clamp"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "```python\ndef clamp(x, lo, hi):\n    return max(lo, min(hi, x))\n```",
+   "verify": "코드 블록의 함수가 문법에 맞는지(QualityGate)와 시험 `assert clamp(5, 0, 3) == 3 and clamp(-1, 0, 3) == 0`(--run-code를 켰을 때만 따로 실행)",
+   "tolerance": null,
+   "test": "assert clamp(5, 0, 3) == 3 and clamp(-1, 0, 3) == 0",
+   "function": "clamp",
+   "split": "test"
+  },
+  {
+   "id": "code-write-08",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "단어별 개수를 dict로 돌려주는 word_count(s)를 작성해 줘.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "def word_count"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "```python\ndef word_count(s):\n    out = {}\n    for w in s.split():\n        out[w] = out.get(w, 0) + 1\n    return out\n```",
+   "verify": "코드 블록의 함수가 문법에 맞는지(QualityGate)와 시험 `assert word_count('a b a') == {'a': 2, 'b': 1}`(--run-code를 켰을 때만 따로 실행)",
+   "tolerance": null,
+   "test": "assert word_count('a b a') == {'a': 2, 'b': 1}",
+   "function": "word_count",
+   "split": "dev"
+  },
+  {
+   "id": "code-write-09",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "길이 k 이동 평균 리스트를 돌려주는 moving_avg(xs, k)를 작성해 줘.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "def moving_avg"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "```python\ndef moving_avg(xs, k):\n    return [sum(xs[i:i + k]) / k for i in range(len(xs) - k + 1)]\n```",
+   "verify": "코드 블록의 함수가 문법에 맞는지(QualityGate)와 시험 `assert moving_avg([1, 2, 3, 4], 2) == [1.5, 2.5, 3.5]`(--run-code를 켰을 때만 따로 실행)",
+   "tolerance": null,
+   "test": "assert moving_avg([1, 2, 3, 4], 2) == [1.5, 2.5, 3.5]",
+   "function": "moving_avg",
+   "split": "test"
+  },
+  {
+   "id": "code-write-10",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "정렬된 리스트에서 값의 위치(없으면 -1)를 찾는 binary_search(xs, x)를 작성해 줘.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "def binary_search"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "```python\ndef binary_search(xs, x):\n    lo, hi = 0, len(xs) - 1\n    while lo <= hi:\n        mid = (lo + hi) // 2\n        if xs[mid] == x:\n            return mid\n        if xs[mid] < x:\n            lo = mid + 1\n        else:\n            hi = mid - 1\n    return -1\n```",
+   "verify": "코드 블록의 함수가 문법에 맞는지(QualityGate)와 시험 `assert binary_search([1, 3, 5, 7], 5) == 2 and binary_search([1, 3], 2) == -1`(--run-code를 켰을 때만 따로 실행)",
+   "tolerance": null,
+   "test": "assert binary_search([1, 3, 5, 7], 5) == 2 and binary_search([1, 3], 2) == -1",
+   "function": "binary_search",
+   "split": "dev"
+  },
+  {
+   "id": "code-write-11",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "최대공약수 gcd(a, b)를 유클리드 방법으로 작성해 줘.",
+   "context": null,
+   "expect": {
+    "contains": [
+     "def gcd"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "```python\ndef gcd(a, b):\n    while b:\n        a, b = b, a % b\n    return a\n```",
+   "verify": "코드 블록의 함수가 문법에 맞는지(QualityGate)와 시험 `assert gcd(12, 18) == 6`(--run-code를 켰을 때만 따로 실행)",
+   "tolerance": null,
+   "test": "assert gcd(12, 18) == 6",
+   "function": "gcd",
+   "split": "test"
+  },
+  {
+   "id": "code-fix-00",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert mean([2, 4]) == 3`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 m.py",
+    "text": "파일: m.py\n```python\ndef mean(xs):\n    return sum(xs) / len(xs) - 1\n```"
+   },
+   "expect": {
+    "contains": [
+     "def mean"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert mean([2, 4]) == 3",
+   "function": "mean",
+   "split": "dev"
+  },
+  {
+   "id": "code-fix-01",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert last([1, 2, 3]) == 3`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 n.py",
+    "text": "파일: n.py\n```python\ndef last(xs):\n    return xs[len(xs)]\n```"
+   },
+   "expect": {
+    "contains": [
+     "def last"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert last([1, 2, 3]) == 3",
+   "function": "last",
+   "split": "test"
+  },
+  {
+   "id": "code-fix-02",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert is_even(4) and not is_even(3)`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 o.py",
+    "text": "파일: o.py\n```python\ndef is_even(n):\n    return n % 2 == 1\n```"
+   },
+   "expect": {
+    "contains": [
+     "def is_even"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert is_even(4) and not is_even(3)",
+   "function": "is_even",
+   "split": "dev"
+  },
+  {
+   "id": "code-fix-03",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert abs(area(2) - 12.566) < 0.01`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 p.py",
+    "text": "파일: p.py\n```python\ndef area(r):\n    return 3.14159 * r * 2\n```"
+   },
+   "expect": {
+    "contains": [
+     "def area"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert abs(area(2) - 12.566) < 0.01",
+   "function": "area",
+   "split": "test"
+  },
+  {
+   "id": "code-fix-04",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert total([1, 2, 3]) == 6`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 q.py",
+    "text": "파일: q.py\n```python\ndef total(prices):\n    s = 0\n    for p in prices:\n        s = p\n    return s\n```"
+   },
+   "expect": {
+    "contains": [
+     "def total"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert total([1, 2, 3]) == 6",
+   "function": "total",
+   "split": "dev"
+  },
+  {
+   "id": "code-fix-05",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert first_upper('abc') == 'Abc'`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 r.py",
+    "text": "파일: r.py\n```python\ndef first_upper(s):\n    return s[0].lower() + s[1:]\n```"
+   },
+   "expect": {
+    "contains": [
+     "def first_upper"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert first_upper('abc') == 'Abc'",
+   "function": "first_upper",
+   "split": "test"
+  },
+  {
+   "id": "code-fix-06",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert safe_div(1, 0) is None and safe_div(4, 2) == 2`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 s.py",
+    "text": "파일: s.py\n```python\ndef safe_div(a, b):\n    return a / b\n```"
+   },
+   "expect": {
+    "contains": [
+     "def safe_div"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert safe_div(1, 0) is None and safe_div(4, 2) == 2",
+   "function": "safe_div",
+   "split": "dev"
+  },
+  {
+   "id": "code-fix-07",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert count([1, 2, 1], 1) == 2`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 t.py",
+    "text": "파일: t.py\n```python\ndef count(xs, x):\n    return len([y for y in xs if y != x])\n```"
+   },
+   "expect": {
+    "contains": [
+     "def count"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert count([1, 2, 1], 1) == 2",
+   "function": "count",
+   "split": "test"
+  },
+  {
+   "id": "code-fix-08",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert maximum([-3, -1, -2]) == -1`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 u.py",
+    "text": "파일: u.py\n```python\ndef maximum(xs):\n    m = 0\n    for x in xs:\n        if x > m:\n            m = x\n    return m\n```"
+   },
+   "expect": {
+    "contains": [
+     "def maximum"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert maximum([-3, -1, -2]) == -1",
+   "function": "maximum",
+   "split": "dev"
+  },
+  {
+   "id": "code-fix-09",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert avg_len(['ab', 'abc']) == 2.5`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 v.py",
+    "text": "파일: v.py\n```python\ndef avg_len(words):\n    return sum(len(w) for w in words) // len(words)\n```"
+   },
+   "expect": {
+    "contains": [
+     "def avg_len"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert avg_len(['ab', 'abc']) == 2.5",
+   "function": "avg_len",
+   "split": "test"
+  },
+  {
+   "id": "code-fix-10",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert abs(celsius(212) - 100) < 1e-9`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 w.py",
+    "text": "파일: w.py\n```python\ndef celsius(f):\n    return f - 32 * 5 / 9\n```"
+   },
+   "expect": {
+    "contains": [
+     "def celsius"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert abs(celsius(212) - 100) < 1e-9",
+   "function": "celsius",
+   "split": "dev"
+  },
+  {
+   "id": "code-fix-11",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert range_sum(1, 3) == 6`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 x.py",
+    "text": "파일: x.py\n```python\ndef range_sum(a, b):\n    return sum(range(a, b))\n```"
+   },
+   "expect": {
+    "contains": [
+     "def range_sum"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert range_sum(1, 3) == 6",
+   "function": "range_sum",
+   "split": "test"
+  },
+  {
+   "id": "code-fix-12",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert unique_sorted([3, 1, 3]) == [1, 3]`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 y.py",
+    "text": "파일: y.py\n```python\ndef unique_sorted(xs):\n    return sorted(xs)\n```"
+   },
+   "expect": {
+    "contains": [
+     "def unique_sorted"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert unique_sorted([3, 1, 3]) == [1, 3]",
+   "function": "unique_sorted",
+   "split": "dev"
+  },
+  {
+   "id": "code-fix-13",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert percent(1, 4) == 25`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 z.py",
+    "text": "파일: z.py\n```python\ndef percent(part, whole):\n    return part / whole * 10\n```"
+   },
+   "expect": {
+    "contains": [
+     "def percent"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert percent(1, 4) == 25",
+   "function": "percent",
+   "split": "test"
+  },
+  {
+   "id": "code-fix-14",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert middle([1, 2, 3]) == 2`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 aa.py",
+    "text": "파일: aa.py\n```python\ndef middle(xs):\n    return xs[len(xs) / 2]\n```"
+   },
+   "expect": {
+    "contains": [
+     "def middle"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert middle([1, 2, 3]) == 2",
+   "function": "middle",
+   "split": "dev"
+  },
+  {
+   "id": "code-fix-15",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert join_path('dir', 'f.txt') in ('dir/f.txt', 'dir\\\\f.txt')`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 ab.py",
+    "text": "파일: ab.py\n```python\ndef join_path(a, b):\n    return a + b\n```"
+   },
+   "expect": {
+    "contains": [
+     "def join_path"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert join_path('dir', 'f.txt') in ('dir/f.txt', 'dir\\\\f.txt')",
+   "function": "join_path",
+   "split": "test"
+  },
+  {
+   "id": "code-fix-16",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert words('a b  c') == ['a', 'b', 'c']`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 ac.py",
+    "text": "파일: ac.py\n```python\ndef words(s):\n    return s.split(',')\n```"
+   },
+   "expect": {
+    "contains": [
+     "def words"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert words('a b  c') == ['a', 'b', 'c']",
+   "function": "words",
+   "split": "dev"
+  },
+  {
+   "id": "code-fix-17",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert square_all([1, 2]) == [1, 4]`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 ad.py",
+    "text": "파일: ad.py\n```python\ndef square_all(xs):\n    for x in xs:\n        x = x * x\n    return xs\n```"
+   },
+   "expect": {
+    "contains": [
+     "def square_all"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert square_all([1, 2]) == [1, 4]",
+   "function": "square_all",
+   "split": "test"
+  },
+  {
+   "id": "code-fix-18",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert contains('abc', 'a') and not contains('abc', 'z')`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 ae.py",
+    "text": "파일: ae.py\n```python\ndef contains(s, sub):\n    return s.find(sub) > 0\n```"
+   },
+   "expect": {
+    "contains": [
+     "def contains"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert contains('abc', 'a') and not contains('abc', 'z')",
+   "function": "contains",
+   "split": "dev"
+  },
+  {
+   "id": "code-fix-19",
+   "category": "code",
+   "task": "coding",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 함수의 버그를 고쳐 줘. 고친 함수 전체를 코드 블록 하나로 보여 줘. 시험: `assert reverse([1, 2]) == [2, 1]`",
+   "context": {
+    "kind": "code",
+    "source": "작업 폴더 파일 af.py",
+    "text": "파일: af.py\n```python\ndef reverse(xs):\n    xs.reverse()\n```"
+   },
+   "expect": {
+    "contains": [
+     "def reverse"
+    ],
+    "regex": "```(python|py)?\\n"
+   },
+   "reference": "(고친 함수)",
+   "verify": "고친 함수가 문법에 맞는지(QualityGate)와 시험(--run-code를 켰을 때만)",
+   "tolerance": null,
+   "test": "assert reverse([1, 2]) == [2, 1]",
+   "function": "reverse",
+   "split": "test"
+  },
+  {
+   "id": "lab-a-00",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "가장 정확도가 높은 run은?",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 AIMC ADC/DAC Sweep",
+    "text": "run,adc_bits,noise,accuracy,latency_ms\nrun1,4,0.01,0.861,12.9\nrun2,6,0.01,0.884,15.2\nrun3,8,0.01,0.902,18.7\nrun4,6,0.05,0.842,15.1\nrun5,8,0.05,0.879,18.9"
+   },
+   "expect": {
+    "contains": [
+     "run3"
+    ]
+   },
+   "reference": "run3 (0.902)",
+   "verify": "기록에 있는 값·계산 값(허용 오차), 기록에 없는 수치는 '추정'이라고 밝혔는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "lab-a-01",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "run2의 지연은?",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 AIMC ADC/DAC Sweep",
+    "text": "run,adc_bits,noise,accuracy,latency_ms\nrun1,4,0.01,0.861,12.9\nrun2,6,0.01,0.884,15.2\nrun3,8,0.01,0.902,18.7\nrun4,6,0.05,0.842,15.1\nrun5,8,0.05,0.879,18.9"
+   },
+   "expect": {
+    "contains": [
+     "15.2"
+    ]
+   },
+   "reference": "15.2 ms",
+   "verify": "기록에 있는 값·계산 값(허용 오차), 기록에 없는 수치는 '추정'이라고 밝혔는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "lab-a-02",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "noise 0.01인 세 run의 평균 정확도를 계산해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 AIMC ADC/DAC Sweep",
+    "text": "run,adc_bits,noise,accuracy,latency_ms\nrun1,4,0.01,0.861,12.9\nrun2,6,0.01,0.884,15.2\nrun3,8,0.01,0.902,18.7\nrun4,6,0.05,0.842,15.1\nrun5,8,0.05,0.879,18.9"
+   },
+   "expect": {
+    "number": {
+     "value": 0.8823,
+     "tol": 0.001
+    }
+   },
+   "reference": "0.8823",
+   "verify": "기록에 있는 값·계산 값(허용 오차), 기록에 없는 수치는 '추정'이라고 밝혔는지(QualityGate)",
+   "tolerance": 0.001,
+   "split": "dev"
+  },
+  {
+   "id": "lab-a-03",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "열 이름과 각 열의 단위를 정리해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 AIMC ADC/DAC Sweep",
+    "text": "run,adc_bits,noise,accuracy,latency_ms\nrun1,4,0.01,0.861,12.9\nrun2,6,0.01,0.884,15.2\nrun3,8,0.01,0.902,18.7\nrun4,6,0.05,0.842,15.1\nrun5,8,0.05,0.879,18.9"
+   },
+   "expect": {
+    "contains": [
+     "latency_ms",
+     "accuracy"
+    ]
+   },
+   "reference": "run, adc_bits, noise, accuracy(비율), latency_ms(ms)",
+   "verify": "기록에 있는 값·계산 값(허용 오차), 기록에 없는 수치는 '추정'이라고 밝혔는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "lab-a-04",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "ADC 4비트에서 8비트로 바꾸면 정확도가 몇 %p 오르는지 계산해 줘(noise 0.01).",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 AIMC ADC/DAC Sweep",
+    "text": "run,adc_bits,noise,accuracy,latency_ms\nrun1,4,0.01,0.861,12.9\nrun2,6,0.01,0.884,15.2\nrun3,8,0.01,0.902,18.7\nrun4,6,0.05,0.842,15.1\nrun5,8,0.05,0.879,18.9"
+   },
+   "expect": {
+    "number": {
+     "value": 4.1,
+     "tol": 0.05
+    }
+   },
+   "reference": "4.1%p",
+   "verify": "기록에 있는 값·계산 값(허용 오차), 기록에 없는 수치는 '추정'이라고 밝혔는지(QualityGate)",
+   "tolerance": 0.05,
+   "split": "dev"
+  },
+  {
+   "id": "lab-a-05",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "noise가 0.01에서 0.05로 늘 때 6비트 정확도 변화는?",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 AIMC ADC/DAC Sweep",
+    "text": "run,adc_bits,noise,accuracy,latency_ms\nrun1,4,0.01,0.861,12.9\nrun2,6,0.01,0.884,15.2\nrun3,8,0.01,0.902,18.7\nrun4,6,0.05,0.842,15.1\nrun5,8,0.05,0.879,18.9"
+   },
+   "expect": {
+    "number": {
+     "value": -0.042,
+     "tol": 0.001
+    }
+   },
+   "reference": "-0.042",
+   "verify": "기록에 있는 값·계산 값(허용 오차), 기록에 없는 수치는 '추정'이라고 밝혔는지(QualityGate)",
+   "tolerance": 0.001,
+   "split": "test"
+  },
+  {
+   "id": "lab-a-06",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "지연이 가장 긴 run은?",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 AIMC ADC/DAC Sweep",
+    "text": "run,adc_bits,noise,accuracy,latency_ms\nrun1,4,0.01,0.861,12.9\nrun2,6,0.01,0.884,15.2\nrun3,8,0.01,0.902,18.7\nrun4,6,0.05,0.842,15.1\nrun5,8,0.05,0.879,18.9"
+   },
+   "expect": {
+    "contains": [
+     "run5"
+    ]
+   },
+   "reference": "run5",
+   "verify": "기록에 있는 값·계산 값(허용 오차), 기록에 없는 수치는 '추정'이라고 밝혔는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "lab-a-07",
+   "category": "lab",
+   "task": "data_lab",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "이 결과로 ADC 비트와 정확도의 관계를 통계적으로 해석하고 유의성을 판단해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 AIMC ADC/DAC Sweep",
+    "text": "run,adc_bits,noise,accuracy,latency_ms\nrun1,4,0.01,0.861,12.9\nrun2,6,0.01,0.884,15.2\nrun3,8,0.01,0.902,18.7\nrun4,6,0.05,0.842,15.1\nrun5,8,0.05,0.879,18.9"
+   },
+   "expect": {
+    "contains": [
+     "0.902"
+    ]
+   },
+   "reference": "...",
+   "verify": "기록에 있는 값·계산 값(허용 오차), 기록에 없는 수치는 '추정'이라고 밝혔는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "lab-a-08",
+   "category": "lab",
+   "task": "data_lab",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "Noise에 가장 민감한 조건을 찾고 그 근거를 수치로 설명해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 AIMC ADC/DAC Sweep",
+    "text": "run,adc_bits,noise,accuracy,latency_ms\nrun1,4,0.01,0.861,12.9\nrun2,6,0.01,0.884,15.2\nrun3,8,0.01,0.902,18.7\nrun4,6,0.05,0.842,15.1\nrun5,8,0.05,0.879,18.9"
+   },
+   "expect": {
+    "contains": [
+     "0.05"
+    ]
+   },
+   "reference": "...",
+   "verify": "기록에 있는 값·계산 값(허용 오차), 기록에 없는 수치는 '추정'이라고 밝혔는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "lab-a-09",
+   "category": "lab",
+   "task": "data_lab",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 실험에서 측정하면 좋을 조건을 제안하고 이유를 근거와 함께 설명해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 AIMC ADC/DAC Sweep",
+    "text": "run,adc_bits,noise,accuracy,latency_ms\nrun1,4,0.01,0.861,12.9\nrun2,6,0.01,0.884,15.2\nrun3,8,0.01,0.902,18.7\nrun4,6,0.05,0.842,15.1\nrun5,8,0.05,0.879,18.9"
+   },
+   "expect": {
+    "any": [
+     "noise",
+     "비트",
+     "bit"
+    ]
+   },
+   "reference": "...",
+   "verify": "기록에 있는 값·계산 값(허용 오차), 기록에 없는 수치는 '추정'이라고 밝혔는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "lab-a-10",
+   "category": "lab",
+   "task": "data_lab",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "run1과 run3의 차이를 조건과 결과로 나눠 설명해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 AIMC ADC/DAC Sweep",
+    "text": "run,adc_bits,noise,accuracy,latency_ms\nrun1,4,0.01,0.861,12.9\nrun2,6,0.01,0.884,15.2\nrun3,8,0.01,0.902,18.7\nrun4,6,0.05,0.842,15.1\nrun5,8,0.05,0.879,18.9"
+   },
+   "expect": {
+    "contains": [
+     "0.861",
+     "0.902"
+    ]
+   },
+   "reference": "...",
+   "verify": "기록에 있는 값·계산 값(허용 오차), 기록에 없는 수치는 '추정'이라고 밝혔는지(QualityGate)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "lab-a-11",
+   "category": "lab",
+   "task": "data_lab",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "정확도 대비 지연 효율(accuracy/latency)이 가장 좋은 run은?",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 AIMC ADC/DAC Sweep",
+    "text": "run,adc_bits,noise,accuracy,latency_ms\nrun1,4,0.01,0.861,12.9\nrun2,6,0.01,0.884,15.2\nrun3,8,0.01,0.902,18.7\nrun4,6,0.05,0.842,15.1\nrun5,8,0.05,0.879,18.9"
+   },
+   "expect": {
+    "contains": [
+     "run1"
+    ]
+   },
+   "reference": "run1",
+   "verify": "기록에 있는 값·계산 값(허용 오차), 기록에 없는 수치는 '추정'이라고 밝혔는지(QualityGate)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "lab-b-00",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "검증 정확도가 가장 높은 epoch은?",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 ResNet 학습",
+    "text": "epoch,loss,val_acc\n1,1.92,0.41\n2,1.31,0.58\n3,0.98,0.66\n4,0.81,0.71\n5,0.77,0.72\n6,0.79,0.71\n7,0.84,0.70"
+   },
+   "expect": {
+    "contains": [
+     "5"
+    ]
+   },
+   "reference": "5 (0.72)",
+   "verify": "기록 값·계산 값(허용 오차)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "lab-b-01",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "마지막 epoch의 loss는?",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 ResNet 학습",
+    "text": "epoch,loss,val_acc\n1,1.92,0.41\n2,1.31,0.58\n3,0.98,0.66\n4,0.81,0.71\n5,0.77,0.72\n6,0.79,0.71\n7,0.84,0.70"
+   },
+   "expect": {
+    "contains": [
+     "0.84"
+    ]
+   },
+   "reference": "0.84",
+   "verify": "기록 값·계산 값(허용 오차)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "lab-b-02",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "loss가 다시 오르기 시작한 epoch은?",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 ResNet 학습",
+    "text": "epoch,loss,val_acc\n1,1.92,0.41\n2,1.31,0.58\n3,0.98,0.66\n4,0.81,0.71\n5,0.77,0.72\n6,0.79,0.71\n7,0.84,0.70"
+   },
+   "expect": {
+    "contains": [
+     "6"
+    ]
+   },
+   "reference": "6",
+   "verify": "기록 값·계산 값(허용 오차)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "lab-b-03",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "epoch 1과 5의 정확도 차이를 계산해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 ResNet 학습",
+    "text": "epoch,loss,val_acc\n1,1.92,0.41\n2,1.31,0.58\n3,0.98,0.66\n4,0.81,0.71\n5,0.77,0.72\n6,0.79,0.71\n7,0.84,0.70"
+   },
+   "expect": {
+    "number": {
+     "value": 0.31,
+     "tol": 0.001
+    }
+   },
+   "reference": "0.31",
+   "verify": "기록 값·계산 값(허용 오차)",
+   "tolerance": 0.001,
+   "split": "test"
+  },
+  {
+   "id": "lab-b-04",
+   "category": "lab",
+   "task": "data_lab",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "과적합이 일어났는지 근거와 함께 판단하고, 조기 종료 기준을 통계적으로 정해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 ResNet 학습",
+    "text": "epoch,loss,val_acc\n1,1.92,0.41\n2,1.31,0.58\n3,0.98,0.66\n4,0.81,0.71\n5,0.77,0.72\n6,0.79,0.71\n7,0.84,0.70"
+   },
+   "expect": {
+    "contains": [
+     "5"
+    ]
+   },
+   "reference": "...",
+   "verify": "기록 값·계산 값(허용 오차)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "lab-b-05",
+   "category": "lab",
+   "task": "summarization",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "이 학습 곡선을 요약해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 ResNet 학습",
+    "text": "epoch,loss,val_acc\n1,1.92,0.41\n2,1.31,0.58\n3,0.98,0.66\n4,0.81,0.71\n5,0.77,0.72\n6,0.79,0.71\n7,0.84,0.70"
+   },
+   "expect": {
+    "contains": [
+     "0.72"
+    ]
+   },
+   "reference": "...",
+   "verify": "기록 값·계산 값(허용 오차)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "lab-b-06",
+   "category": "lab",
+   "task": "data_lab",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "학습률 스케줄을 바꾸는 실험 계획을 세우고 결과 해석 기준을 제안해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 ResNet 학습",
+    "text": "epoch,loss,val_acc\n1,1.92,0.41\n2,1.31,0.58\n3,0.98,0.66\n4,0.81,0.71\n5,0.77,0.72\n6,0.79,0.71\n7,0.84,0.70"
+   },
+   "expect": {
+    "any": [
+     "학습률",
+     "learning rate"
+    ]
+   },
+   "reference": "...",
+   "verify": "기록 값·계산 값(허용 오차)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "lab-b-07",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "loss 열의 평균을 계산해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 ResNet 학습",
+    "text": "epoch,loss,val_acc\n1,1.92,0.41\n2,1.31,0.58\n3,0.98,0.66\n4,0.81,0.71\n5,0.77,0.72\n6,0.79,0.71\n7,0.84,0.70"
+   },
+   "expect": {
+    "number": {
+     "value": 1.0571,
+     "tol": 0.001
+    }
+   },
+   "reference": "1.0571",
+   "verify": "기록 값·계산 값(허용 오차)",
+   "tolerance": 0.001,
+   "split": "test"
+  },
+  {
+   "id": "lab-b-08",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "이 데이터의 스키마(열·형식)를 설명해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 ResNet 학습",
+    "text": "epoch,loss,val_acc\n1,1.92,0.41\n2,1.31,0.58\n3,0.98,0.66\n4,0.81,0.71\n5,0.77,0.72\n6,0.79,0.71\n7,0.84,0.70"
+   },
+   "expect": {
+    "contains": [
+     "epoch",
+     "loss",
+     "val_acc"
+    ]
+   },
+   "reference": "...",
+   "verify": "기록 값·계산 값(허용 오차)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "lab-b-09",
+   "category": "lab",
+   "task": "data_lab",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "그래프로 그릴 축을 추천해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 ResNet 학습",
+    "text": "epoch,loss,val_acc\n1,1.92,0.41\n2,1.31,0.58\n3,0.98,0.66\n4,0.81,0.71\n5,0.77,0.72\n6,0.79,0.71\n7,0.84,0.70"
+   },
+   "expect": {
+    "contains": [
+     "epoch"
+    ]
+   },
+   "reference": "x: epoch, y: loss/val_acc",
+   "verify": "기록 값·계산 값(허용 오차)",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "lab-b-10",
+   "category": "lab",
+   "task": "data_lab",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "두 번째 실험(학습률 절반)이 val_acc 0.74를 냈다면 차이가 의미 있는지, 반복 실험 없이 결론 내려도 되는지 분석해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 ResNet 학습",
+    "text": "epoch,loss,val_acc\n1,1.92,0.41\n2,1.31,0.58\n3,0.98,0.66\n4,0.81,0.71\n5,0.77,0.72\n6,0.79,0.71\n7,0.84,0.70"
+   },
+   "expect": {
+    "contains": [
+     "0.74"
+    ]
+   },
+   "reference": "...",
+   "verify": "기록 값·계산 값(허용 오차)",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "lab-c-00",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "소비 전력이 가장 낮은 칩은?",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 칩 전력 측정",
+    "text": "chip,vdd_V,power_mW,freq_MHz,temp_C\nA1,0.8,3.8,200,41\nA2,0.9,5.1,250,45\nA3,1.0,6.9,300,52\nB1,0.8,3.2,180,39\nB2,0.9,4.6,220,43"
+   },
+   "expect": {
+    "contains": [
+     "B1"
+    ]
+   },
+   "reference": "B1",
+   "verify": "기록 값·계산 값(허용 오차)·단위",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "lab-c-01",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "A3의 온도는?",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 칩 전력 측정",
+    "text": "chip,vdd_V,power_mW,freq_MHz,temp_C\nA1,0.8,3.8,200,41\nA2,0.9,5.1,250,45\nA3,1.0,6.9,300,52\nB1,0.8,3.2,180,39\nB2,0.9,4.6,220,43"
+   },
+   "expect": {
+    "contains": [
+     "52"
+    ]
+   },
+   "reference": "52도",
+   "verify": "기록 값·계산 값(허용 오차)·단위",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "lab-c-02",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "A 계열의 평균 전력을 계산해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 칩 전력 측정",
+    "text": "chip,vdd_V,power_mW,freq_MHz,temp_C\nA1,0.8,3.8,200,41\nA2,0.9,5.1,250,45\nA3,1.0,6.9,300,52\nB1,0.8,3.2,180,39\nB2,0.9,4.6,220,43"
+   },
+   "expect": {
+    "number": {
+     "value": 5.2667,
+     "tol": 0.01
+    }
+   },
+   "reference": "5.27 mW",
+   "verify": "기록 값·계산 값(허용 오차)·단위",
+   "tolerance": 0.01,
+   "split": "test"
+  },
+  {
+   "id": "lab-c-03",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "전압이 0.8V에서 1.0V로 오를 때 A 계열 전력이 몇 배가 되는지 계산해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 칩 전력 측정",
+    "text": "chip,vdd_V,power_mW,freq_MHz,temp_C\nA1,0.8,3.8,200,41\nA2,0.9,5.1,250,45\nA3,1.0,6.9,300,52\nB1,0.8,3.2,180,39\nB2,0.9,4.6,220,43"
+   },
+   "expect": {
+    "number": {
+     "value": 1.8158,
+     "tol": 0.01
+    }
+   },
+   "reference": "약 1.82배",
+   "verify": "기록 값·계산 값(허용 오차)·단위",
+   "tolerance": 0.01,
+   "split": "dev"
+  },
+  {
+   "id": "lab-c-04",
+   "category": "lab",
+   "task": "data_lab",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "주파수당 전력(mW/MHz)이 가장 좋은 칩은?",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 칩 전력 측정",
+    "text": "chip,vdd_V,power_mW,freq_MHz,temp_C\nA1,0.8,3.8,200,41\nA2,0.9,5.1,250,45\nA3,1.0,6.9,300,52\nB1,0.8,3.2,180,39\nB2,0.9,4.6,220,43"
+   },
+   "expect": {
+    "contains": [
+     "B1"
+    ]
+   },
+   "reference": "B1",
+   "verify": "기록 값·계산 값(허용 오차)·단위",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "lab-c-05",
+   "category": "lab",
+   "task": "data_lab",
+   "difficulty": "moderate",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "열 단위를 확인하고 단위가 다른 값을 같은 값으로 비교하면 안 되는 경우를 설명해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 칩 전력 측정",
+    "text": "chip,vdd_V,power_mW,freq_MHz,temp_C\nA1,0.8,3.8,200,41\nA2,0.9,5.1,250,45\nA3,1.0,6.9,300,52\nB1,0.8,3.2,180,39\nB2,0.9,4.6,220,43"
+   },
+   "expect": {
+    "contains": [
+     "mW"
+    ]
+   },
+   "reference": "...",
+   "verify": "기록 값·계산 값(허용 오차)·단위",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "lab-c-06",
+   "category": "lab",
+   "task": "data_lab",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "전압·온도·전력의 관계를 물리적으로 해석하고 누설 전류 영향을 추정하는 실험을 설계해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 칩 전력 측정",
+    "text": "chip,vdd_V,power_mW,freq_MHz,temp_C\nA1,0.8,3.8,200,41\nA2,0.9,5.1,250,45\nA3,1.0,6.9,300,52\nB1,0.8,3.2,180,39\nB2,0.9,4.6,220,43"
+   },
+   "expect": {
+    "any": [
+     "누설",
+     "leakage"
+    ]
+   },
+   "reference": "...",
+   "verify": "기록 값·계산 값(허용 오차)·단위",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "lab-c-07",
+   "category": "lab",
+   "task": "data_lab",
+   "difficulty": "hard",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "A와 B 계열 중 저전력 설계에 더 나은 쪽을 표본 수의 한계와 함께 판단해 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 칩 전력 측정",
+    "text": "chip,vdd_V,power_mW,freq_MHz,temp_C\nA1,0.8,3.8,200,41\nA2,0.9,5.1,250,45\nA3,1.0,6.9,300,52\nB1,0.8,3.2,180,39\nB2,0.9,4.6,220,43"
+   },
+   "expect": {
+    "contains": [
+     "B"
+    ]
+   },
+   "reference": "...",
+   "verify": "기록 값·계산 값(허용 오차)·단위",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "lab-c-08",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "측정 표를 마크다운 표로 바꿔 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 칩 전력 측정",
+    "text": "chip,vdd_V,power_mW,freq_MHz,temp_C\nA1,0.8,3.8,200,41\nA2,0.9,5.1,250,45\nA3,1.0,6.9,300,52\nB1,0.8,3.2,180,39\nB2,0.9,4.6,220,43"
+   },
+   "expect": {
+    "contains": [
+     "|"
+    ]
+   },
+   "reference": "|chip|...",
+   "verify": "기록 값·계산 값(허용 오차)·단위",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "lab-c-09",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "온도가 45도를 넘는 칩을 모두 알려 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 칩 전력 측정",
+    "text": "chip,vdd_V,power_mW,freq_MHz,temp_C\nA1,0.8,3.8,200,41\nA2,0.9,5.1,250,45\nA3,1.0,6.9,300,52\nB1,0.8,3.2,180,39\nB2,0.9,4.6,220,43"
+   },
+   "expect": {
+    "contains": [
+     "A3"
+    ]
+   },
+   "reference": "A3",
+   "verify": "기록 값·계산 값(허용 오차)·단위",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "lab-c-10",
+   "category": "lab",
+   "task": "extraction",
+   "difficulty": "easy",
+   "route_label": "local_ok",
+   "lang": "ko",
+   "prompt": "B2의 주파수와 전압을 알려 줘.",
+   "context": {
+    "kind": "lab",
+    "source": "Lab 실험 기록 칩 전력 측정",
+    "text": "chip,vdd_V,power_mW,freq_MHz,temp_C\nA1,0.8,3.8,200,41\nA2,0.9,5.1,250,45\nA3,1.0,6.9,300,52\nB1,0.8,3.2,180,39\nB2,0.9,4.6,220,43"
+   },
+   "expect": {
+    "contains": [
+     "220",
+     "0.9"
+    ]
+   },
+   "reference": "220 MHz, 0.9 V",
+   "verify": "기록 값·계산 값(허용 오차)·단위",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "agent-00",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "moderate",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\nREADME.md를 읽어 줘.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"read\"",
+     "README.md"
+    ]
+   },
+   "reference": "{\"action\": \"read\", \"path\": \"README.md\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "agent-01",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "moderate",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\n작업 폴더에 무엇이 있는지 보여 줘.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"list\""
+    ]
+   },
+   "reference": "{\"action\": \"list\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "agent-02",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "moderate",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\n코드에서 TODO를 찾아 줘.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"search\"",
+     "TODO"
+    ]
+   },
+   "reference": "{\"action\": \"search\", \"pattern\": \"TODO\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "agent-03",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "critical",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\n테스트를 돌려 줘(python -m pytest).",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"run\"",
+     "pytest"
+    ]
+   },
+   "reference": "{\"action\": \"run\", \"command\": \"pytest\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "agent-04",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "critical",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\nnotes.txt에 '회의 3시'라고 써 줘.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"write\"",
+     "notes.txt"
+    ]
+   },
+   "reference": "{\"action\": \"write\", \"path\": \"notes.txt\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "agent-05",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "critical",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\nconfig.json의 debug를 true로 바꿔 줘.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"edit\"",
+     "config.json"
+    ]
+   },
+   "reference": "{\"action\": \"edit\", \"path\": \"config.json\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "agent-06",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "moderate",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\nmain.py 내용을 보여 줘.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"read\"",
+     "main.py"
+    ]
+   },
+   "reference": "{\"action\": \"read\", \"path\": \"main.py\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "agent-07",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "moderate",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\nsrc 폴더를 보여 줘.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"list\"",
+     "src"
+    ]
+   },
+   "reference": "{\"action\": \"list\", \"path\": \"src\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "agent-08",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "moderate",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\n'import numpy'가 들어간 파일을 찾아 줘.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"search\"",
+     "numpy"
+    ]
+   },
+   "reference": "{\"action\": \"search\", \"pattern\": \"numpy\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "agent-09",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "critical",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\n빌드해 줘(make).",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"run\"",
+     "make"
+    ]
+   },
+   "reference": "{\"action\": \"run\", \"command\": \"make\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "agent-10",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "moderate",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\n할 일이 없으면 끝내 줘. 이미 다 했어.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"done\""
+    ]
+   },
+   "reference": "{\"action\": \"done\", \"answer\": \"끝\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "agent-11",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "moderate",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\ndata.csv를 열어 봐.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"read\"",
+     "data.csv"
+    ]
+   },
+   "reference": "{\"action\": \"read\", \"path\": \"data.csv\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "agent-12",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "moderate",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\n로그에서 ERROR를 찾아 줘.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"search\"",
+     "ERROR"
+    ]
+   },
+   "reference": "{\"action\": \"search\", \"pattern\": \"ERROR\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "agent-13",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "moderate",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\nrequirements.txt를 읽어 줘.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"read\"",
+     "requirements.txt"
+    ]
+   },
+   "reference": "{\"action\": \"read\", \"path\": \"requirements.txt\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "agent-14",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "moderate",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\ntests 폴더를 보여 줘.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"list\"",
+     "tests"
+    ]
+   },
+   "reference": "{\"action\": \"list\", \"path\": \"tests\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "agent-15",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "critical",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\n린트를 돌려 줘(ruff check .).",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"run\"",
+     "ruff"
+    ]
+   },
+   "reference": "{\"action\": \"run\", \"command\": \"ruff\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "agent-16",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "critical",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\nhello.py에 print('hi')를 써 줘.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"write\"",
+     "hello.py"
+    ]
+   },
+   "reference": "{\"action\": \"write\", \"path\": \"hello.py\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "agent-17",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "critical",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\nsetup.cfg의 version을 1.2로 고쳐 줘.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"edit\"",
+     "setup.cfg"
+    ]
+   },
+   "reference": "{\"action\": \"edit\", \"path\": \"setup.cfg\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "agent-18",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "moderate",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\n작업이 끝났으면 요약해서 마무리해 줘.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"done\""
+    ]
+   },
+   "reference": "{\"action\": \"done\", \"answer\": \"끝\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "agent-19",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "moderate",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\ndocs 폴더 목록을 보여 줘.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"list\"",
+     "docs"
+    ]
+   },
+   "reference": "{\"action\": \"list\", \"path\": \"docs\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "test"
+  },
+  {
+   "id": "agent-20",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "moderate",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\nCHANGELOG.md를 읽어 줘.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"read\"",
+     "CHANGELOG.md"
+    ]
+   },
+   "reference": "{\"action\": \"read\", \"path\": \"CHANGELOG.md\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "dev"
+  },
+  {
+   "id": "agent-21",
+   "category": "agent",
+   "task": "agent_planning",
+   "difficulty": "moderate",
+   "route_label": "cloud_needed",
+   "lang": "ko",
+   "prompt": "다음 단계 JSON 하나만 답하세요.\n[단계 종류]\n{\"action\": \"list\", \"path\": \".\"}  폴더 보기\n{\"action\": \"read\", \"path\": \"파일\"}  파일 읽기\n{\"action\": \"search\", \"pattern\": \"글자\"}  찾기\n{\"action\": \"write\", \"path\": \"파일\", \"content\": \"내용\"}  파일 쓰기(승인)\n{\"action\": \"edit\", \"path\": \"파일\", \"old\": \"\", \"new\": \"\"}  고치기(승인)\n{\"action\": \"run\", \"command\": \"명령\"}  명령 실행(승인)\n{\"action\": \"done\", \"answer\": \"답\"}  끝\n[목표]\n함수 parse_args를 찾아 줘.",
+   "context": null,
+   "expect": {
+    "json_keys": [
+     "action"
+    ],
+    "contains": [
+     "\"search\"",
+     "parse_args"
+    ]
+   },
+   "reference": "{\"action\": \"search\", \"pattern\": \"parse_args\"}",
+   "verify": "JSON 단계 형식과 고른 action·대상(포함 검사). 실제 실행은 하지 않는다",
+   "tolerance": null,
+   "split": "test"
+  }
+ ]
+}

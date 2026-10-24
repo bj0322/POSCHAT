@@ -60,7 +60,10 @@ class AdaptiveApi:
         cloud_models = [{"id": mid, "label": label} for mid, label in self._models(self._mode())]
         return {"ok": True, "settings": s, "supported": local_ai.SUPPORTED, "health": health, "models": rows,
                 "resources": res, "memory_budget": budget, "cloud_models": cloud_models,
-                "cloud_model": self._adaptive_cloud_model(), "has_cloud_key": bool(self._api_key()),
+                "cloud_model": self._adaptive_cloud_model(), "light_model": self._adaptive_light_model(),
+                "light_suggestions": [m for m in ("claude-haiku-5-5", "gpt-5-mini-gs-2025-08-07", "gemini-3.8-flash",
+                                                  "gpt-4.1-mini-gs-2025-04-14") if m in self._model_ids(self._mode())],
+                "has_cloud_key": bool(self._api_key()),
                 "budget": adaptive_engine.budget_state(self._config), "policies": adaptive_router.POLICY_LABELS,
                 "stats": adaptive_router.load_stats(), "download": getattr(self, "_ai_download", None)}
 
@@ -91,7 +94,15 @@ class AdaptiveApi:
             s["enabled"] = bool(values["enabled"])
         if values.get("policy") in adaptive_router.POLICIES:
             s["policy"] = values["policy"]
-        for key in ("escalation", "show_badge", "manual_fallback"):
+        if "light_model" in values:  # 3단계의 경량 Cloud 모델: 지금 API 방식에서 고를 수 있는 모델만, 비우면 쓰지 않음
+            model = str(values.get("light_model") or "")
+            s["light_model"] = model if model in self._model_ids(self._mode()) else ""
+        if "consult_max" in values:
+            try:
+                s["consult_max"] = max(0, min(2, int(values["consult_max"])))
+            except (TypeError, ValueError):
+                pass
+        for key in ("escalation", "show_badge", "manual_fallback", "consult"):
             if key in values:
                 s[key] = bool(values[key])
         for key, lo, hi in (("max_escalations", 0, adaptive_engine.MAX_ESCALATIONS), ("local_retries", 0, 1)):
@@ -131,6 +142,11 @@ class AdaptiveApi:
             storage.save_config(self._config)
         self._local_runtime().forget()
         return {**self.adaptive_state(), "app": self.get_state()}
+
+    def _adaptive_light_model(self):
+        s = self._adaptive()
+        light = s.get("light_model") or ""
+        return light if light in self._model_ids(self._mode()) and light != self._adaptive_cloud_model() else ""
 
     def _adaptive_cloud_model(self):
         s = self._adaptive()
@@ -278,7 +294,18 @@ class AdaptiveApi:
 
         return adaptive_engine.AdaptiveEngine(self._config, self._local_runtime(), cloud_ask, cloud_model,
                                               cloud_available=bool(api_key), mode=model, on_event=on_event,
-                                              cancelled=cancelled, area_hint=area)
+                                              cancelled=cancelled, area_hint=area, light_model=self._adaptive_light_model(),
+                                              frontier_session=(thread or {}).get("frontier_session"))
+
+    def _save_frontier_session(self, thread_id, engine):
+        """이 대화의 프런티어 상담 기록(질문·답 앞부분, 최근 6개)을 대화에 남긴다. 다음 요청의 상담에 이어서 붙인다."""
+        if engine is None or not engine.consults:
+            return
+        with self._lock:
+            thread = storage.load_thread(thread_id)
+            if thread is not None:
+                thread["frontier_session"] = engine.frontier_session[-6:]
+                storage.save_thread(thread, update_timestamp=False)
 
     def _routed_ask(self, thread_model, api_key, purpose, area="", cancelled=None):
         """PO노트·대화 요약처럼 Agent를 거치지 않는 호출: (ask(prompt, on_delta) 함수, 엔진) 또는 (None, None)."""

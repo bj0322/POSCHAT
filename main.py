@@ -1190,12 +1190,15 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
                 answer = agent.update_profile(task, attached)
             else:
                 answer = agent.run(history, task, forced, attached)
+            self._save_frontier_session(thread_id, engine)
             if alive():
                 extra = {}
                 if engine is not None and engine.summary():
                     route = engine.summary()
                     extra["routing"] = route
                     model = ("local:" + route["model"]) if route.get("provider") == "local" else route.get("model")
+                    if route.get("consulted") and engine.cloud_model:
+                        extra["routing"]["frontier_model"] = engine.cloud_model
                 else:
                     model = agent.api_settings.model
                 self._add(thread_id, "assistant", answer, model=model or agent.api_settings.model, **extra)

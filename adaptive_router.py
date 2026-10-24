@@ -45,7 +45,7 @@ LOCAL_ELIGIBLE = {
                 "extraction": "moderate", "browser": "moderate", "paper": "easy", "coding": "easy", "data_lab": "easy",
                 "other": "easy"},
     "balanced": {"general_chat": "easy", "translation": "moderate", "summarization": "moderate", "classification": "moderate",
-                 "extraction": "moderate", "browser": "easy", "paper": "easy"},
+                 "extraction": "moderate", "browser": "easy", "paper": "easy", "data_lab": "easy", "coding": "easy"},
     "quality": {"classification": "easy", "extraction": "easy", "translation": "easy"},
 }
 # 앱 내부 보조 호출(사용자에게 바로 보이지 않는 작은 일). 목적(purpose) → (작업, 난이도)
@@ -66,10 +66,16 @@ HANGUL = re.compile(r"[가-힣]")
 FRESH_RE = re.compile(r"(?i)(최신 (정보|뉴스|소식|버전|논문|동향)|요즘 (뉴스|소식|동향)|(오늘|어제|이번 주)(의)? (뉴스|날씨|주가|환율|경기|소식)|"
                       r"현재 (가격|시세|날씨|주가|환율)|뉴스|속보|실시간|latest (news|version)|breaking news|current (price|weather))")
 GROUND_RE = re.compile(r"(?i)(근거|인용|출처|몇 쪽|페이지 번호|원문|citation|cite|source)")
-PROOF_RE = re.compile(r"(?i)(증명|유도|도출|검증|비판|한계점|가설|인과|통계적으로|유의|p-?value|회귀|분산 분석|anova|prove|derive|critique)")
+PROOF_RE = re.compile(r"(?i)(증명|유도|도출|검증(?! ?(정확도|손실|세트|데이터|집합))|비판|가설|인과|통계적으로|유의|p-?value|회귀|분산 분석|anova|prove|derive|critique)")
+# 방법·실험을 새로 짜게 하는 요청(요약이라는 낱말이 들어 있어도 연구 추론이다)
+DESIGN_RE = re.compile(r"(?i)(제안해|설계해|설계하고|평가 방법|기준을 (세워|정해)|방법을 제시|체크리스트|propose|design an? )")
+# 주어진 글·표에서 값 하나를 찾는 짧은 질문(무엇·얼마·언제·어디·누구·몇·가장 …·~은?)
+LOOKUP_RE = re.compile(r"(?i)(얼마|언제|어디|누구|몇|무엇|뭐야|뭐라고|알려 ?줘|뽑아|가장 \S+ (높|낮|긴|짧|큰|작|많|적)|"
+                       r"(은|는|이|가)\?\s*$|\?\s*$|^(what|when|where|who|how (much|many))\b)")
 EDIT_RE = re.compile(r"(?i)(고쳐|수정해|바꿔|리팩터|구현해|만들어 ?줘|추가해|작성해 ?줘|fix|implement|refactor|rewrite|write (a|the) (function|class|code))")
 CODE_WORD_RE = re.compile(r"(?i)(코드|함수|버그|에러|오류 메시지|컴파일|스택 트레이스|traceback|exception|\bcode\b|\bbug\b|\bfunction\b|compile)")
-CODE_RE = re.compile(r"(?m)```|^\s*(def |class |import |#include|function |public |fn |module |always @)|\b\w+\.(py|js|ts|c|cpp|h|java|rs|go|sv|v|vhd|kt)\b")
+CODE_RE = re.compile(r"(?m)```|^\s*(def |class |import |#include|function |public |fn |module |always @)|\b\w+\.(py|js|ts|c|cpp|h|java|rs|go|sv|v|vhd|kt)\b|"
+                     r"\b[a-z][a-z0-9]*_[a-z0-9_]*\([^)]*\)")
 TRANSLATE_RE = re.compile(r"(?i)(번역|영어로|한국어로 (옮|바꿔)|일본어로|중국어로|translate|in english|into korean)")
 SUMMARY_RE = re.compile(r"(?i)(요약|정리해|핵심만|간단히 줄|tl;?dr|summari[sz]e)")
 CLASSIFY_RE = re.compile(r"(?i)(분류|감정|긍정|부정|카테고리|라벨|어느 쪽|classify|sentiment|label)")
@@ -202,7 +208,7 @@ def analyze(prompt, task_text="", purpose="chat", images=False, attachments=Fals
         return _adjust(a, text)
     marker = next((task for task, mark in MARKERS if mark in str(prompt or "")), None)
     rule = None
-    if PROOF_RE.search(text):
+    if PROOF_RE.search(text) or (DESIGN_RE.search(text) and not CODE_RE.search(text)):
         rule = "research" if marker != "data_lab" else "data_lab"
     elif marker == "coding" or (CODE_RE.search(text) and (EDIT_RE.search(text) or marker is None)) or \
             (CODE_WORD_RE.search(text) and marker is None and not TRANSLATE_RE.search(text) and not SUMMARY_RE.search(text)):
@@ -220,7 +226,9 @@ def analyze(prompt, task_text="", purpose="chat", images=False, attachments=Fals
     elif a.images and not CODE_WORD_RE.search(text):
         rule = "general_chat"  # 이미지 설명·질문(로컬 vision 지원 여부는 제약 단계가 본다)
     elif a.needs_fresh:
-        rule = "general_chat"  # 최신 정보: 로컬·Cloud 모두 학습 이후 소식을 모른다(난이도를 올려 보수적으로)
+        rule = "general_chat"  # 최신 정보
+    elif marker is None and len(text) <= 60 and LOOKUP_RE.search(text) and not EDIT_RE.search(text):
+        rule = "general_chat"  # 짧은 사실 질문(분류 불확실로 보내지 않는다): 로컬·Cloud 모두 학습 이후 소식을 모른다(난이도를 올려 보수적으로)
     if rule:
         a.task, a.method, a.confidence = rule, "rule", 1.0
     else:
@@ -235,16 +243,23 @@ def analyze(prompt, task_text="", purpose="chat", images=False, attachments=Fals
 
 def _difficulty(a, text):
     t = a.task
+    short_lookup = len(text) <= 80 and LOOKUP_RE.search(text) and not PROOF_RE.search(text) and not DESIGN_RE.search(text)
     if t in ("agent_planning", "tool_execution"):
         return "critical"
     if t == "research" or (t == "data_lab" and PROOF_RE.search(text)):
         return "hard"
     if t == "coding":
-        return "hard" if EDIT_RE.search(text) else "moderate"
-    if t in ("paper", "data_lab"):
+        if EDIT_RE.search(text):
+            return "hard"
+        return "easy" if short_lookup or (len(text) <= 80 and re.search(r"설명|출력|뭐 하는|하는 일", text)) else "moderate"
+    if t in ("paper", "data_lab", "browser"):
+        if short_lookup and not SUMMARY_RE.search(text):
+            return "easy"  # 첨부한 글·표에서 값 하나 찾기
+        if (SUMMARY_RE.search(text) or EXTRACT_RE.search(text)) and a.est_tokens < 3000:
+            return "easy"
+        if t == "browser":
+            return "moderate"
         return "moderate" if SUMMARY_RE.search(text) or EXTRACT_RE.search(text) else "hard"
-    if t == "browser":
-        return "easy" if SUMMARY_RE.search(text) and a.est_tokens < 6000 else "moderate"
     if t in ("translation", "summarization", "classification", "extraction"):
         return "easy" if a.est_tokens < 2500 else "moderate"
     if t == "general_chat":
@@ -336,9 +351,59 @@ class Route:
     fallback_model: str = ""      # 승격할 Cloud 모델
     est_cost: object = None
     stage: str = "rule"           # rule | semantic | measured | default
+    tier: str = ""                # local | light | frontier (1.17 3단계: 경량 Cloud 모델을 켰을 때)
+    consult: bool = False         # 경량 모델이 필요할 때 프런티어 모델에 짧게 상담할 수 있는지
 
     def to_dict(self):
         return asdict(self)
+
+
+# 경량 Cloud 모델(예: Claude Haiku, GPT-5 mini)이 혼자 답해도 되는 가장 어려운 난이도. 그보다 어려우면 상담 또는 프런티어.
+LIGHT_DIRECT = {"economy": "hard", "balanced": "moderate", "quality": "moderate"}
+# 상담(경량 모델이 이끌고 프런티어에 짧게 묻기)을 쓰는 정책. Quality는 어려운 일을 처음부터 프런티어가 맡는다.
+CONSULT_POLICIES = ("economy", "balanced")
+
+
+def tier(route, a, light, settings, allow_consult=True):
+    """route()가 Cloud로 정한 요청을 경량 모델·상담·프런티어 중 하나로 나눈다(경량 모델을 켰을 때만). route를 고쳐 돌려준다.
+    - 파일·명령·외부 작업으로 이어지는 단계(중요·위험)는 언제나 프런티어.
+    - 정책이 허용하는 난이도까지는 경량 모델이 혼자 답한다(검증에 실패하면 프런티어로 승격).
+    - 더 어려운 일은 상담을 켰으면 경량 모델이 맥락을 들고 답하며 필요한 부분만 프런티어에 묻는다. 아니면 프런티어."""
+    settings = settings or {}
+    if route.provider != "cloud" or light is None or not light.available:
+        if route.provider == "cloud":
+            route.tier = "frontier"
+        elif route.provider == "local":
+            route.tier = "local"
+        return route
+    task_label = TASK_LABELS.get(a.task, a.task)
+    consult_ok = allow_consult and bool(settings.get("consult", True)) and route.policy in CONSULT_POLICIES \
+        and int(settings.get("consult_max", 1) or 0) > 0
+    if a.side_effects or a.difficulty == "critical":
+        route.tier = "frontier"
+        return route
+    limit = LIGHT_DIRECT.get(route.policy)
+    direct = limit is not None and DIFFICULTIES.index(a.difficulty) <= DIFFICULTIES.index(limit) \
+        and not (a.method == "ood" and route.policy == "quality")
+    if direct:
+        route.provider, route.model, route.tier, route.consult = "light", light.model, "light", consult_ok
+        route.reason_code, route.est_cost = "light", light.cost
+        route.reason = f"{task_label}({DIFF_LABELS[a.difficulty]}) · 경량 Cloud 모델로 충분" + (" · 필요하면 프런티어에 상담" if consult_ok else "")
+        return route
+    if consult_ok:
+        route.provider, route.model, route.tier, route.consult = "light", light.model, "light", True
+        route.reason_code, route.est_cost = "light_consult", light.cost
+        route.reason = f"{task_label}({DIFF_LABELS[a.difficulty]}) · 경량 모델이 이끌고 필요한 부분만 프런티어에 상담"
+        return route
+    route.tier = "frontier"
+    return route
+
+
+def light_ok_for(policy, a):
+    """로컬 답이 검증에 실패했을 때 경량 모델로 먼저 올려도 되는지(아니면 바로 프런티어)."""
+    limit = LIGHT_DIRECT.get(policy)
+    return limit is not None and not a.side_effects and a.difficulty != "critical" and \
+        DIFFICULTIES.index(a.difficulty) <= DIFFICULTIES.index(limit)
 
 
 def _eligible(policy, task, difficulty):

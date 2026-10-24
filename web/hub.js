@@ -928,6 +928,9 @@ function adaptiveDiagnostics(ad) {
       h("div", { class: "stat" }, h("b", {}, num(a.requests)), h("span", {}, "자동으로 고른 요청")),
       h("div", { class: "stat" }, h("b", {}, pct(a.local_ratio)), h("span", {}, `로컬로 끝냄 (${num(a.local)})`)),
       h("div", { class: "stat" }, h("b", {}, pct(a.cloud_ratio)), h("span", {}, `Cloud가 답함 (${num(a.cloud)}, 승격 포함)`)),
+      a.light ? h("div", { class: "stat" }, h("b", {}, pct(a.light_ratio)), h("span", {}, `경량 Cloud 모델로 보냄 (${num(a.light)}, 상담 ${num(a.consults)})`)) : null,
+      a.frontier_token_saving_est != null ? h("div", { class: "stat" }, h("b", {}, pct(a.frontier_token_saving_est)),
+        h("span", {}, `프런티어 입력 토큰 줄임(추정): ${num(a.frontier_tokens_est)} / 모두 프런티어였다면 ${num(a.baseline_tokens_est)}`)) : null,
       h("div", { class: "stat" }, h("b", {}, pct(a.escalation_ratio)), h("span", {}, `로컬 → Cloud 승격 (${num(a.escalations)})`)),
       h("div", { class: "stat" }, h("b", {}, a.saved_credits_est == null ? "추정 불가" : `약 ${num(a.saved_credits_est)}`),
         h("span", {}, "로컬로 처리해 쓰지 않은 Cloud 크레딧(추정)"))) : h("small", { class: "muted block" }, "아직 자동으로 고른 요청이 없습니다."),
@@ -941,7 +944,8 @@ function adaptiveDiagnostics(ad) {
     Object.keys(a.failures || {}).length ? h("small", { class: "muted block" }, "보낼 곳이 없거나 막힌 요청: " + Object.entries(a.failures).map(([k, v]) => `${k} ${v}번`).join(", ")) : null,
     h("small", { class: "muted block" }, "로컬의 비용 0은 Cloud API 청구 비용만 0이라는 뜻입니다(이 PC의 전기·하드웨어 비용은 따로이며 재지 않습니다). ",
       "크레딧은 앱 안내에 근거가 있는 Cloud 모델만 추정하고, 근거가 없는 모델은 '추정 불가'로 둡니다(" + (a.saved_unknown ? `${a.saved_unknown}건 추정 불가` : "모두 추정함") + "). ",
-      "POSTECH 크레딧과 Claude API 요금(USD)은 바꾸거나 더하지 않습니다. 검증 통과율은 규칙으로 확인할 수 있었던 답만 셉니다."));
+      "POSTECH 크레딧과 Claude API 요금(USD)은 바꾸거나 더하지 않습니다. 검증 통과율은 규칙으로 확인할 수 있었던 답만 셉니다. ",
+      "프런티어 토큰은 글자 수로 어림한 입력 토큰이며, 경량 모델이 쓴 토큰(" + (a.light_tokens_est == null ? "-" : num(a.light_tokens_est)) + ")은 따로입니다."));
 }
 
 HUB_TABS.push({ id: "diagnostics", label: "사용량·진단", render: renderDiagnostics });
