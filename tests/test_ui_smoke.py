@@ -287,6 +287,68 @@ class UiSmokeTests(unittest.TestCase):
             self.bridge.set_feature("research", False)
             self.bridge.set_feature("automation", False)
 
+    def test_plugins_page_installs_a_plugin_and_uses_its_skill(self):
+        from playwright.sync_api import sync_playwright
+
+        import plugins
+        from test_plugins import marketplace_zip
+
+        plugins._catalog_dir().mkdir(parents=True, exist_ok=True)
+        plugins._archive().write_bytes(marketplace_zip())
+        plugins._write_json(plugins._catalog_file(), plugins.build_catalog())
+        try:
+            with sync_playwright() as p:
+                for width, height in ((1240, 860), (390, 844)):
+                    browser, page, errors = self.open(p, width, height)
+                    try:
+                        if width < 700:
+                            page.evaluate("setCollapsed(false)")
+                        page.click("#btn-plugins")
+                        page.wait_for_selector(".plugin-card")
+                        self.assertEqual(page.inner_text("#chat-title"), "플러그인")
+                        cards = page.locator(".plugin-card")
+                        self.assertEqual(cards.first.locator("h3").inner_text(), "Productivity")
+                        # 검색: 스킬 설명으로도 찾는다
+                        page.fill("#plugin-search", "annotate")
+                        page.wait_for_function("document.querySelectorAll('.plugin-card').length === 1")
+                        self.assertIn("PDF Viewer", page.locator(".plugin-card").inner_text())
+                        page.fill("#plugin-search", "")
+                        overflow = page.evaluate("document.querySelector('#tool-view').scrollWidth - document.querySelector('#tool-view').clientWidth")
+                        self.assertLessEqual(overflow, 1)
+                        self.shot(page, f"page-plugins-{width}")
+                        if width < 700:
+                            self.assertEqual(errors, [])
+                            continue
+                        prod = page.locator(".plugin-card", has_text="Productivity")
+                        prod.locator("button", has_text="설치").click()
+                        page.wait_for_selector(".plugin-card.installed")
+                        self.assertTrue(plugins.installed()["productivity"]["enabled"])
+                        switch = page.locator(".plugin-card.installed [role=switch]")
+                        self.assertEqual(switch.get_attribute("aria-checked"), "true")
+                        switch.click()
+                        page.wait_for_selector("[role=switch][aria-checked=false]")
+                        self.assertFalse(plugins.installed()["productivity"]["enabled"])
+                        page.click("[role=switch][aria-checked=false]")
+                        page.wait_for_selector("[role=switch][aria-checked=true]")
+                        page.click(".po-tab:has-text('설치됨')")
+                        page.click(".plugin-card button:has-text('스킬 보기')")
+                        dialog = page.wait_for_selector("[role=dialog]")
+                        self.assertIn("/productivity:start", dialog.inner_text())
+                        self.assertIn("slack", dialog.inner_text())  # 외부 도구 안내
+                        self.shot(page, "plugin-detail")
+                        page.click("button[aria-label='/productivity:start 대화에서 쓰기']")
+                        page.wait_for_selector("#tool-view", state="hidden")
+                        self.assertEqual(page.input_value("#input"), "/productivity:start ")
+                        # 다른 저장소 탭은 홈페이지만 보인다
+                        page.click("#btn-plugins")
+                        page.click(".po-tab:has-text('다른 저장소')")
+                        self.assertIn("홈페이지", page.locator(".plugin-card").first.inner_text())
+                        self.assertEqual(errors, [])
+                    finally:
+                        browser.close()
+        finally:
+            plugins.remove("productivity")
+
     def test_settings_switch_to_the_personal_claude_api(self):
         from playwright.sync_api import sync_playwright
 

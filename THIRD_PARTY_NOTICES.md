@@ -18,6 +18,11 @@ copyright and license headers remain intact. Marked's upstream license file
 also includes the Markdown redistribution notice. DOMPurify's upstream
 license file includes both offered license texts.
 
+Plugins installed from the Plugins screen (1.12) are downloaded at the
+user's request from https://github.com/anthropics/knowledge-work-plugins
+(Apache-2.0) and are not bundled with the app. Each installed plugin keeps
+its own LICENSE file in the user's data folder (`plugins/<name>/`).
+
 Python packages listed in `requirements.txt` and build dependencies are
 installed separately and retain their respective licenses. When distributing
 a built installer, include the applicable dependency license notices with it.

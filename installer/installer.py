@@ -12,6 +12,7 @@ build_installer.py가 앱 폴더를 payload.zip으로 묶어 이 스크립트와
 바로가기는 PowerShell 대신 COM(IShellLink)으로 직접 만든다.
 """
 import ctypes
+import os
 import subprocess
 import sys
 import threading
@@ -177,20 +178,45 @@ def wait_app_closed(timeout=APP_CLOSE_WAIT):
     time.sleep(1)  # 프로세스가 끝난 직후에는 Windows·백신이 파일을 잠깐 더 붙잡고 있다
 
 
+def check_installed(root, timeout=120):
+    """설치한 앱을 창 없이 한 번 실행해, 파이썬과 앱 코드를 불러와 버전을 적는지 확인한다(PostechChat.exe --verify-install)."""
+    import tempfile
+
+    fd, out = tempfile.mkstemp(prefix="poschat-verify-", suffix=".txt")
+    os.close(fd)
+    try:
+        try:
+            r = subprocess.run([str(Path(root) / APP_EXE), f"--verify-install={out}"], cwd=str(root),
+                               timeout=timeout, creationflags=NO_WINDOW, capture_output=True)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"새 버전이 {timeout}초 안에 응답하지 않았습니다.")
+        written = Path(out).read_text(encoding="utf-8", errors="replace").strip()
+        if written != VERSION:
+            raise RuntimeError(f"새 버전 실행 확인 실패(종료 코드 {r.returncode}, 받은 값 '{written[:40]}').")
+        return True
+    finally:
+        Path(out).unlink(missing_ok=True)
+
+
 def install(dest, desktop, progress):
     """새 파일을 설치 폴더 안의 임시 폴더에 다 푼 뒤 이전 파일과 바꾼다(appfiles). 사용자 데이터(%APPDATA%\\PostechChat)는 건드리지 않는다.
 
     바꾸다 실패하면 이전 버전을 되돌려 두므로, 설치가 중간에 멈춰도 앱이 열리지 않는 상태가 되지 않는다.
     """
     dest = Path(dest)
-    appfiles.cleanup(dest)  # 지난 설치가 남긴 작업 폴더
+    appfiles.cleanup(dest, APP_EXE)  # 지난 설치가 남긴 임시 폴더(복구용 백업은 남긴다)
     with zipfile.ZipFile(resource("payload.zip")) as zf:
         total = sum(m.file_size for m in zf.infolist()) or 1
-        stage = appfiles.extract(zf, dest, progress, share=88)
+        stage = appfiles.extract(zf, dest, progress, share=85)
     appfiles.verify(stage, APP_EXE)
-    progress(89, "이전 버전과 바꾸는 중...")
+    progress(86, "이전 버전과 바꾸는 중...")
     wait_app_closed()
-    appfiles.replace(dest, stage)
+
+    def check(root):
+        progress(89, "새 버전이 실행되는지 확인하는 중...")
+        return check_installed(root)
+
+    appfiles.replace(dest, stage, APP_EXE, check=check)
     progress(93, "바로가기 만드는 중...")
     shortcuts, failed = create_shortcuts(dest / APP_EXE, desktop)
     progress(97, "등록하는 중...")
@@ -325,8 +351,14 @@ class InstallerUI:
         self.root.after(0, lambda: self._done(failed))
 
     def _fail(self, error):
-        messagebox.showerror("설치 실패", f"설치 중 오류가 발생했습니다.\n\n{error}\n\n"
-                                       "백신 프로그램이 설치를 막았다면 잠시 뒤 다시 시도하거나 예외로 허용해 주세요.", parent=self.root)
+        backup = getattr(error, "backup", None)
+        text = f"설치 중 오류가 발생했습니다.\n\n{error}\n\n"
+        if backup:  # 되돌리기에 실패: 이전 버전이 보관된 폴더를 열어 볼 수 있게 한다
+            if messagebox.askyesno("설치 실패", text + "이전 버전을 보관한 폴더를 열까요?", icon="error", parent=self.root):
+                os.startfile(backup)
+        else:
+            messagebox.showerror("설치 실패", text + "백신 프로그램이 설치를 막았다면 잠시 뒤 다시 시도하거나 예외로 허용해 주세요.",
+                                 parent=self.root)
         self.root.destroy()
 
     def _done(self, failed):
