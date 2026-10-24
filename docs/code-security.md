@@ -62,3 +62,12 @@ Windows에는 `O_NOFOLLOW`가 없어 연 뒤 확인에 기댄다.
 ## AI에게 보내는 내용
 - 사용자가 누른 범위(선택·블록·파일·고른 파일 최대 6개, Git 차이, 실행 출력)만 첨부한다. 작업 폴더 전체를 보내지 않는다.
 - 첨부는 보낼 때 지금 고른 모델 API(POSTECH GenAI 또는 Claude)로 전송된다. 개인정보·비밀이 든 코드는 보내기 전에 확인하세요.
+
+## Code 에이전트 (1.16)
+- 에이전트 루프는 채팅 에이전트(`agent.Agent`)와 같다: 같은 도구, 작업 폴더 밖 차단(`_resolve`·`code_workspace.resolve`), 외부 데이터 감싸기.
+- **파일 수정**: 기본 '수정 자동'이면 승인 없이 쓰지만, 처음 고치기 전에 원본을 데이터 폴더 `code/tasks/<작업>/backup/`에 보관하고, 읽은 내용과 디스크가 다르면 쓰지 않는다
+  (`test_file_changed_after_read_is_not_overwritten`). 되돌리기는 에이전트가 쓴 내용(SHA-256)이 그대로일 때만 한다(`test_new_file_revert_deletes_and_user_changes_are_kept`).
+  '모두 묻기'면 승인 창(`test_ask_mode_asks_before_edits`).
+- **명령**: 채팅 설정의 자동 허용과 관계없이 매번 묻고 '이번 실행 동안 허용'이 없다(`test_task_plans_edits_runs_and_records`, `test_denied_command_is_not_run`).
+  실행은 `code_runner.RunManager`(비밀 환경 변수 빼기·출력 가리기·제한·프로세스 트리 끝내기, `test_secrets_are_not_passed_to_commands`, `test_stop_kills_running_command`).
+- 작업 기록(`code/tasks/*.json`)에는 진행 단계와 출력 끝부분이 남는다. 출력은 가린 뒤의 것이다. 작업 ID는 형식을 검사해 다른 경로를 열지 못한다(`test_guards`).

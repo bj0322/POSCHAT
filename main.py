@@ -1274,6 +1274,14 @@ def selftest():
     ok = bundle.is_file() and bundle.stat().st_size > 100_000 and bool(code_diff.make_hunks("a\n", "b\n"))
     lines.append(f"code: {'OK' if ok else 'FAIL 편집기 묶음 없음'} (git {'있음' if code_git.available() else '없음'}, "
                  f"{code_runner.shell_name()})")
+    # 1.16: Lab·Code 에이전트·브라우저 에이전트 모듈이 함께 묶였는지
+    import browser_agent
+    import code_agent
+    import lab_results
+    import lab_store
+    ok = lab_results.to_number("1.5") == (1.5, "ok") and "data-poschat-id" in browser_agent.SNAPSHOT_SCRIPT \
+        and lab_store.SCHEMA_VERSION >= 1 and code_agent.APPROVALS
+    lines.append(f"lab-agents: {'OK' if ok else 'FAIL'}")
     sdk = api._anthropic_sdk()  # 1.11 개인 Claude API: 데스크톱 배포본에는 공식 SDK가 함께 묶여야 한다
     lines.append(f"anthropic: OK {sdk.__version__}" if sdk else "anthropic: FAIL SDK 없음")
     import secret_store

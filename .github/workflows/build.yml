@@ -68,7 +68,8 @@ jobs:
 
   ui:
     # 화면 시험: 실제 Bridge에 붙은 web/ 화면을 Chromium(Playwright)으로 열어 조작한다
-    # (연결·도구·연구·플러그인·브라우저 막대·논문 화면·1.15 코드 화면: 편집·저장·묻기·덩어리 검토·Git·실행·전환·휴대폰 폭)
+    # (연결·도구·연구·플러그인·브라우저 막대·논문 화면·1.15 코드 화면: 편집·저장·묻기·덩어리 검토·Git·실행·전환·휴대폰 폭,
+    #  1.16 사이드바·Lab·Code 에이전트·브라우저 에이전트(실제 Chromium으로 로컬 페이지 조작))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -145,7 +146,7 @@ jobs:
           Get-Content $report
           $text = Get-Content $report -Raw
           $version = python -c "from version import APP_VERSION; print(APP_VERSION)"
-          foreach ($want in "version: $version", "web: True", "documents: OK", "attachments: OK", "anthropic: OK", "word OK", "powerpoint OK", "excel OK", "paper OK", "notion OK", "firecrawl OK", "stt: OK", "crypto: OK", "rag: OK", "code: OK", "github OK(19)", "research OK(12)", "memory OK(8)", "python OK(3)", "ssh OK(2)") {
+          foreach ($want in "version: $version", "web: True", "documents: OK", "attachments: OK", "anthropic: OK", "word OK", "powerpoint OK", "excel OK", "paper OK", "notion OK", "firecrawl OK", "stt: OK", "crypto: OK", "rag: OK", "code: OK", "lab-agents: OK", "github OK(19)", "research OK(12)", "memory OK(8)", "python OK(3)", "ssh OK(2)") {
             if (-not $text.Contains($want)) { Write-Error "selftest에 '$want'이(가) 없습니다."; exit 1 }
           }
 
@@ -239,7 +240,7 @@ jobs:
           report="$HOME/Library/Application Support/PostechChat/selftest.txt"
           cat "$report"
           version=$(python -c "from version import APP_VERSION; print(APP_VERSION)")
-          for want in "version: $version" "web: True" "documents: OK" "attachments: OK" "anthropic: OK" "word OK" "powerpoint OK" "excel OK" "paper OK" "notion OK" "firecrawl OK" "stt: OK" "crypto: OK" "rag: OK" "code: OK" "github OK(19)" "research OK(12)" "memory OK(8)" "python OK(3)" "ssh OK(2)"; do
+          for want in "version: $version" "web: True" "documents: OK" "attachments: OK" "anthropic: OK" "word OK" "powerpoint OK" "excel OK" "paper OK" "notion OK" "firecrawl OK" "stt: OK" "crypto: OK" "rag: OK" "code: OK" "lab-agents: OK" "github OK(19)" "research OK(12)" "memory OK(8)" "python OK(3)" "ssh OK(2)"; do
             grep -qF "$want" "$report" || { echo "selftest에 '$want'이(가) 없습니다."; exit 1; }
           done
           codesign --verify --deep --strict "$app"

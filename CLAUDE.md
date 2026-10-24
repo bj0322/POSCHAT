@@ -6,7 +6,8 @@
 - POSTECH 학생용 AI 데스크톱·안드로이드 앱. Python + pywebview 6.2(Windows: WinForms+WebView2/pythonnet, macOS: Cocoa+WKWebView/pyobjc),
   안드로이드는 Chaquopy(Python 3.11) + Kotlin `MainActivity.kt`. 화면은 `web/`(바닐라 JS, 빌드 도구 없음).
 - 진입점 `main.py`의 `Bridge`가 화면 API(js_api)다. 기능별 화면 API는 믹스인으로 나눈다:
-  `workspace_api.WorkspaceApi`, `browser_api.BrowserApi`(1.13), `paper_api.PaperApi`(1.14), `code_api.CodeApi`(1.15).
+  `workspace_api.WorkspaceApi`, `browser_api.BrowserApi`(1.13), `paper_api.PaperApi`(1.14), `code_api.CodeApi`(1.15),
+  `code_agent.CodeAgentApi`(1.16 Code 에이전트), `lab_api.LabApi`(1.16 Lab). 브라우저 에이전트는 `browser_agent.py` + agent의 `browser_*` 단계.
 - Python → 화면 이벤트는 `Bridge._push` → `ui_events.EventPump`(전용 스레드). UI 스레드(네이티브 처리기)에서 `evaluate_js`를 직접 부르지 않는다(B1).
 - 에이전트(`agent.py`)는 JSON 단계(`{"action": ...}`)를 `_tool_<이름>` 메서드로 실행한다. 외부에서 온 글(웹페이지·논문·MCP 결과)은
   `connectors.wrap_untrusted`로 감싼다.
@@ -14,6 +15,7 @@
   제3자 파일은 `web/vendor/`와 `licenses/`, 고지는 `THIRD_PARTY_NOTICES.md`.
 
 ## 규칙
+- **플랫폼**: 안드로이드 앱은 사용자가 따로 요청하지 않으면 기능을 맞추지 않는다(데스크톱만). 공유 모듈 목록·CI android 작업은 그대로 유지하고, 안 되는 기능은 막는다.
 - 화면 글·주석·문서는 한국어, 쉬운 말(주변 코드의 말투를 따른다). 커밋 메시지도 한국어.
 - 새 Python 모듈은 `android/app/build.gradle.kts`의 공유 모듈 목록에 더한다(`tests/test_connectors.py`가 검사). 데스크톱 전용 모듈은 그 테스트의 제외 목록에.
 - 안드로이드 Python은 3.11: f-string 식 안에 백슬래시를 쓰지 않는다.
