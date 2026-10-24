@@ -30,6 +30,12 @@ MAX_TASKS = 100
 MAX_STEPS_KEPT = 400
 MAX_DETAIL = 12000
 APPROVALS = ("auto_edit", "ask")
+# '수정 자동'이어도 승인 창으로 묻는 파일: 다음 git commit·편집기 열기·셸 진입 때 저절로 프로그램을 실행하게 하는 설정.
+# (.git 안은 에이전트가 아예 고치지 않는다 — agent._in_git_dir)
+AUTO_RUN_FILES = re.compile(
+    r"(?i)(^|/)(\.husky/|\.githooks/|\.pre-commit-config\.ya?ml$|\.pre-commit-hooks\.ya?ml$|lefthook(-local)?\.ya?ml$|"
+    r"\.lefthook(-local)?\.ya?ml$|\.envrc$|\.vscode/(tasks|settings|launch)\.json$|\.idea/|\.devcontainer/|"
+    r"\.gitattributes$|\.gitmodules$)")
 PLAN_DOC = '{"action": "plan", "steps": ["할 일 1", "할 일 2"], "done": [0]}  할 일 목록 쓰기·갱신(done: 끝낸 항목 번호, 0부터)'
 CODE_RULES = """[코딩 에이전트 지침 — Codex·Claude Code처럼 일하세요]
 - 여러 단계가 필요한 작업이면 먼저 plan으로 할 일 목록(3~7개)을 쓰고, 하나씩 끝낼 때마다 plan의 done을 갱신하세요.
@@ -336,8 +342,8 @@ class CodeAgentApi:
         store = self._ca()
 
         def review(rel, old_text, new_text, title, reason, encoding):
-            if approval != "auto_edit" or not alive():
-                return None
+            if approval != "auto_edit" or not alive() or AUTO_RUN_FILES.search(str(rel).replace("\\", "/")):
+                return None  # 승인 창(confirm "edit")으로 묻는다
             task = store.load(task_id)
             p = cw.resolve(task["workspace"], rel, allow_root=False)
             current = None

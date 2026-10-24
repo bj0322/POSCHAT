@@ -1210,7 +1210,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
 
     def _confirm(self, thread_id, kind, title, detail, alive):
         """kind: edit(파일 수정)·run(명령·외부 도구)·write(커넥터 쓰기)는 설정으로 자동 허용할 수 있고,
-        send(전송)·destructive(삭제)·exec(코드 실행)는 설정과 관계없이 매번 묻는다."""
+        send(전송)·destructive(삭제)·exec(코드 실행)·site(브라우저 에이전트의 사이트 승인)는 설정과 관계없이 매번 묻는다."""
         permission = self._config.get("permission", "ask")
         always_ask = kind in connectors.ALWAYS_ASK
         if not always_ask and (permission == "auto_all" or (permission == "auto_edit" and kind == "edit")

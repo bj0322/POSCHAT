@@ -64,9 +64,9 @@ MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_SEARCH_DOC_BYTES = 20 * 1024 * 1024
 BROWSER_ACTION_DOC = (
     '{"action": "browser_read", "what": "page"}  사용자가 옆 브라우저에서 보고 있는 웹페이지 읽기 (what: page|selection)\n'
-    '{"action": "browser_open", "url": "주소 또는 검색어"}  옆 브라우저에서 주소 열기 (처음 가는 사이트는 사용자 승인)\n'
+    '{"action": "browser_open", "url": "주소 또는 검색어"}  옆 브라우저에서 주소 열기 (승인하지 않은 사이트는 사용자 승인)\n'
     '{"action": "browser_snapshot"}  지금 페이지의 조작할 수 있는 요소 목록(e1, e2…)과 글 보기. 조작하기 전에 먼저 하세요\n'
-    '{"action": "browser_click", "id": "e3"}  요소 누르기 (제출·삭제·전송·로그인·결제·다운로드 등은 사용자 승인)\n'
+    '{"action": "browser_click", "id": "e3"}  요소 누르기 (사이트마다 처음 한 번, 제출·삭제·전송·로그인·결제·다운로드 등은 매번 사용자 승인)\n'
     '{"action": "browser_type", "id": "e5", "text": "넣을 글", "enter": false}  입력 칸에 글 넣기 (enter: true면 폼 제출, 승인)\n'
     '{"action": "browser_select", "id": "e7", "value": "선택지"}  선택 목록에서 고르기\n'
     '{"action": "browser_scroll", "direction": "down", "id": ""}  스크롤 (up|down|top|bottom, id를 주면 그 요소가 보이게)\n'
@@ -248,6 +248,16 @@ def _compact_action(action):
         if key in short:
             short[key] = shorten(short[key])
     return json.dumps(short, ensure_ascii=False)
+
+
+def _in_git_dir(rel):
+    """작업 폴더 안 경로가 .git(폴더나 파일) 아래인지. Windows가 같은 이름으로 여는 꼴('.GIT', '.git.', '.git ', '.git::$INDEX_ALLOCATION',
+    8.3 짧은 이름 'GIT~1')도 막는다. .git/config의 core.fsmonitor·hooksPath나 .git/hooks는 다음 git 명령 때 프로그램을 실행한다."""
+    for part in str(rel).replace("\\", "/").split("/"):
+        name = part.split(":")[0].rstrip(". ").lower()
+        if name == ".git" or name.startswith("git~"):
+            return True
+    return False
 
 
 class ToolError(Exception):
@@ -926,6 +936,8 @@ class Agent:
         return f"변경을 적용하지 않았습니다({message}). 필요하면 read로 파일을 다시 확인하세요."
 
     def _check_text_target(self, p):
+        if _in_git_dir(self._rel(p)):
+            raise ToolError(".git 폴더 안은 고치지 않습니다(설정·훅으로 명령이 실행될 수 있습니다). 필요하면 사용자에게 맡기세요.")
         if documents.is_document(p):
             hint = ("mcp 도구(word·powerpoint·excel)를 쓰세요." if self.mcp_servers
                     else "설정의 MCP에서 내장 오피스 서버를 켜면 만들거나 고칠 수 있습니다.")

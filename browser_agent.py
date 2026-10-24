@@ -6,10 +6,15 @@
 - snapshot은 페이지의 조작할 수 있는 요소를 간단한 목록(e1, e2…)으로 만든다. ID는 그 스냅샷에서만 유효하다:
   주소가 바뀌거나(이동·새로 고침·사용자의 직접 조작) 새 스냅샷을 찍으면 예전 ID는 모두 무효다.
 - 동작 전에 요소가 스냅샷 때와 같은지(태그·이름) 다시 확인하고, 다르면 하지 않는다. 동작 뒤에는 주소·제목을 다시 읽어 결과를 확인한다.
-- 위험 판단(risk): 읽기·스크롤·기다리기는 바로, 같은 사이트 안 이동은 바로, 처음 가는 사이트·로컬/사설 네트워크는 승인,
-  제출·삭제·전송·업로드·구매·계정 변경·로그인·비밀번호·OTP·다운로드·GitHub 병합·리뷰 제출은 언제나 승인(이번 실행 허용 없음).
+- 위험 판단(risk): 읽기·스크롤·기다리기는 바로. 사이트(호스트) 승인은 kind "site"로 묻는다 — 설정의 자동 허용·'이번 실행 동안 허용'이
+  듣지 않고, 사용자가 승인한 호스트만 이번 실행 동안 기억한다.
+  · 에이전트가 만든 주소 열기(open): 승인한 호스트가 아니면 매번 승인(시작 페이지의 호스트도 처음 한 번). 주소에 정보를 실어 보내는 일을 막는다.
+  · 페이지의 링크 누르기: 시작 호스트·승인한 호스트 안이면 바로, 다른 호스트면 승인.
+  · 누르기·입력·고르기: 그 페이지의 호스트를 사용자가 승인해야 한다(호스트마다 처음 한 번). 리다이렉트로 간 호스트도 같다.
+  · 로컬/사설 네트워크로 이동은 매번 승인.
+  제출·삭제·전송·업로드·구매·계정 변경·로그인·비밀번호·OTP·다운로드·GitHub 병합·리뷰 제출·확인·동의·권한 허용은 언제나 승인(kind "send").
   이름이 없거나 같은 이름이 여럿인 요소를 누르는 일은 한 번 더 확인한다. 파일 올리기는 하지 않는다(사용자가 직접).
-- 웹페이지의 글은 외부 데이터로 감싸 AI에게 준다(connectors.wrap_untrusted). 웹페이지에는 앱 API가 없다(browser.py).
+- 웹페이지에서 온 글(본문·요소 이름·주소·제목)은 외부 데이터로 감싸 AI에게 준다(connectors.wrap_untrusted). 웹페이지에는 앱 API가 없다(browser.py).
 - 비밀번호·OTP 칸에 넣은 값은 기록·화면·AI 관찰에 남기지 않는다(●●●●).
 - 제한: 한 번 실행에 브라우저 동작 MAX_ACTIONS번, 전체 MAX_SECONDS초, 같은 동작 3번 반복 금지. 사용자가 멈추면 즉시 멈춘다.
 - 이 모듈의 함수는 작업 스레드에서 부른다. backend.read(스크립트)는 UI 스레드를 기다리므로 네이티브 처리기에서 부르지 않는다(B1).
@@ -170,9 +175,16 @@ RISKY = re.compile(
     r"(?i)\b(submit|send|delete|remove|destroy|erase|upload|purchase|buy|checkout|pay|payment|order|subscribe|unsubscribe|donate|"
     r"sign\s*in|log\s*in|login|sign\s*up|register|password|passcode|otp|verify|2fa|account|transfer|withdraw|"
     r"merge|squash|rebase and merge|approve|request changes|submit review|close issue|close pull request|publish|post|comment|reply|"
-    r"install|download|deploy|release|invite|share)\b"
+    r"install|download|deploy|release|invite|share|authori[sz]e|grant|revoke|deactivate)\b"
     r"|(제출|전송|보내기|삭제|지우기|제거|업로드|올리기|구매|결제|주문|구독|해지|후원|로그인|로그아웃|회원\s*가입|비밀번호|인증|계정|"
-    r"송금|이체|출금|병합|승인|리뷰\s*제출|게시|등록|댓글|답글|설치|다운로드|배포|초대|공유)")
+    r"송금|이체|출금|병합|승인|리뷰\s*제출|게시|등록|댓글|답글|설치|다운로드|배포|초대|공유|탈퇴|권한)")
+# 링크가 아닌 버튼에서만 위험으로 보는 낱말: 확인 대화상자·동의·저장처럼 앞의 동작을 확정하는 버튼.
+# ('Continue reading' 같은 링크는 이동이라 사이트 규칙으로 다룬다.)
+CONFIRMING = re.compile(
+    r"(?i)\b(confirm|ok|okay|yes|accept|agree|allow|continue|proceed|save|apply|update|reset|disable|enable|leave|archive|"
+    r"block|report|connect|disconnect|unlink|done|finish|complete)\b"
+    r"|(확인|허용|동의|수락|저장|적용|변경|계속|진행|초기화|해제|차단|신고|연결|완료|마치기)")
+CONFIRMING_EXACT = {"예", "네", "응"}
 DOWNLOAD_EXT = re.compile(r"(?i)\.(exe|msi|dmg|pkg|apk|bat|cmd|ps1|sh|jar|zip|7z|rar|tar|gz|iso|deb|rpm|appimage|vbs|scr)(\?|#|$)")
 GENERIC = {"", "more", "더보기", "...", "…", "click", "here", "여기", "link", "button", "x", "×", "열기", "open", "menu", "메뉴"}
 
@@ -181,32 +193,69 @@ class AgentBrowserError(Exception):
     pass
 
 
+# 이름을 IP로 그대로 바꿔 주는 공개 DNS(127.0.0.1.nip.io → 127.0.0.1). 로컬 주소를 숨기는 데 쓰일 수 있다.
+REBIND_DNS = ("nip.io", "sslip.io", "xip.io", "localtest.me", "lvh.me", "vcap.me", "lacolhost.com", "fbi.com")
+
+
 def host_of(url):
     try:
-        return (urlparse(str(url)).hostname or "").lower()
+        return (urlparse(str(url)).hostname or "").lower().rstrip(".")
     except ValueError:
         return ""
 
 
 def site_of(host):
-    """같은 사이트로 보는 범위: 마지막 두 마디(co.kr 같은 경우 세 마디)."""
+    """승인 단위: 호스트 전체(앞의 www.만 뗀다). github.io·vercel.app처럼 남들과 함께 쓰는 주소가 있어 마지막 두 마디로 묶지 않는다."""
+    host = str(host or "").lower().rstrip(".")
+    return host[4:] if host.startswith("www.") else host
+
+
+def _ipv4_loose(host):
+    """브라우저가 IPv4로 받아들이는 느슨한 꼴(2130706433, 0x7f000001, 0177.0.0.1, 127.1)을 IP로. 아니면 None."""
+    import ipaddress
+
     parts = host.split(".")
-    if len(parts) >= 3 and parts[-2] in ("co", "ac", "or", "go", "ne", "re", "com", "edu", "gov") and len(parts[-1]) == 2:
-        return ".".join(parts[-3:])
-    return ".".join(parts[-2:])
+    if not 1 <= len(parts) <= 4:
+        return None
+    nums = []
+    for p in parts:
+        try:
+            if p.lower().startswith("0x"):
+                nums.append(int(p[2:] or "0", 16))
+            elif len(p) > 1 and p.startswith("0"):
+                nums.append(int(p, 8))
+            else:
+                nums.append(int(p, 10))
+        except ValueError:
+            return None
+    last_bits = 8 * (5 - len(nums))
+    if any(n > 255 for n in nums[:-1]) or nums[-1] >= 2 ** last_bits:
+        return None
+    value = 0
+    for n in nums[:-1]:
+        value = value * 256 + n
+    value = (value << last_bits) + nums[-1]
+    return ipaddress.IPv4Address(value)
 
 
 def local_host(host):
-    """로컬·사설 네트워크(127.x, localhost, 10.x, 172.16-31.x, 192.168.x, *.local)."""
+    """로컬·사설 네트워크(127.x, localhost, 10.x, 172.16-31.x, 192.168.x, 169.254.x, *.local, 숫자로 쓴 IP, 이름→IP 공개 DNS)."""
     import ipaddress
 
-    if host in ("localhost",) or host.endswith(".local") or host.endswith(".localhost"):
+    host = str(host or "").lower().rstrip(".")
+    if host == "localhost" or host.endswith((".local", ".localhost", ".internal", ".home.arpa", ".lan")):
+        return True
+    if any(host == d or host.endswith("." + d) for d in REBIND_DNS):
         return True
     try:
         ip = ipaddress.ip_address(host.strip("[]"))
     except ValueError:
-        return False
-    return ip.is_private or ip.is_loopback
+        ip = _ipv4_loose(host)
+        if ip is None:
+            return False
+    if getattr(ip, "ipv4_mapped", None):
+        ip = ip.ipv4_mapped
+    return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_reserved
 
 
 def classify(action, element=None, page=None, extra=None):
@@ -236,6 +285,9 @@ def classify(action, element=None, page=None, extra=None):
             return "always", "폼 제출"
         if RISKY.search(words):
             return "always", "제출·삭제·전송·로그인·결제·병합 같은 되돌리기 어려운 동작일 수 있음"
+        label = str(el.get("text") or "").strip().lower()
+        if not href and (CONFIRMING.search(words) or label in CONFIRMING_EXACT):
+            return "always", "확인·동의·허용·저장처럼 앞의 동작을 확정하는 버튼일 수 있음"
         if href.startswith("javascript:"):
             return "ask", "스크립트 링크"
         if el.get("ambiguous"):
@@ -257,11 +309,12 @@ class BrowserAgent:
         self.actions = 0
         self.started = time.monotonic()
         self.recent = []
-        self.sites = set()                # 이번 실행에서 승인했거나 시작한 사이트
+        self.sites = set()                # 링크로 바로 갈 수 있는 호스트: 시작 호스트 + 사용자가 승인한 호스트
+        self.approved = set()             # 사용자가 이번 실행에서 승인한 호스트(주소 열기·조작)
         self.expect_nav = False
         self.user_moved = False
         start = host_of(browser.state.get("url")) if browser is not None else ""
-        if start:
+        if start and not local_host(start):
             self.sites.add(site_of(start))
 
     # browser.navigated에서 부른다(UI 스레드일 수 있다 — 막지 않고 표시만 한다)
@@ -328,22 +381,46 @@ class BrowserAgent:
         kind = "send" if level == "always" else "browser"
         return self.confirm(kind, title, detail)
 
-    def _check_site(self, url, verb):
-        """처음 가는 사이트·로컬/사설 네트워크로의 이동은 승인. 막힌 주소는 열지 않는다."""
+    def _grant(self, site):
+        self.approved.add(site)
+        self.sites.add(site)
+
+    def _check_site(self, url, verb, link=False):
+        """주소로 가기 전 승인(kind "site": 자동 허용·'이번 실행 동안 허용' 없음). 막힌 주소는 열지 않는다.
+        link=True(페이지에 있던 링크)면 시작 호스트·승인한 호스트 안은 바로, 에이전트가 만든 주소(open)는 승인한 호스트만 바로."""
         if not browser_mod.allowed(url):
             raise AgentBrowserError("http·https 주소만 열 수 있습니다(file:, javascript:, 앱 내부 주소는 막힘).")
         host = host_of(url)
         site = site_of(host)
         if local_host(host):
-            if not self.confirm("browser", f"브라우저: 로컬·사설 네트워크 주소 {verb}",
+            if not self.confirm("site", f"브라우저: 로컬·사설 네트워크 주소 {verb}",
                                 f"{url}\n\n이 PC나 내부망의 서비스(공유기·사내 서버·Jupyter 등)입니다. 에이전트가 접근해도 될 때만 허용하세요."):
                 return False
+            self._grant(site)
+            return True
+        if site in self.approved or (link and site in self.sites):
             return True
         if site in self.sites:
+            title, why = f"브라우저: 주소 {verb}", f"에이전트가 만든 주소입니다({site})."
+        else:
+            title, why = f"브라우저: 새 사이트 {verb}", f"이번 작업에서 처음 가는 사이트({site})입니다."
+        if self.confirm("site", title, f"{url}\n\n{why} 웹페이지의 지시로 주소에 정보를 실어 보내는 일을 막기 위해 주소 전체를 확인하세요. "
+                        "허용하면 이번 작업 동안 이 사이트에서 에이전트가 누르기·입력을 할 수 있습니다."):
+            self._grant(site)
             return True
-        if self.confirm("browser", f"브라우저: 새 사이트 {verb}", f"{url}\n\n이번 작업에서 처음 가는 사이트({site})입니다. "
-                        "웹페이지의 지시로 주소에 정보를 실어 보내는 일을 막기 위해 주소를 확인하세요."):
-            self.sites.add(site)
+        return False
+
+    def _check_page(self, snap, verb):
+        """누르기·입력·고르기 전에: 지금 페이지의 호스트를 사용자가 승인했는지(호스트마다 처음 한 번)."""
+        url = snap.get("url") or ""
+        site = site_of(host_of(url))
+        if site in self.approved:
+            return True
+        if self.confirm("site", f"브라우저: 이 사이트에서 {verb}",
+                        f"{url}\n\n이번 작업에서 처음으로 이 사이트({site})의 페이지를 조작합니다. 허용하면 이번 작업 동안 이 사이트에서 "
+                        "에이전트가 누르기·입력·고르기를 할 수 있습니다(제출·삭제·전송 같은 동작은 따로 매번 묻습니다). "
+                        "에이전트가 넣는 글은 이 사이트가 읽을 수 있습니다."):
+            self._grant(site)
             return True
         return False
 
@@ -375,11 +452,16 @@ class BrowserAgent:
                 self.browser.open(browser_mod.HOME_URL)
             self.snapshot = None
             raise AgentBrowserError("허용하지 않는 주소(또는 열 수 없는 페이지)로 이동해 앞 페이지로 돌아왔습니다.")
-        if moved and site_of(host_of(url)) not in self.sites and not local_host(host_of(url)):
+        if moved and site_of(host_of(url)) not in self.approved:
             note = f"\n다른 사이트로 이동했습니다(리다이렉트 포함): {url}. 이 사이트에서 조작하려면 승인이 필요합니다."
         else:
             note = ""
         return url, state.get("title") or "", moved, note
+
+    @staticmethod
+    def _page(text, url):
+        """웹페이지에서 온 글(주소·제목·요소 이름)을 외부 데이터로 감싼다."""
+        return connectors.wrap_untrusted(text.strip("\n"), f"웹페이지 {str(url)[:200]}")
 
     # ---- 동작 ----
 
@@ -429,16 +511,18 @@ class BrowserAgent:
             "\n(요소 ID는 이 스냅샷에서만 유효합니다. 페이지가 바뀌면 다시 snapshot 하세요.)"
 
     def _element(self, eid):
-        if self.snapshot is None:
+        """(스냅샷, 요소). 스냅샷은 UI 스레드의 주소 변경 알림(on_navigated)이 언제든 지울 수 있어 한 번 잡아 둔 것을 쓴다."""
+        snap = self.snapshot
+        if snap is None:
             raise AgentBrowserError("유효한 스냅샷이 없습니다(페이지가 바뀌었거나 아직 찍지 않음). 먼저 browser_snapshot 하세요." + self._note())
-        el = self.snapshot["elements"].get(str(eid))
+        el = snap["elements"].get(str(eid))
         if el is None:
-            raise AgentBrowserError(f"스냅샷에 '{eid}' 요소가 없습니다. 요소는 스냅샷 목록의 id(e1, e2…)로 고르세요.")
-        return el
+            raise AgentBrowserError(f"스냅샷에 '{str(eid)[:20]}' 요소가 없습니다. 요소는 스냅샷 목록의 id(e1, e2…)로 고르세요.")
+        return snap, el
 
-    def _act(self, op, el, arg=None):
+    def _act(self, snap, op, el, arg=None):
         sig = {"tag": el["tag"], "text": el.get("text") or "", "editable": bool(el.get("editable"))}
-        res = self._eval(ACTION_SCRIPT % {"token": json.dumps(self.snapshot["token"]), "id": json.dumps(el["id"]),
+        res = self._eval(ACTION_SCRIPT % {"token": json.dumps(snap["token"]), "id": json.dumps(el["id"]),
                                           "op": json.dumps(op), "arg": json.dumps(arg or {}, ensure_ascii=False),
                                           "sig": json.dumps(sig, ensure_ascii=False), "maxtext": MAX_TEXT})
         err = res.get("error")
@@ -448,7 +532,8 @@ class BrowserAgent:
         if err == "disabled":
             raise AgentBrowserError("비활성화된 요소입니다.")
         if err == "no_option":
-            raise AgentBrowserError("그 선택지가 없습니다. 선택지: " + " / ".join(res.get("options") or []))
+            options = " / ".join(str(o) for o in (res.get("options") or []))
+            raise AgentBrowserError("그 선택지가 없습니다.\n" + self._page("선택지: " + options, snap.get("url")))
         if err:
             raise AgentBrowserError("동작하지 못했습니다.")
         return res
@@ -457,69 +542,78 @@ class BrowserAgent:
         return f"{el['id']} {el['tag']}{('[' + el['type'] + ']') if el.get('type') else ''} '{el.get('text') or '(이름 없음)'}'"
 
     def click(self, eid):
-        el = self._element(eid)
+        snap, el = self._element(eid)
         self._guard("click", {"id": eid})
         level, why = classify("click", el)
         if level == "deny":
             raise AgentBrowserError(why)
         href = el.get("href") or ""
-        if href and browser_mod.allowed(href) and level == "auto" and site_of(host_of(href)) not in self.sites:
-            if not self._check_site(href, "이동"):
-                return self._denied("click", el)
-        elif href and not href.startswith("javascript:") and not browser_mod.allowed(href) and not href.startswith("#"):
+        if href and not href.startswith("javascript:") and not browser_mod.allowed(href) and not href.startswith("#"):
             raise AgentBrowserError("http·https가 아닌 링크는 열지 않습니다.")
-        detail = f"{self.snapshot['url']}\n누를 요소: {self._describe(el)}" + (f"\n이동할 주소: {href}" if href else "") + \
+        if not self._check_page(snap, "누르기"):
+            return self._denied("click", el, snap)
+        if href and browser_mod.allowed(href) and level == "auto":
+            target = site_of(host_of(href))
+            if (target not in self.sites or local_host(target)) and target != site_of(host_of(snap.get("url"))):
+                if not self._check_site(href, "이동", link=True):
+                    return self._denied("click", el, snap)
+        detail = f"{snap['url']}\n누를 요소: {self._describe(el)}" + (f"\n이동할 주소: {href}" if href else "") + \
             (f"\n폼 보낼 곳: {el.get('form_action')}" if el.get("form_action") else "") + (f"\n\n주의: {why}" if why else "")
         if not self._approve(level, "브라우저: 누르기", detail):
-            return self._denied("click", el)
-        before = self.snapshot["url"]
+            return self._denied("click", el, snap)
+        before = snap["url"]
         self._emit(action="click", status="running", target=el.get("text"))
         self.expect_nav = True
-        self._act("click", el)
+        self._act(snap, "click", el)
         url, title, moved, note = self._after(before)
         self.expect_nav = False
         self._emit(action="click", status="done", url=url, title=title, summary=self._describe(el))
-        return (f"눌렀습니다: {self._describe(el)}\n지금 주소: {url}\n제목: {title}"
-                + ("\n페이지가 바뀌었습니다. 요소를 다시 보려면 browser_snapshot." if moved else "") + note + self._note())
+        return ("눌렀습니다.\n" + self._page(f"누른 요소: {self._describe(el)}\n지금 주소: {url}\n제목: {title}{note}", url)
+                + ("\n페이지가 바뀌었습니다. 요소를 다시 보려면 browser_snapshot." if moved else "") + self._note())
 
     def type(self, eid, text, enter=False, clear=True):
-        el = self._element(eid)
+        snap, el = self._element(eid)
         self._guard("type", {"id": eid, "enter": bool(enter)})
         if not el.get("editable"):
             raise AgentBrowserError("글을 넣을 수 있는 칸이 아닙니다.")
+        if not self._check_page(snap, "입력"):
+            return self._denied("type", el, snap)
         level, why = classify("type", el, extra={"enter": enter})
         secret = bool(el.get("sensitive") or el.get("form_password"))
         shown = "●●●●" if secret else str(text)[:500]
-        detail = f"{self.snapshot['url']}\n칸: {self._describe(el)}\n넣을 값: {shown}" + ("\n입력한 뒤 Enter(폼 제출)" if enter else "") + \
+        detail = f"{snap['url']}\n칸: {self._describe(el)}\n넣을 값: {shown}" + ("\n입력한 뒤 Enter(폼 제출)" if enter else "") + \
             (f"\n\n주의: {why}" if why else "")
         if not self._approve(level, "브라우저: 입력", detail):
-            return self._denied("type", el)
-        before = self.snapshot["url"]
+            return self._denied("type", el, snap)
+        before = snap["url"]
         self._emit(action="type", status="running", target=el.get("text"))
         self.expect_nav = bool(enter)
-        self._act("type", el, {"text": str(text)[:5000], "enter": bool(enter), "clear": bool(clear)})
+        self._act(snap, "type", el, {"text": str(text)[:5000], "enter": bool(enter), "clear": bool(clear)})
         url, title, moved, note = self._after(before)
         self.expect_nav = False
         self._emit(action="type", status="done", url=url, summary=f"{self._describe(el)} ← {shown[:40]}")
-        return (f"입력했습니다: {self._describe(el)} ← {shown}" + ("\n(Enter로 제출)" if enter else "")
-                + (f"\n지금 주소: {url}" if moved else "") + note + self._note())
+        return (f"입력했습니다: {shown}" + ("\n(Enter로 제출)" if enter else "") + "\n"
+                + self._page(f"칸: {self._describe(el)}" + (f"\n지금 주소: {url}\n제목: {title}" if moved else "") + note, url)
+                + self._note())
 
     def select(self, eid, value):
-        el = self._element(eid)
+        snap, el = self._element(eid)
         self._guard("select", {"id": eid, "value": value})
         if el["tag"] != "select":
             raise AgentBrowserError("선택 목록(select)이 아닙니다.")
+        if not self._check_page(snap, "고르기"):
+            return self._denied("select", el, snap)
         self._emit(action="select", status="running", target=el.get("text"))
-        self._act("select", el, {"value": str(value)})
+        self._act(snap, "select", el, {"value": str(value)})
         self._emit(action="select", status="done", summary=f"{self._describe(el)} = {value}")
-        return f"골랐습니다: {self._describe(el)} = {value}" + self._note()
+        return f"골랐습니다: {value}\n" + self._page(f"목록: {self._describe(el)}", snap.get("url")) + self._note()
 
     def scroll(self, direction="down", eid=""):
         self._guard("scroll", {"direction": direction, "id": eid})
         if eid:
-            el = self._element(eid)
-            self._act("scroll", el)
-            return f"{self._describe(el)}이(가) 보이게 스크롤했습니다." + self._note()
+            snap, el = self._element(eid)
+            self._act(snap, "scroll", el)
+            return "요소가 보이게 스크롤했습니다.\n" + self._page(f"요소: {self._describe(el)}", snap.get("url")) + self._note()
         if direction not in ("up", "down", "top", "bottom"):
             raise AgentBrowserError("direction은 up·down·top·bottom 중 하나입니다.")
         st = self._eval(PAGE_SCRIPT % {"op": json.dumps("scroll"), "arg": json.dumps({"direction": direction})})
@@ -547,8 +641,8 @@ class BrowserAgent:
     def extract(self, eid=""):
         self._guard("extract", {"id": eid})
         if eid:
-            el = self._element(eid)
-            res = self._act("extract", el)
+            snap, el = self._element(eid)
+            res = self._act(snap, "extract", el)
             text, url = res.get("text") or "", res.get("url") or ""
         else:
             page = self.browser.read()
@@ -582,7 +676,7 @@ class BrowserAgent:
         self.expect_nav = False
         self.snapshot = None
         self._emit(action="open", status="done", url=url_now, title=title)
-        return f"열었습니다: {url_now}\n제목: {title}{note}\n요소를 보려면 browser_snapshot."
+        return "열었습니다.\n" + self._page(f"지금 주소: {url_now}\n제목: {title}{note}", url_now) + "\n요소를 보려면 browser_snapshot."
 
     def nav(self, action):
         self._guard(action, {})
@@ -594,8 +688,9 @@ class BrowserAgent:
         self.snapshot = None
         self._emit(action=action, status="done", url=url, title=title)
         verb = {"back": "뒤로", "forward": "앞으로", "refresh": "새로 고침"}[action]
-        return f"{verb} 했습니다: {url}\n제목: {title}{note}"
+        return f"{verb} 했습니다.\n" + self._page(f"지금 주소: {url}\n제목: {title}{note}", url)
 
-    def _denied(self, action, el):
+    def _denied(self, action, el, snap=None):
         self._emit(action=action, status="denied", summary=self._describe(el))
-        return f"사용자가 거부했습니다: {self._describe(el)}. 다시 시도하지 마세요."
+        return ("사용자가 거부했습니다. 같은 동작을 다시 시도하지 마세요.\n"
+                + self._page(f"대상: {self._describe(el)}", (snap or {}).get("url") or ""))

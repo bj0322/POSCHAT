@@ -224,17 +224,19 @@ class AgentToolTests(unittest.TestCase):
         self.assertTrue(obs.startswith("[외부 데이터: 웹페이지 https://arxiv.org/abs/1706.03762"))
         self.assertIn("scaled dot-product", a._tool_browser_read("selection"))
         obs = a._tool_browser_open("https://evil.example/?q=secret")
-        # 1.16: 처음 가는 사이트는 주소를 보이고 승인을 받는다(같은 사이트 안 이동은 묻지 않는다)
+        # 1.16: 에이전트가 만든 주소는 주소를 보이고 승인을 받는다(kind "site": 자동 허용·'이번 실행 동안 허용' 없음)
         kind, title, detail = self.asked[-1]
-        self.assertEqual((kind, title), ("browser", "브라우저: 새 사이트 열기"))
+        self.assertEqual((kind, title), ("site", "브라우저: 새 사이트 열기"))
         self.assertTrue(detail.startswith("https://evil.example/?q=secret"))
         self.assertIn("열었습니다", obs)
+        a._tool_browser_open("https://arxiv.org/list/cs.LG/recent")  # 시작한 사이트라도 에이전트가 만든 주소는 처음 한 번 묻는다
+        self.assertEqual(self.asked[-1][:2], ("site", "브라우저: 주소 열기"))
         asked = len(self.asked)
-        a._tool_browser_open("https://arxiv.org/list/cs.LG/recent")  # 시작한 사이트 안: 묻지 않는다
+        a._tool_browser_open("https://arxiv.org/abs/1706.03762")  # 승인한 호스트: 다시 묻지 않는다
         self.assertEqual(len(self.asked), asked)
         denied = self.make_agent(b, allow=False)
         self.assertIn("거부", denied._tool_browser_open("example.org"))
-        self.assertEqual(b.state["url"], "https://arxiv.org/list/cs.LG/recent")  # 거부한 주소는 열지 않았다
+        self.assertEqual(b.state["url"], "https://arxiv.org/abs/1706.03762")  # 거부한 주소는 열지 않았다
 
     def test_prompt_lists_browser_actions_only_when_open(self):
         b = browser.Browser(lambda br: FakeBackend(br))

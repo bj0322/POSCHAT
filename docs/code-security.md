@@ -68,6 +68,10 @@ Windows에는 `O_NOFOLLOW`가 없어 연 뒤 확인에 기댄다.
 - **파일 수정**: 기본 '수정 자동'이면 승인 없이 쓰지만, 처음 고치기 전에 원본을 데이터 폴더 `code/tasks/<작업>/backup/`에 보관하고, 읽은 내용과 디스크가 다르면 쓰지 않는다
   (`test_file_changed_after_read_is_not_overwritten`). 되돌리기는 에이전트가 쓴 내용(SHA-256)이 그대로일 때만 한다(`test_new_file_revert_deletes_and_user_changes_are_kept`).
   '모두 묻기'면 승인 창(`test_ask_mode_asks_before_edits`).
+- **실행으로 이어지는 파일**: 에이전트(채팅·Code)는 `.git` 안(`.git/config`의 `core.fsmonitor`·`core.hooksPath`, `.git/hooks`)을 고치지 않는다 — 다음 git 명령이나
+  편집기의 git 상태 확인 때 명령 승인 없이 프로그램이 돌기 때문이다(`agent._in_git_dir`: Windows의 `.GIT.`·`.git::$INDEX_ALLOCATION`·`GIT~1` 꼴도 막음).
+  `.husky/`·`.githooks/`·`.pre-commit-config.yaml`·`lefthook.yml`·`.envrc`·`.vscode/tasks.json`·`settings.json`·`launch.json`·`.idea/`·`.devcontainer/`·`.gitattributes`·`.gitmodules`는
+  '수정 자동'이어도 승인 창으로 묻는다(`code_agent.AUTO_RUN_FILES`, `test_git_dir_is_never_written_and_auto_run_files_ask`).
 - **명령**: 채팅 설정의 자동 허용과 관계없이 매번 묻고 '이번 실행 동안 허용'이 없다(`test_task_plans_edits_runs_and_records`, `test_denied_command_is_not_run`).
   실행은 `code_runner.RunManager`(비밀 환경 변수 빼기·출력 가리기·제한·프로세스 트리 끝내기, `test_secrets_are_not_passed_to_commands`, `test_stop_kills_running_command`).
 - 작업 기록(`code/tasks/*.json`)에는 진행 단계와 출력 끝부분이 남는다. 출력은 가린 뒤의 것이다. 작업 ID는 형식을 검사해 다른 경로를 열지 못한다(`test_guards`).

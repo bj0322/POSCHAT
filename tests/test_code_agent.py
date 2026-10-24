@@ -122,6 +122,38 @@ class CodeAgentTests(unittest.TestCase):
         self.assertEqual(r["reverted"], ["calc.py"])
         self.assertIn("return a - b", (self.ws / "calc.py").read_text())
 
+    def test_git_dir_is_never_written_and_auto_run_files_ask(self):
+        """'수정 자동'이어도 .git 안은 고치지 않고(설정·훅으로 명령 실행), 다음 커밋·편집기 열기 때 저절로 도는 설정은 승인 창으로 묻는다."""
+        (self.ws / ".git" / "hooks").mkdir(parents=True)
+        (self.ws / ".git" / "config").write_text("[core]\n")
+        self.answer = "deny"
+        task, _ = self.run_task([
+            {"action": "edit", "path": ".git/config", "old": "[core]", "new": "[core]\n\tfsmonitor = calc.exe"},
+            {"action": "write", "path": ".git/hooks/pre-commit", "content": "#!/bin/sh\ncalc\n"},
+            {"action": "write", "path": ".GIT./hooks/post-commit", "content": "x"},
+            {"action": "write", "path": "sub/../.git/info/attributes", "content": "x"},
+            {"action": "write", "path": ".husky/pre-commit", "content": "calc\n"},
+            {"action": "write", "path": ".vscode/tasks.json", "content": "{}"},
+            {"action": "write", "path": "notes.md", "content": "메모\n"},
+            {"action": "done", "answer": "됨"},
+        ])
+        self.assertEqual((self.ws / ".git" / "config").read_text(), "[core]\n")
+        self.assertFalse((self.ws / ".git" / "hooks" / "pre-commit").exists())
+        self.assertFalse((self.ws / ".git" / "hooks" / "post-commit").exists())
+        self.assertFalse((self.ws / ".git" / "info").exists())
+        self.assertFalse((self.ws / ".husky").exists())  # 승인 창에서 거부
+        self.assertFalse((self.ws / ".vscode").exists())
+        self.assertEqual((self.ws / "notes.md").read_text(), "메모\n")  # 보통 파일은 그대로 자동
+        asked = [e["title"] for e in self.events if e.get("type") == "confirm"]
+        self.assertEqual(len(asked), 2, asked)
+        self.assertTrue(any(".husky/pre-commit" in t for t in asked) and any(".vscode/tasks.json" in t for t in asked))
+        self.assertTrue(agent._in_git_dir(".git"))
+        self.assertTrue(agent._in_git_dir("a/.Git ./config"))
+        self.assertTrue(agent._in_git_dir(".git::$INDEX_ALLOCATION/config"))
+        self.assertTrue(agent._in_git_dir("GIT~1/config"))
+        self.assertFalse(agent._in_git_dir(".github/workflows/ci.yml"))
+        self.assertFalse(agent._in_git_dir(".gitignore"))
+
     def test_new_file_revert_deletes_and_user_changes_are_kept(self):
         task, _ = self.run_task([
             {"action": "write", "path": "pkg/new.py", "content": "X = 1\n"},
