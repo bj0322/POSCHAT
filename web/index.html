@@ -18,27 +18,33 @@
       <button class="icon-btn" id="btn-collapse" title="사이드바 닫기" data-icon="sidebar"></button>
     </div>
     <button class="new-chat" id="btn-new"><span data-icon="edit"></span>새 채팅</button>
-    <button class="new-chat po-entry" id="btn-po" title="강의를 녹음해 받아 적고, 강의 자료와 함께 필기 노트를 만듭니다">
-      <span data-icon="mic"></span>PO노트<span class="rec-dot" id="po-rec-dot" hidden></span>
-    </button>
-    <button class="new-chat po-entry" id="btn-browser" aria-pressed="false" title="채팅 옆에 웹페이지를 열고, 보고 있는 페이지를 AI에게 묻습니다">
-      <span data-icon="globe"></span>브라우저
-    </button>
-    <button class="new-chat po-entry" id="btn-paper" aria-pressed="false" title="채팅 옆에 논문 PDF를 열고, 선택한 문장·쪽·그림을 AI에게 묻습니다">
-      <span data-icon="paper"></span>논문
-    </button>
-    <button class="new-chat po-entry" id="btn-code" aria-pressed="false" title="채팅 옆에 작업 폴더의 코드를 열어 고치고, 에이전트의 변경을 검토하고, 명령을 실행합니다">
-      <span data-icon="code"></span>코드
-    </button>
-    <button class="new-chat po-entry" id="btn-research" title="논문 라이브러리·BibTeX·작업 폴더 문서 검색">
-      <span data-icon="book"></span>연구 라이브러리
-    </button>
-    <button class="new-chat po-entry" id="btn-auto" title="에이전트의 Python·Jupyter 실행과 원격 서버(SSH) 실행">
-      <span data-icon="terminal"></span>에이전트 자동화
-    </button>
-    <button class="new-chat po-entry" id="btn-plugins" title="직무별 스킬 묶음(Anthropic Knowledge Work Plugins) 설치·관리">
-      <span data-icon="blocks"></span>플러그인
-    </button>
+    <!-- 1.16: 기능 버튼은 2열로 묶어 채팅 목록에 세로 공간을 더 준다(전체 이름은 title·aria-label) -->
+    <div class="sb-features" role="group" aria-label="기능">
+      <button class="new-chat po-entry" id="btn-po" aria-label="PO노트" title="PO노트: 강의를 녹음해 받아 적고, 강의 자료와 함께 필기 노트를 만듭니다">
+        <span data-icon="mic"></span><span class="sb-label">PO노트</span><span class="rec-dot" id="po-rec-dot" hidden></span>
+      </button>
+      <button class="new-chat po-entry" id="btn-browser" aria-pressed="false" aria-label="브라우저" title="브라우저: 채팅 옆에 웹페이지를 열고, 보고 있는 페이지를 AI에게 묻거나 에이전트에게 조작을 맡깁니다">
+        <span data-icon="globe"></span><span class="sb-label">브라우저</span>
+      </button>
+      <button class="new-chat po-entry" id="btn-paper" aria-pressed="false" aria-label="논문" title="논문: 채팅 옆에 논문 PDF를 열고, 선택한 문장·쪽·그림을 AI에게 묻습니다">
+        <span data-icon="paper"></span><span class="sb-label">논문</span>
+      </button>
+      <button class="new-chat po-entry" id="btn-code" aria-pressed="false" aria-label="코드" title="코드: 채팅 옆에 작업 폴더의 코드를 열어 고치고, 에이전트의 변경을 검토하고, 명령을 실행합니다">
+        <span data-icon="code"></span><span class="sb-label">코드</span>
+      </button>
+      <button class="new-chat po-entry" id="btn-lab" aria-label="Lab(실험 기록)" title="Lab: 실험 조건·코드 버전·환경·결과를 기록하고, 여러 실행을 비교하고, AI에게 해석을 묻습니다">
+        <span data-icon="flask"></span><span class="sb-label">Lab</span>
+      </button>
+      <button class="new-chat po-entry" id="btn-research" aria-label="연구 라이브러리" title="연구 라이브러리: 논문 라이브러리·BibTeX·작업 폴더 문서 검색">
+        <span data-icon="book"></span><span class="sb-label">라이브러리</span>
+      </button>
+      <button class="new-chat po-entry" id="btn-auto" aria-label="에이전트 자동화" title="에이전트 자동화: 에이전트의 Python·Jupyter 실행과 원격 서버(SSH) 실행">
+        <span data-icon="terminal"></span><span class="sb-label">자동화</span>
+      </button>
+      <button class="new-chat po-entry" id="btn-plugins" aria-label="플러그인" title="플러그인: 직무별 스킬 묶음(Anthropic Knowledge Work Plugins) 설치·관리">
+        <span data-icon="blocks"></span><span class="sb-label">플러그인</span>
+      </button>
+    </div>
     <nav id="thread-list"></nav>
     <div class="sb-bottom">
       <button class="sb-item" id="btn-workspace">
