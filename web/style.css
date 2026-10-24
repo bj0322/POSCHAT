@@ -71,6 +71,7 @@ svg { width: 18px; height: 18px; flex: none; }
   display: flex;
   flex-direction: column;
   padding: 8px;
+  overflow-y: auto;
   transition: margin-left .2s ease;
 }
 #app.collapsed #sidebar { margin-left: -260px; }
@@ -95,7 +96,13 @@ svg { width: 18px; height: 18px; flex: none; }
 }
 .new-chat:hover { background: var(--hover); }
 
-#thread-list { flex: 1; overflow-y: auto; margin: 8px -4px 8px 0; padding-right: 4px; }
+/* 1.16: 채팅 목록이 남는 세로 공간을 모두 쓰고 혼자 스크롤한다. 창이 아주 낮으면 목록은 최소 높이를 지키고
+   사이드바 전체가 스크롤한다(아래 메뉴가 잘리지 않게). */
+#thread-list { flex: 1 1 auto; min-height: 120px; overflow-y: auto; margin: 6px -4px 6px 0; padding-right: 4px; }
+.sb-features { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin-top: 4px; flex: none; }
+.sb-features .new-chat.po-entry { min-width: 0; gap: 7px; padding: 7px 8px; font-size: 13.5px; margin-top: 0; }
+.sb-features .new-chat svg { width: 17px; height: 17px; }
+.sb-label { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .group-title { font-size: 12px; font-weight: 600; color: var(--text-3); padding: 14px 10px 6px; }
 .thread {
   position: relative; display: flex; align-items: center;
@@ -117,14 +124,17 @@ svg { width: 18px; height: 18px; flex: none; }
 }
 .thread .spinner-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); margin-left: 6px; animation: pulse 1.2s infinite; }
 
-.sb-bottom { border-top: 1px solid var(--border); padding-top: 8px; display: flex; flex-direction: column; gap: 2px; }
+/* 1.16: 아래 메뉴를 촘촘하게(간격·높이·글자 1px). 클릭 영역은 높이 30px 이상을 지킨다 */
+.sb-bottom { border-top: 1px solid var(--border); padding-top: 4px; display: flex; flex-direction: column; gap: 0; flex: none; }
 .sb-item {
-  display: flex; align-items: center; gap: 10px; border: 0; background: transparent;
-  border-radius: 10px; padding: 8px 10px; text-align: left; font-size: 14px; width: 100%;
+  display: flex; align-items: center; gap: 10px; border: 0; background: transparent; min-height: 30px;
+  border-radius: 8px; padding: 5px 10px; text-align: left; font-size: 13px; line-height: 1.4; width: 100%;
 }
+.sb-item svg { width: 17px; height: 17px; }
 .sb-item:hover { background: var(--hover); }
-.sb-item-text { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
-.sb-item-text small { color: var(--text-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-item:focus-visible, .new-chat:focus-visible { outline: 2px solid var(--text-3); outline-offset: -2px; }
+.sb-item-text { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.sb-item-text small { color: var(--text-3); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- 메인 ---------- */
 #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -662,6 +672,15 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .browser-action { padding: 4px 12px; font-size: 12.5px; }
 .browser-action:disabled { opacity: .45; cursor: default; }
 .browser-status { flex: 1; min-width: 80px; color: var(--text-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+/* 1.16 브라우저 에이전트 진행 표시 */
+.browser-agent { gap: 8px; padding: 4px 8px; margin-top: 2px; border-radius: 8px; background: color-mix(in srgb, #2563eb 10%, var(--bg)); font-size: 12.5px; }
+.browser-agent.paused { background: color-mix(in srgb, #eab308 16%, var(--bg)); }
+.browser-agent.error { background: color-mix(in srgb, var(--danger) 12%, var(--bg)); }
+.browser-agent-dot { width: 8px; height: 8px; border-radius: 50%; background: #2563eb; flex: none; animation: br-pulse 1.2s ease-in-out infinite; }
+.browser-agent.paused .browser-agent-dot { background: #ca8a04; animation: none; }
+.browser-agent-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes br-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .browser-agent-dot { animation: none; } }
 @media (max-width: 720px) {
   .browser-status { display: none; }
   .browser-action { padding: 4px 10px; }

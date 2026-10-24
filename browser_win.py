@@ -207,6 +207,19 @@ class WebView2Backend:
             raise browser_mod.BrowserError("웹페이지가 응답하지 않습니다.")
         return str(task.Result)
 
+    def screenshot(self):
+        """보이는 웹페이지를 PNG로(1.16 브라우저 에이전트). 작업 스레드에서 부른다(UI 스레드에서 결과를 기다리지 않는다)."""
+        from Microsoft.Web.WebView2.Core import CoreWebView2CapturePreviewImageFormat
+        from System.IO import MemoryStream
+
+        if not self.ready.wait(20) or self.error:
+            raise browser_mod.BrowserError("웹페이지 뷰를 준비하지 못했습니다.")
+        stream = MemoryStream()
+        task = self._invoke(lambda: self.view.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, stream))
+        if not task.Wait(READ_TIMEOUT_MS):
+            raise browser_mod.BrowserError("화면을 캡처하지 못했습니다.")
+        return bytes(stream.ToArray())
+
     def close(self):
         if self.form.IsDisposed or self.form.Disposing:
             self.view = self.splitter = None  # 앱 창이 이미 닫혔다(앱 종료): 컨트롤도 함께 정리됐다

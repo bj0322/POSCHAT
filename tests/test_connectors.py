@@ -388,7 +388,7 @@ class ConfirmTests(unittest.TestCase):
         bridge = self.bridge("auto_all")
         self.assertTrue(bridge._confirm("t", "write", "제목", "", lambda: True))
         self.assertTrue(bridge._confirm("t", "run", "제목", "", lambda: True))
-        for kind in ("send", "destructive", "exec"):
+        for kind in ("send", "destructive", "exec", "site"):  # site: 브라우저 에이전트의 사이트 승인(1.16)
             bridge.events.clear()
             self.answer_later(bridge, "always")
             self.assertTrue(bridge._confirm("t", kind, "제목", "", lambda: True))

@@ -28,7 +28,9 @@ import telemetry
 import ui_events
 import updates
 from browser_api import BrowserApi
+from code_agent import CodeAgentApi
 from code_api import CodeApi
+from lab_api import LabApi
 from paper_api import PaperApi
 from workspace_api import WorkspaceApi
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
@@ -93,9 +95,10 @@ def _installed_package_licenses():
     return sorted(items, key=lambda x: x["name"].lower())
 
 
-class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi):
+class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
     """JS에서 호출하는 API. 밑줄로 시작하는 이름은 JS에 노출되지 않는다. '연결·도구' 창의 API는 WorkspaceApi,
-    브라우저는 BrowserApi(1.13), 논문은 PaperApi(1.14), 코드 편집기는 CodeApi(1.15)에 있다."""
+    브라우저는 BrowserApi(1.13), 논문은 PaperApi(1.14), 코드 편집기는 CodeApi(1.15),
+    Code 에이전트는 CodeAgentApi(1.16), 실험 기록은 LabApi(1.16)에 있다."""
 
     def __init__(self):
         storage.ensure_dirs()
@@ -1151,6 +1154,9 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi):
             paper=self._paper_for_agent(),
             # 1.15: Code 화면이 열려 있으면 파일 수정은 승인 창 대신 Code 화면의 변경 검토(덩어리별)로
             review=lambda *a: self._code_review_edit(thread_id, alive, workspace, *a),
+            # 1.16 브라우저 에이전트: 진행 상황은 브라우저 막대와 채팅에, 일시정지는 브라우저 막대의 버튼
+            browser_progress=lambda info: self._push({"type": "browser", "kind": "agent", "thread_id": thread_id, **info}),
+            browser_paused=self._browser_pause_event(),
         )
         started, outcome = time.monotonic(), "done"
         try:
@@ -1171,6 +1177,19 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi):
             if alive():
                 self._add(thread_id, "error", f"{type(e).__name__}: {e}")
         finally:
+            if agent.browser is not None:
+                agent.browser.watch = None
+            if getattr(agent, "_browser_agent", None) is not None:
+                self._push({"type": "browser", "kind": "agent", "status": "finished", "thread_id": thread_id,
+                            "count": agent._browser_agent.actions})
+                self._browser_pause_event().clear()
+            shots = getattr(agent, "screenshots", [])
+            if shots and alive():
+                try:
+                    committed = attachments.commit([x["id"] for x in shots])
+                    self._add(thread_id, "tool", f"📷 브라우저 화면 캡처 {len(committed)}장", detail="", attachments=committed)
+                except (attachments.AttachmentError, ValueError):
+                    pass
             telemetry.record("agent_run", mode="agent" if agent_mode and workspace else "chat",
                              model=agent.api_settings.model, ms=int((time.monotonic() - started) * 1000),
                              outcome=outcome, steps=agent.steps, tools=len(agent.tools_run))
@@ -1191,7 +1210,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi):
 
     def _confirm(self, thread_id, kind, title, detail, alive):
         """kind: edit(파일 수정)·run(명령·외부 도구)·write(커넥터 쓰기)는 설정으로 자동 허용할 수 있고,
-        send(전송)·destructive(삭제)·exec(코드 실행)는 설정과 관계없이 매번 묻는다."""
+        send(전송)·destructive(삭제)·exec(코드 실행)·site(브라우저 에이전트의 사이트 승인)는 설정과 관계없이 매번 묻는다."""
         permission = self._config.get("permission", "ask")
         always_ask = kind in connectors.ALWAYS_ASK
         if not always_ask and (permission == "auto_all" or (permission == "auto_edit" and kind == "edit")
@@ -1220,6 +1239,8 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi):
 
     def stop(self):
         self._cancel.set()
+        if getattr(self, "_browser_paused", None) is not None:
+            self._browser_paused.clear()  # 일시정지 중이어도 멈춘다
         for entry in list(self._pending.values()):
             entry[1] = "deny"
             entry[0].set()
@@ -1253,6 +1274,14 @@ def selftest():
     ok = bundle.is_file() and bundle.stat().st_size > 100_000 and bool(code_diff.make_hunks("a\n", "b\n"))
     lines.append(f"code: {'OK' if ok else 'FAIL 편집기 묶음 없음'} (git {'있음' if code_git.available() else '없음'}, "
                  f"{code_runner.shell_name()})")
+    # 1.16: Lab·Code 에이전트·브라우저 에이전트 모듈이 함께 묶였는지
+    import browser_agent
+    import code_agent
+    import lab_results
+    import lab_store
+    ok = lab_results.to_number("1.5") == (1.5, "ok") and "data-poschat-id" in browser_agent.SNAPSHOT_SCRIPT \
+        and lab_store.SCHEMA_VERSION >= 1 and code_agent.APPROVALS
+    lines.append(f"lab-agents: {'OK' if ok else 'FAIL'}")
     sdk = api._anthropic_sdk()  # 1.11 개인 Claude API: 데스크톱 배포본에는 공식 SDK가 함께 묶여야 한다
     lines.append(f"anthropic: OK {sdk.__version__}" if sdk else "anthropic: FAIL SDK 없음")
     import secret_store
@@ -1402,6 +1431,7 @@ def run_app():
     finally:
         bridge._events.stop()  # 창이 닫혔다: 더 보내지 않는다(보내는 중인 evaluate_js를 오래 기다리지 않는다)
         bridge._po_shutdown()
+        bridge._ca_shutdown()  # Code 에이전트 작업을 멈춘다
         bridge._code_shutdown()  # 실행 패널에서 돌던 명령을 끝낸다(프로세스가 남지 않게)
         bridge._mcp.shutdown()
         if bridge._browser_obj is not None:

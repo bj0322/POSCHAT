@@ -7,7 +7,10 @@
    웹페이지 쪽에는 POSCHAT API가 없다. 이 화면이 browser_* 를 불러 페이지를 읽고 채팅 첨부로 만든다. */
 
 const BR = { open: false, available: true, url: "", title: "", loading: false, can_back: false, can_forward: false,
-  mode: "", busy: "" };
+  mode: "", busy: "", agent: null };  // agent: 1.16 브라우저 에이전트 진행 {action, status, count, limit, elapsed, summary, paused}
+const BR_ACTION = { snapshot: "페이지 살펴보기", click: "누르기", type: "입력", select: "고르기", scroll: "스크롤", wait: "기다리기",
+  extract: "글 읽기", screenshot: "화면 캡처", open: "주소 열기", back: "뒤로", forward: "앞으로", refresh: "새로 고침" };
+const BR_STATUS = { running: "하는 중", done: "완료", denied: "거부됨", error: "실패", paused: "일시정지" };
 
 function browserBar() {
   let bar = $("#browser-bar");
@@ -33,7 +36,14 @@ function browserBar() {
       action("browser-ask-page", "이 페이지에 대해 묻기", "지금 보는 페이지의 글을 채팅에 첨부합니다", () => browserAttach("page")),
       action("browser-ask-selection", "선택한 부분 묻기", "페이지에서 드래그한 글만 첨부합니다", () => browserAttach("selection")),
       action("browser-save-paper", "연구 라이브러리에 저장", "arXiv·DOI 논문 페이지를 라이브러리에 더합니다", () => browserSavePaper()),
-      h("span", { class: "browser-status", id: "browser-status", role: "status", "aria-live": "polite" })));
+      h("span", { class: "browser-status", id: "browser-status", role: "status", "aria-live": "polite" })),
+    // 1.16: 에이전트가 이 브라우저를 조작하는 동안의 진행 표시
+    h("div", { class: "browser-row browser-agent", id: "browser-agent", hidden: true, role: "status", "aria-live": "polite" },
+      h("span", { class: "browser-agent-dot", "aria-hidden": "true" }),
+      h("span", { class: "browser-agent-text", id: "browser-agent-text" }),
+      h("button", { class: "btn browser-action", id: "browser-agent-pause", onclick: () => browserAgentPause() }, "일시정지"),
+      h("button", { class: "btn browser-action danger", id: "browser-agent-stop", title: "에이전트 작업을 멈춥니다(채팅의 중지와 같음)",
+        onclick: () => { api().stop(); toast("에이전트를 멈췄습니다"); } }, "멈춤")));
   $("#topbar").after(bar);
   return bar;
 }
@@ -53,6 +63,17 @@ function renderBrowserBar() {
   reload.title = BR.loading ? "멈추기" : "새로 고침";
   reload.setAttribute("aria-label", reload.title);
   for (const id of ["browser-ask-page", "browser-ask-selection", "browser-save-paper"]) $(`#${id}`).disabled = !BR.url || !!BR.busy;
+  const ag = BR.agent;
+  const strip = $("#browser-agent");
+  strip.hidden = !ag;
+  if (ag) {
+    const what = `${BR_ACTION[ag.action] || ag.action || "준비"}${ag.summary ? ` · ${ag.summary}` : ag.target ? ` · ${ag.target}` : ""}`;
+    $("#browser-agent-text").textContent = `에이전트 조작 중 — ${what} (${BR_STATUS[ag.paused ? "paused" : ag.status] || ag.status || ""}) · ` +
+      `${ag.count || 0}/${ag.limit || 40}번 · ${Math.round(ag.elapsed || 0)}초`;
+    strip.classList.toggle("paused", !!ag.paused);
+    strip.classList.toggle("error", ag.status === "error" || ag.status === "denied");
+    $("#browser-agent-pause").textContent = ag.paused ? "계속" : "일시정지";
+  }
   const status = $("#browser-status");
   status.textContent = BR.busy || (BR.loading ? "불러오는 중…" : (BR.title || ""));
   status.title = BR.title || "";
@@ -153,8 +174,20 @@ async function browserSavePaper() {
   }
 }
 
+async function browserAgentPause() {
+  const paused = !(BR.agent && BR.agent.paused);
+  await api().browser_agent_pause(paused);
+}
+
 function browserEvent(ev) {
   if (ev.kind === "blocked") return toast(`${ev.reason} (${ev.url.slice(0, 80)})`);
+  if (ev.kind === "agent") {
+    if (ev.status === "finished") BR.agent = null;
+    else if (ev.status === "paused" || ev.status === "resumed") { if (BR.agent) BR.agent.paused = ev.status === "paused"; }
+    else BR.agent = { ...(BR.agent || {}), ...ev, paused: ev.status === "paused" ? true : (BR.agent ? BR.agent.paused : false) };
+    if (ev.url) BR.url = ev.url;
+    return renderBrowserBar();
+  }
   for (const k of ["url", "title", "loading", "can_back", "can_forward", "mode"]) if (k in ev) BR[k] = ev[k];
   if ("visible" in ev) BR.open = ev.visible;
   renderBrowserBar();

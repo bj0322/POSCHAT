@@ -263,7 +263,9 @@ class RunManager:
         with self._lock:
             return [r for r in self._runs.values() if r.status == "running"]
 
-    def start(self, workspace, command, timeout=DEFAULT_TIMEOUT, purpose=""):
+    def start(self, workspace, command, timeout=DEFAULT_TIMEOUT, purpose="", extra_env=None, on_exit=None):
+        """명령을 시작한다. extra_env: 더할 환경 변수(비밀 이름은 넣지 않는다, Lab의 파라미터 등).
+        on_exit(rec): 끝나고 기록까지 남긴 뒤 부른다(Lab Run 기록 갱신)."""
         command = str(command or "").strip()
         if not command:
             raise RunnerError("실행할 명령을 입력하세요.")
@@ -276,8 +278,12 @@ class RunManager:
         masker = Masker(self.secrets())
         rec = RunRecord(id=uuid.uuid4().hex[:12], command=masker._mask(command), cwd=str(root), started=time.time(),
                         inputs=input_files(workspace, command), purpose=str(purpose or "")[:300])
+        env = clean_env()
+        for k, v in (extra_env or {}).items():
+            if not SECRET_ENV.search(str(k)):
+                env[str(k)] = str(v)
         popen = dict(cwd=str(root), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                     env=clean_env(), shell=True)
+                     env=env, shell=True)
         if os.name == "nt":
             popen["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
         else:
@@ -298,11 +304,11 @@ class RunManager:
                 if old.status != "running":
                     self._runs.pop(old.id, None)
         self._emit(kind="run_start", run=rec.to_dict(tail=False))
-        threading.Thread(target=self._pump, args=(rec, proc, masker, timeout, workspace), daemon=True,
+        threading.Thread(target=self._pump, args=(rec, proc, masker, timeout, workspace, on_exit), daemon=True,
                          name=f"code-run-{rec.id}").start()
         return rec
 
-    def _pump(self, rec, proc, masker, timeout, workspace):
+    def _pump(self, rec, proc, masker, timeout, workspace, on_exit=None):
         start = time.monotonic()
         deadline = start + timeout
         decoder = codecs.getincrementaldecoder("utf-8")("strict")
@@ -410,6 +416,11 @@ class RunManager:
         with self._lock:
             self._procs.pop(rec.id, None)
         self._log(rec)
+        if on_exit is not None:  # Lab 기록을 먼저 고친다(wait()가 돌아왔을 때 기록이 이미 맞도록)
+            try:
+                on_exit(rec)
+            except Exception:
+                pass
         rec.ended = time.time()
         self._emit(kind="run_exit", run=rec.to_dict(tail=False))
 

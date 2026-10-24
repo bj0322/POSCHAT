@@ -118,3 +118,14 @@ Agent._tool_write/_tool_edit → Agent._save(p, old, new, enc, title, reason)
 
 안드로이드는 `browser_api.android_factory`가 있으면 안드로이드로 보고 `code_state().features`에서 끈다. 모듈은 모두 APK에 들어간다
 (`android/app/build.gradle.kts`, Chaquopy Python 3.11).
+
+## Code 에이전트 (1.16)
+| 파일 | 하는 일 |
+|---|---|
+| `code_agent.py` | `TaskStore`(작업 세션 JSON, 원본 백업), `CodeAgent(agent.Agent)`(plan 단계, 코딩 지침, `run`을 RunManager로), `CodeAgentApi` 믹스인(`code_agent_*`) |
+| `web/code-agent.js` | Code 화면 맨 앞 '작업' 탭(`kind: "agent"`, 닫지 않음): 작업 목록·승인 방식·진행 기록·계획·바뀐 파일·되돌리기·입력 |
+
+- 흐름: `code_agent_start(text, task_id)` → 작업 JSON에 지시 추가 → 뒤 스레드 `_ca_work`에서 `CodeAgent.run(이전 대화, 지시)` →
+  `on_tool`·`on_plan`·`on_run`·`review`가 작업 JSON을 고치고 `{"type": "code", "kind": "agent_*"}` 이벤트를 보낸다 → 끝나면 답을 대화에 넣고 `agent_done`.
+- 파일 수정: `Agent._save` → `review` 콜백(`_ca_review`). '수정 자동'이면 원본 백업 → 원자적 쓰기 → `{"status": "applied", "diff"}`. '모두 묻기'면 None → 예전 승인 창.
+- 한 번에 하나의 작업만 돈다. 채팅 응답을 기다리는 중에는 시작하지 않는다. 앱이 닫히면 `_ca_shutdown`이 멈춘다.

@@ -36,6 +36,7 @@ const ICONS = {
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
   up_thumb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v11H4V10Z"/><path d="M7 10l4-7a2 2 0 0 1 3 2l-1 5h6a2 2 0 0 1 2 2.3l-1.4 7A2 2 0 0 1 17.6 21H7"/></svg>',
   down_thumb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V3h3v11Z"/><path d="M17 14l-4 7a2 2 0 0 1-3-2l1-5H5a2 2 0 0 1-2-2.3l1.4-7A2 2 0 0 1 6.4 3H17"/></svg>',
+  flask: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v6l-5.5 9.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3"/><path d="M7.5 15h9"/></svg>',
   code: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m8 7-5 5 5 5"/><path d="m16 7 5 5-5 5"/><path d="m14 4-4 16"/></svg>',
   retry: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
 };
@@ -195,6 +196,7 @@ function groupLabel(ts) {
 
 function renderSidebar() {
   const list = $("#thread-list");
+  const keep = list.scrollTop;  // 목록을 다시 그려도 보던 자리를 지킨다
   list.innerHTML = "";
   let last = null;
   for (const t of S.threads) {
@@ -215,6 +217,7 @@ function renderSidebar() {
     item.addEventListener("dblclick", () => startRename(item, t));
     list.append(item);
   }
+  list.scrollTop = keep;
   const ws = S.workspace;
   $("#ws-name").textContent = ws.path ? ws.name + (ws.has_init ? " · INIT.md" : "") : "선택 안 됨";
   $("#btn-workspace").title = ws.path || "작업 폴더를 선택하세요";
@@ -358,7 +361,9 @@ function messageNode(msg) {
     const summary = h("summary", { html: ICONS.chev }, h("span", { class: "t-sum" }, msg.content));
     const d = h("details", {}, summary);
     if (msg.detail) d.append(diffOrPre(msg.detail));
-    return h("div", { class: "msg tool" }, d);
+    // 1.16: 브라우저 에이전트의 화면 캡처처럼 도구가 남긴 파일
+    const files = msg.attachments && msg.attachments.length ? attachmentList(msg.attachments) : null;
+    return h("div", { class: "msg tool" }, d, files);
   }
   if (msg.role === "error") {
     return h("div", { class: "msg error" }, "⚠ " + msg.content);
@@ -766,6 +771,9 @@ window.onBackendEvent = (ev) => {
     if (window.browserEvent) browserEvent(ev);
   } else if (ev.type === "code") {
     if (window.codeEvent) codeEvent(ev);
+    if (window.labCodeEvent) labCodeEvent(ev);
+  } else if (ev.type === "lab") {
+    if (window.labEvent) labEvent(ev);
   } else if (ev.type === "connector" || ev.type === "hub") {
     if (window.hubEvent) hubEvent(ev);
   } else if (ev.type === "done") {
@@ -850,7 +858,7 @@ function modal({ title, body, buttons = [], wide = false, onClose }) {
 }
 modal.count = 0;
 
-// 승인 종류별 안내. send·destructive·exec는 설정과 관계없이 매번 묻고 "모두 허용"을 보이지 않는다.
+// 승인 종류별 안내. send·destructive·exec·site는 설정과 관계없이 매번 묻고 "모두 허용"을 보이지 않는다.
 const CONFIRM_TEXT = {
   edit: ["에이전트가 다음과 같이 파일을 바꾸려고 합니다.", "이번 실행 동안 수정 모두 허용"],
   run: ["에이전트가 작업 폴더에서 다음 명령(또는 외부 도구)을 실행하려고 합니다.", "이번 실행 동안 명령 모두 허용"],
@@ -858,6 +866,8 @@ const CONFIRM_TEXT = {
   send: ["에이전트가 다른 사람에게 보이는 작업(전송·리뷰 제출)을 하려고 합니다. 받는 사람과 내용을 확인하세요.", ""],
   destructive: ["에이전트가 지우거나 덮어쓰는 작업을 하려고 합니다. 되돌릴 수 없을 수 있습니다.", ""],
   exec: ["에이전트가 코드 또는 원격 명령을 실행하려고 합니다. 실행 대상과 내용을 확인하세요.", ""],
+  browser: ["에이전트가 옆 브라우저에서 다음 동작을 하려고 합니다. 주소와 대상을 확인하세요.", "이번 실행 동안 이런 브라우저 동작 허용"],
+  site: ["에이전트가 옆 브라우저에서 이 사이트로 가거나 이 사이트를 조작하려고 합니다. 주소 전체를 확인하세요.", ""],
 };
 
 function showConfirm(ev) {
@@ -1371,6 +1381,26 @@ const GUIDE = [
 **설정 → POSTECH GenAI 크레딧**에서 이 키의 이번 주 크레딧 사용량·한도·남은 양을 봅니다. **확인**을 눌러도 크레딧은 줄지 않습니다. PO노트 화면 위쪽에도 같은 내용이 나옵니다.
 
 Claude Sonnet 5.5 기준으로 1크레딧은 입력 약 250토큰, 출력 약 75토큰이고, 짧은 질문도 호출마다 약 24크레딧이 듭니다. Opus 5.5는 두 배입니다. 에이전트 모드는 단계마다 한 번씩 호출하므로 단계가 많을수록 크레딧을 많이 씁니다.`],
+  ["Code 에이전트: 작업 맡기기 (1.16)", `
+**코드**를 열면 맨 앞에 **작업** 탭이 있습니다. 할 일을 적고 **맡기기**(Ctrl+Enter)를 누르면 에이전트가 Codex·Claude Code처럼 작업 폴더에서 계획 → 코드 읽기 → 고치기 → 테스트·빌드 실행 → 정리를 스스로 합니다.
+
+- 진행 기록에 계획(체크리스트)·읽은 파일·바꾼 내용(diff)·명령 출력(실시간)이 쌓입니다. 끝난 뒤 **이어서 지시**할 수 있고, 지난 작업은 위쪽 목록에서 다시 엽니다.
+- 기본 승인: **수정은 자동, 명령은 매번 묻기**. 수정하기 전에 원래 내용을 보관하므로 **바뀐 파일**에서 파일마다 또는 작업 전체를 **되돌리기** 할 수 있습니다(그 뒤 사람이 고친 파일은 건너뜀). 위쪽 메뉴에서 **수정·명령 모두 묻기**로 바꿉니다.
+- **멈춤**은 진행 중인 단계와 명령(프로세스 트리까지)을 멈춥니다. 커밋은 하지 않으니 끝난 뒤 Git 패널에서 확인하고 커밋하세요.`],
+  ["Lab: 실험 기록·비교·AI 분석 (1.16)", `
+왼쪽 위 **Lab**에서 실험을 만들고, **실행 설정**(Python 스크립트·명령·Jupyter 노트북, 파라미터, 결과 파일 패턴)을 저장한 뒤 **실행**합니다. 실행은 매번 승인합니다.
+
+- Run마다 파라미터·명령·Git 커밋(커밋하지 않은 변경은 패치 사본)·OS·Python·패키지·GPU·결과 파일·출력이 남습니다. 실패·취소한 Run도 남고, 앱이 꺼지면 '중단됨'으로 표시합니다.
+- **결과 가져오기**: 밖에서 만든 CSV·JSON·로그·그림을 옮기지 않고 가리킵니다. **미리 보기·지표 뽑기**에서 고른 열만 지표가 되고 단위·출처가 남습니다(NaN·빈 칸은 빼고 경고).
+- **그래프**(선·점·막대, 여러 Run 겹치기, 통계는 전체 데이터)와 **비교**(다른 조건 강조, 단위·커밋·환경 차이 경고).
+- **AI 분석**: 고른 Run 기록만 채팅에 첨부해 요약·비교·이상 찾기·다음 실험 제안을 묻습니다. AI는 실험을 실행하지 않습니다. 고른 요약은 **프로젝트 기억에 남기기**.`],
+  ["브라우저 에이전트 (1.16)", `
+**브라우저**를 열어 둔 채 에이전트 모드에서 "이 사이트에서 ○○를 찾아 줘"처럼 맡기면, 에이전트가 페이지를 살펴보고(요소 목록) 누르기·입력·고르기·스크롤·기다리기·읽기·캡처를 직접 합니다.
+
+- 읽기와 같은 사이트 안 링크 이동은 바로 합니다. 사이트마다 **처음 누르기·입력할 때**, 에이전트가 **주소를 만들어 열 때**, **처음 가는 사이트**와 **로컬·사설 네트워크**로 갈 때는 승인을 받습니다(자동 허용 설정으로 건너뛰지 않음).
+- **제출·삭제·전송·업로드·결제·계정·로그인·비밀번호·다운로드·병합·리뷰 제출·권한 허용**과 **확인·동의·저장** 버튼은 설정과 관계없이 언제나 묻습니다. 파일 올리기는 하지 않습니다.
+- 브라우저 막대에 지금 하는 동작·횟수·시간이 보이고 **일시정지·계속·멈춤**을 누를 수 있습니다. 한 번에 40번·10분까지.
+- 비밀번호 칸의 값은 기록에 남기지 않습니다. 로그인·결제가 필요한 일은 직접 하세요.`],
   ["코드: 채팅 옆 코드 편집기 (1.15)", `
 작업 폴더를 고른 뒤 왼쪽 위 **코드**를 누르면 채팅 오른쪽에 파일 트리와 편집기가 열립니다. 가운데 막대로 너비를, 아래 패널 위 막대로 높이를 바꾸고, **크게 보기**로 채팅을 숨깁니다.
 
