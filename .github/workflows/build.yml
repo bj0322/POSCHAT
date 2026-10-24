@@ -135,6 +135,16 @@ jobs:
           if ($name -ne "POSCHAT") { Write-Error "설치된 앱 목록의 이름($name)이 POSCHAT이 아닙니다."; exit 1 }
           $description = (Get-Item (Join-Path $dir "PostechChat.exe")).VersionInfo.FileDescription
           if ($description -ne "POSCHAT") { Write-Error "실행 파일 정보의 이름($description)이 POSCHAT이 아닙니다."; exit 1 }
+          # 업데이트(같은 폴더에 다시 설치): 새 파일을 먼저 풀고 바꾸므로 작업 폴더가 남지 않고 앱이 그대로 실행되어야 한다
+          Start-Process -FilePath "release\POSCHAT-Setup.exe" -ArgumentList "--silent", "--dir=$dir", "--no-desktop" -Wait
+          Get-Content (Join-Path $env:TEMP "PostechChat-install.log")
+          if (-not (Test-Path (Join-Path $dir "_internal\python312.dll"))) { Write-Error "업데이트 뒤 python312.dll이 없습니다."; exit 1 }
+          $left = Get-ChildItem $dir -Directory | Where-Object { $_.Name -like "_update*" -or $_.Name -like "_old*" }
+          if ($left) { Write-Error "작업 폴더가 남았습니다: $($left.Name)"; exit 1 }
+          $env:APPDATA = Join-Path $env:RUNNER_TEMP "selftest-after-update"
+          Start-Process -FilePath (Join-Path $dir "PostechChat.exe") -ArgumentList "--selftest" -Wait
+          $report = Get-Content (Join-Path $env:APPDATA "PostechChat\selftest.txt") -Raw
+          if (-not $report.Contains("version: $version")) { Write-Error "업데이트한 앱이 실행되지 않습니다."; exit 1 }
 
       - uses: actions/upload-artifact@v4
         with:
