@@ -48,6 +48,8 @@ class _Delegate(AppKit.NSObject):
 
     def webView_didFinishNavigation_(self, webview, nav):
         self.owner.report(webview, loading=False)
+        # didFinish 시점에 webview.title()이 아직 비어 있을 때가 있어 문서 제목을 한 번 더 읽는다
+        webview.evaluateJavaScript_completionHandler_("document.title", self.owner.title_handler(webview))
 
     def webView_didFailNavigation_withError_(self, webview, nav, error):
         self.owner.report(webview, loading=False)
@@ -124,6 +126,12 @@ class WKWebViewBackend:
         self.browser.navigated(url=str(url.absoluteString()) if url is not None else "", title=str(webview.title() or ""),
                                loading=loading, can_back=bool(webview.canGoBack()),
                                can_forward=bool(webview.canGoForward()))
+
+    def title_handler(self, webview):
+        def done(result, error):
+            if error is None and result:
+                self.browser.navigated(title=str(result))
+        return done
 
     def _layout(self, ratio):
         width = self.split.frame().size.width

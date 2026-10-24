@@ -8,7 +8,7 @@
 1. 네이티브 방식(Windows WebView2 컨트롤, macOS WKWebView 분할)으로 붙는지(mode == "native")
 2. 로컬 페이지를 열고 주소·제목·불러오기 완료 이벤트가 오는지
 3. 페이지의 글과 선택한 글, 논문 식별자(meta citation_doi)를 읽는지
-4. 격리: 웹페이지 쪽에 window.pywebview·chrome.webview.hostObjects가 없는지
+4. 격리: 웹페이지 쪽에 window.pywebview·postMessage가 없고, chrome.webview.hostObjects로 앱 객체에 닿지 못하는지
 5. 뒤로 가기·숨기기·다시 보이기·닫기가 오류 없이 되는지
 """
 import json
@@ -30,7 +30,18 @@ const r = document.createRange(); r.selectNodeContents(document.getElementById('
 getSelection().removeAllRanges(); getSelection().addRange(r);
 window.__isolation = JSON.stringify({pywebview: typeof window.pywebview,
   hostObjects: typeof (window.chrome && window.chrome.webview && window.chrome.webview.hostObjects),
-  webkitHandlers: typeof (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.browserDelegate)});
+  webkitHandlers: typeof (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.browserDelegate),
+  postMessage: typeof (window.chrome && window.chrome.webview && window.chrome.webview.postMessage)});
+// WebView2는 chrome.webview.hostObjects 프록시를 늘 넣어 둔다. 실제로 앱 객체에 닿는지 불러 본다.
+window.__hostProbe = 'pending';
+(async () => {
+  const h = window.chrome && window.chrome.webview && window.chrome.webview.hostObjects;
+  if (!h) { window.__hostProbe = 'none'; return; }
+  for (const name of ['api', 'pywebview', 'bridge', 'external']) {
+    try { await h[name]; window.__hostProbe = 'reachable:' + name; return; } catch (e) {}
+  }
+  window.__hostProbe = 'blocked';
+})();
 </script></body></html>"""
 PAGE_TWO = "<!doctype html><title>Two</title><p>second page</p>"
 
@@ -112,8 +123,16 @@ def main():
             step("paper id", page["paper"] == "10.1234/poschat.5678", page["paper"])
             iso = js_value(b._backend.read("window.__isolation || '{}'"))
             iso = iso if isinstance(iso, dict) else {}
-            step("isolation", iso.get("pywebview") == "undefined" and iso.get("hostObjects") in ("undefined", None)
-                 and iso.get("webkitHandlers") in ("undefined", None), iso)
+            probe = "pending"
+            for _ in range(20):
+                probe = js_value(b._backend.read("window.__hostProbe || 'none'"))
+                if probe != "pending":
+                    break
+                time.sleep(0.25)
+            iso["hostProbe"] = probe
+            step("isolation", iso.get("pywebview") == "undefined" and probe in ("none", "blocked")
+                 and iso.get("webkitHandlers") in ("undefined", None)
+                 and iso.get("postMessage") in ("undefined", None), iso)
             try:
                 browser.normalize("file:///C:/Windows/win.ini")
                 step("file url blocked", False, "normalize accepted file:")

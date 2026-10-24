@@ -11,6 +11,7 @@
 | 동기화 저장소 유출 | 종단간 AES-256-GCM, scrypt 키, 객체 이름 HMAC, 원격에 키 없음, 손상·다른 암호는 복호화 실패로 거부 | `sync.py` |
 | 다른 클라이언트가 기억을 읽고 씀 | memory 서버는 POSCHAT이 아닌 MCP 클라이언트를 거부(외부 공유 기능 없음) | `memory_mcp.py` |
 | 외부 관측 서비스 | 기본 꺼짐, 메타데이터만. 내용 포함은 별도 동의 + 가림 + 2000자 | `telemetry.py` |
+| 웹페이지가 앱 권한에 닿음(1.13 브라우저) | 웹페이지 쪽 네이티브 뷰(WebView2·WKWebView·Android WebView)에 js_api·host object·WebMessage·스크립트 메시지 핸들러·JavascriptInterface를 주지 않음. 앱이 페이지를 읽기만 함. 읽은 내용은 '외부 데이터'로 감쌈. http·https만(file·javascript·data·앱 내부·링크 로컬 차단), 새 창은 같은 뷰, 다운로드·권한 요청 거절, 별도 프로필 폴더. 에이전트가 주소를 열 때는 주소를 보이고 승인(주소에 정보를 실어 보내는 주입 차단). 네이티브 실패 시 옆 창은 pywebview 메시지 통로를 닫음 | `browser.py`, `browser_win.py`, `browser_mac.py`, `MainActivity.kt` |
 | 네트워크 장애 | 모든 새 기능은 로컬 우선. 커넥터 실패는 도구 오류로만 보이고 대화·로컬 기능은 그대로 | 전반 |
 
 알려진 한계: 격리 없이 실행한 Python은 사용자 권한으로 돈다(승인 창에 명시). keyring을 쓸 수 없는 환경의 파일 폴백은 같은 OS 사용자에게는 읽힌다. Windows는 Python 실행에 메모리 제한을 걸지 않는다.
