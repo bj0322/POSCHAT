@@ -27,6 +27,7 @@ const ICONS = {
   spark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><path d="m6.3 6.3 2.1 2.1M15.6 15.6l2.1 2.1M6.3 17.7l2.1-2.1M15.6 8.4l2.1-2.1"/></svg>',
   book: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2Z"/><path d="M4 21V5"/><path d="M8 7h7"/></svg>',
   terminal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/><path d="M13 15h4"/></svg>',
+  blocks: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
   up_thumb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v11H4V10Z"/><path d="M7 10l4-7a2 2 0 0 1 3 2l-1 5h6a2 2 0 0 1 2 2.3l-1.4 7A2 2 0 0 1 17.6 21H7"/></svg>',
   down_thumb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V3h3v11Z"/><path d="M17 14l-4 7a2 2 0 0 1-3-2l1-5H5a2 2 0 0 1-2-2.3l1.4-7A2 2 0 0 1 6.4 3H17"/></svg>',
@@ -810,16 +811,20 @@ function creditLine(auto = true) {
 function modal({ title, body, buttons = [], wide = false, onClose }) {
   if (isNarrow()) setCollapsed(true);  // 휴대폰: 사이드바 서랍에서 연 창이면 서랍을 닫는다
   const root = $("#modal-root");
+  const opener = document.activeElement;  // 닫으면 창을 연 버튼으로 초점을 돌려준다(키보드·화면 낭독기)
   const close = (value) => {
     backdrop.remove();
     document.removeEventListener("keydown", onKey);
     onClose && onClose(value);
+    if (opener && opener.isConnected && typeof opener.focus === "function" && !$("#modal-root .modal")) opener.focus();
   };
   const onKey = (e) => { if (e.key === "Escape") close(null); };
   const foot = h("div", { class: "modal-foot" },
     buttons.map((b) => h("button", { class: "btn " + (b.class || ""), onclick: () => (b.action ? b.action(close) : close(b.value)) }, b.label)));
-  const box = h("div", { class: "modal" + (wide ? " wide" : "") },
-    h("div", { class: "modal-head" }, h("h2", {}, title), h("button", { class: "icon-btn", html: ICONS.close, onclick: () => close(null) })),
+  const titleId = `modal-title-${++modal.count}`;
+  const box = h("div", { class: "modal" + (wide ? " wide" : ""), role: "dialog", "aria-modal": "true", "aria-labelledby": titleId },
+    h("div", { class: "modal-head" }, h("h2", { id: titleId }, title),
+      h("button", { class: "icon-btn", html: ICONS.close, title: "닫기", "aria-label": "닫기", onclick: () => close(null) })),
     h("div", { class: "modal-body" }, body),
     buttons.length ? foot : null,
   );
@@ -827,8 +832,13 @@ function modal({ title, body, buttons = [], wide = false, onClose }) {
   backdrop.addEventListener("mousedown", (e) => { if (e.target === backdrop) close(null); });
   document.addEventListener("keydown", onKey);
   root.append(backdrop);
+  // 창 안의 첫 입력 칸(없으면 창 자체)에 초점을 둔다. 따로 초점을 옮기는 창(설정 등)은 그 뒤에 옮긴다.
+  const first = box.querySelector(".modal-body input:not([type=hidden]):not([disabled]), .modal-body select, .modal-body textarea");
+  box.tabIndex = -1;
+  ((!isNarrow() && first) || box).focus({ preventScroll: true });  // 휴대폰에서는 키보드가 뜨지 않게 창에만
   return { close, box };
 }
+modal.count = 0;
 
 // 승인 종류별 안내. send·destructive·exec는 설정과 관계없이 매번 묻고 "모두 허용"을 보이지 않는다.
 const CONFIRM_TEXT = {
@@ -1403,6 +1413,8 @@ Claude Sonnet 5.5 기준으로 1크레딧은 입력 약 250토큰, 출력 약 75
   ["연결·도구, 연구 라이브러리, 에이전트 자동화", `
 왼쪽 아래 **연결·도구**에서 외부 서비스와 확장 기능을 관리합니다. 모두 **기본으로 꺼져 있고**, 켠 것만 에이전트가 씁니다.
 **연구 라이브러리**와 **에이전트 자동화**는 PO노트처럼 왼쪽 사이드바 위쪽에서 바로 여는 화면입니다(1.11).
+
+**플러그인**(1.12, 사이드바): Anthropic의 Knowledge Work Plugins(직무별 스킬 묶음)를 둘러보고 설치합니다. 설치한 스킬은 에이전트가 알아서 쓰고, 입력창에 \`/플러그인:스킬\`(예: \`/productivity:start\`)로 직접 부를 수 있습니다. 원래 플러그인이 쓰는 외부 도구(Slack 등)는 연결하지 않으니, 자료는 첨부하거나 POSCHAT 커넥터로 쓰세요.
 
 - **커넥터**: GitHub(저장소·코드 검색·이슈·PR·리뷰·Actions 실패 분석), Google Drive·Docs·Sheets·Slides·Gmail·Calendar(서비스마다 따로 로그인), Zotero. 상태(연결됨·인증 필요·연결 오류·비활성화·사용 권한 부족)를 보고, 로그인·재인증·연결 해제·권한 확인·도구별 승인 정책을 바꿉니다. 토큰은 OS 보안 저장소에 둡니다.
 - **연구 라이브러리**(사이드바): 논문 저장·태그·BibTeX, 작업 폴더 PDF·문서 인덱싱과 쪽·섹션이 붙은 원문 검색, 벡터 검색 설정.

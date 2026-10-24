@@ -605,3 +605,45 @@ pre.bib div { white-space: pre-wrap; }
   .po-wrap.tool-page { padding: 8px 12px 32px; }
   .tool-page .po-intro h1 { font-size: 22px; }
 }
+
+/* ---------- 접근성 공통 ---------- */
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible,
+.modal:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.modal:focus { outline: none; }
+
+/* ---------- 플러그인 화면 (hub.js renderPlugins) ---------- */
+.plugin-toolbar { gap: 10px; align-items: center; }
+.plugin-toolbar input[type=search] { flex: 1 1 260px; }
+.plugin-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.plugin-card { border: 1px solid var(--border); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.plugin-card.installed { border-color: var(--ok); }
+.plugin-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.plugin-head h3 { margin: 0; font-size: 15.5px; font-weight: 600; margin-right: auto; }
+.plugin-summary { margin: 0; font-size: 13.5px; color: var(--text); line-height: 1.5; }
+.plugin-desc { margin: 0; font-size: 12.5px; color: var(--text-3); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.plugin-meta { margin: 0; font-size: 12px; color: var(--text-3); }
+.plugin-actions { margin-top: auto; padding-top: 6px; gap: 8px; align-items: center; }
+.plugin-actions .btn { padding: 6px 14px; font-size: 13px; }
+.switch { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text-2); border-radius: 999px; padding: 3px 10px 3px 3px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.switch-thumb { width: 26px; height: 16px; border-radius: 999px; background: var(--hover); position: relative; transition: background .15s; }
+.switch-thumb::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--text-3); transition: transform .15s, background .15s; }
+.switch.on { color: var(--text); border-color: var(--ok); }
+.switch.on .switch-thumb { background: var(--ok); }
+.switch.on .switch-thumb::after { transform: translateX(10px); background: #fff; }
+.plugin-detail h3 { font-size: 14px; margin: 16px 0 6px; }
+.plugin-skills { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.plugin-skills li { border-bottom: 1px solid var(--border); padding: 8px 2px; }
+.plugin-skills li:last-child { border-bottom: 0; }
+.plugin-skill-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.plugin-skill-head code { font-size: 13px; }
+.plugin-skill-head .link-btn { margin-left: auto; }
+.plugin-skills p { margin: 4px 0 0; font-size: 13px; color: var(--text-2); }
+.plugin-readme { margin-top: 14px; }
+.plugin-readme > summary { cursor: pointer; color: var(--text-2); font-size: 13px; }
+@media (max-width: 720px) {
+  .plugin-grid { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .switch-thumb, .switch-thumb::after { transition: none; }
+}

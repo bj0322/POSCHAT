@@ -209,6 +209,14 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(bridge._config["anthropic_model"], "claude-opus-4-8")
             self.assertEqual([m for m, _ in bridge._models("anthropic")], ["claude-opus-4-8"])
 
+    def test_verify_install_writes_the_version_without_starting_the_app(self):
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp) / "v.txt"
+            with patch.object(app_main.sys, "argv", ["PostechChat.exe", f"--verify-install={out}"]), \
+                    patch.object(app_main, "run_app", side_effect=AssertionError("창을 열면 안 된다")):
+                app_main.main()
+            self.assertEqual(out.read_text(encoding="utf-8"), app_main.APP_VERSION)
+
 
 if __name__ == "__main__":
     unittest.main()

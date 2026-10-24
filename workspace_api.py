@@ -913,3 +913,50 @@ class WorkspaceApi:
         if event:
             event.set()
         return {"ok": True}
+
+    # ---- 플러그인 (1.12, Anthropic Knowledge Work Plugins) ----
+
+    def plugins_state(self, refresh=False):
+        """플러그인 목록과 설치 상태. 처음이거나 refresh면 GitHub에서 목록을 받는다."""
+        import plugins
+
+        try:
+            catalog = plugins.catalog(refresh=bool(refresh))
+        except plugins.PluginError as e:
+            return {"ok": False, "error": str(e), "installed": plugins.installed(), "source": plugins.REPO_URL}
+        items = [{k: v for k, v in p.items() if k != "readme"} for p in catalog.get("plugins", [])]
+        return {"ok": True, "plugins": items, "installed": plugins.installed(), "updated": catalog.get("updated"),
+                "source": plugins.REPO_URL}
+
+    def plugin_detail(self, name):
+        import plugins
+
+        try:
+            info = plugins.find(str(name))
+        except plugins.PluginError as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, "plugin": info, "installed": plugins.installed().get(info["name"])}
+
+    def _plugin_change(self, action, *args):
+        import plugins
+
+        try:
+            action(*args)
+        except plugins.PluginError as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, "installed": plugins.installed(), "skills": self._skills()}
+
+    def plugin_install(self, name):
+        import plugins
+
+        return self._plugin_change(plugins.install, str(name))
+
+    def plugin_remove(self, name):
+        import plugins
+
+        return self._plugin_change(plugins.remove, str(name))
+
+    def plugin_set_enabled(self, name, enabled):
+        import plugins
+
+        return self._plugin_change(plugins.set_enabled, str(name), bool(enabled))

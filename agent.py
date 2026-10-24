@@ -23,6 +23,7 @@ import ai_memory
 import attachments
 import connectors
 import documents
+import plugins
 import storage
 from api import ApiSettings, ask
 from documents import DocumentError
@@ -132,25 +133,23 @@ def parse_skill(path, source):
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
-    meta, body = {}, text
-    if text.startswith("---"):
-        end = text.find("\n---", 3)
-        if end != -1:
-            for line in text[3:end].splitlines():
-                if ":" in line:
-                    key, value = line.split(":", 1)
-                    meta[key.strip()] = value.strip().strip("\"'")
-            body = text[end + 4:].lstrip("\n")
+    meta, body = plugins.frontmatter(text)  # 한 줄 값과 YAML 여러 줄 값(>, |)
     name = meta.get("name") or path.parent.name
     return Skill(name=name, description=meta.get("description", ""), body=body, path=path, source=source)
 
 
 def discover_skills(workspace):
-    """앱 내장 → 사용자 → 작업 폴더 순으로 읽고, 같은 이름이면 뒤의 것이 이긴다."""
+    """앱 내장 → 플러그인 → 사용자 → 작업 폴더 순으로 읽고, 같은 이름이면 뒤의 것이 이긴다.
+
+    플러그인의 스킬·명령은 '플러그인:이름'(예: productivity:start)이라 다른 스킬과 겹치지 않는다.
+    """
     dirs = [(resource_dir() / "skills", "내장"), (storage.USER_SKILLS_DIR, "사용자")]
     if workspace:
         dirs.append((Path(workspace) / "skills", "작업 폴더"))
     skills = {}
+    for name, root in plugins.skill_sources():
+        for full, desc, body, path, _kind in plugins.plugin_skills(name, root):
+            skills[full.lower()] = Skill(name=full, description=desc, body=body, path=path, source=f"플러그인 {name}")
     for d, source in dirs:
         if not d.is_dir():
             continue
@@ -675,7 +674,8 @@ class Agent:
         if forced_skill:
             parts.append(f"[적용 중인 스킬: {forced_skill.name} — 이 지침에 따라 수행하세요]\n{forced_skill.body}")
         elif self.skills:
-            parts.append("[사용 가능한 스킬]\n" + "\n".join(f"- {s.name}: {s.description}" for s in self.skills.values()))
+            parts.append("[사용 가능한 스킬]\n" + "\n".join(f"- {s.name}: {_truncate(' '.join(s.description.split()), 240)}"
+                                                         for s in self.skills.values()))
         parts += self.context_blocks
         history_text = self._format_history(history)
         if history_text:

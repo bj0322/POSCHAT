@@ -1325,6 +1325,11 @@ def _log_crash():
 
 def main():
     _extend_mac_path()
+    verify = next((a for a in sys.argv if a.startswith("--verify-install=")), None)
+    if verify:
+        # 설치 프로그램이 새 버전을 바꾼 뒤 부른다: 여기까지 왔으면 파이썬 DLL과 앱 코드를 모두 불러온 것이다
+        Path(verify.split("=", 1)[1]).write_text(APP_VERSION, encoding="utf-8")
+        return
     try:
         if "--mcp-server" in sys.argv:
             # 앱 자신을 내장 MCP 서버로 실행한다(mcp_client가 띄운다).

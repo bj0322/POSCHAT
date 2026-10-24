@@ -70,6 +70,7 @@ const PAGE = { id: null, rendered: null };
 const PAGES = {
   research: { title: "연구 라이브러리", button: "#btn-research", render: (panel) => renderResearch(panel) },
   automation: { title: "에이전트 자동화", button: "#btn-auto", render: (panel) => renderAutomation(panel) },
+  plugins: { title: "플러그인", button: "#btn-plugins", render: (panel) => renderPlugins(panel) },
 };
 
 function pageOpen(id) {
@@ -929,6 +930,197 @@ window.hubExtraEvent = (ev) => {
     _hubExtraEvent(ev);
   }
 };
+
+/* ---------- 플러그인 화면 (1.12): Anthropic Knowledge Work Plugins ----------
+   직무별 스킬 묶음을 받아 설치하고 켜고 끈다. Python 쪽은 workspace_api.plugin_* · plugins.py. */
+
+const PLUG = { tab: "browse", query: "", data: null, busy: "", status: "" };
+
+function pluginMatches(p, q) {
+  if (!q) return true;
+  const hay = [p.name, p.display_name, p.summary, p.description, ...[...(p.skills || []), ...(p.commands || [])].map((s) => s.name + " " + s.description)]
+    .join(" ").toLowerCase();
+  return q.toLowerCase().split(/\s+/).every((w) => hay.includes(w));
+}
+
+function pluginSlash(p, item) {
+  return `/${p.name}:${item.name}`;
+}
+
+// 대화 입력창에 /플러그인:스킬을 넣고 채팅으로 돌아간다
+function usePluginSkill(command) {
+  leaveViews();
+  const input = $("#input");
+  input.value = command + " ";
+  autoresize();
+  updateSend();
+  input.focus();
+  toast(`${command} 를 입력창에 넣었습니다. 요청을 덧붙여 보내세요`);
+}
+
+async function pluginAction(promise, okText) {
+  const res = await hubCall(promise, okText);
+  if (!res) return null;
+  if (res.skills) S.skills = res.skills;  // / 메뉴에 바로 보이도록
+  if (PLUG.data) PLUG.data.installed = res.installed;
+  return res;
+}
+
+async function installPlugin(p) {
+  if (p.partner && !confirm(`'${p.display_name}'은(는) 파트너가 만든 플러그인입니다. 그 지침이 에이전트에게 전달됩니다. 설치할까요?`)) return;
+  PLUG.busy = p.name;
+  PLUG.status = `${p.display_name} 설치 중...`;
+  renderHub();
+  try {
+    if (await pluginAction(api().plugin_install(p.name), `${p.display_name} 플러그인을 설치했습니다`)) {
+      PLUG.status = `${p.display_name} 설치 완료 — 스킬 ${p.skills.length + p.commands.length}개를 쓸 수 있습니다.`;
+    } else {
+      PLUG.status = "";
+    }
+  } finally {
+    PLUG.busy = "";
+    renderHub();
+  }
+}
+
+async function removePlugin(p) {
+  if (!confirm(`'${p.display_name}' 플러그인을 지울까요? 나중에 다시 설치할 수 있습니다.`)) return;
+  if (await pluginAction(api().plugin_remove(p.name), "지웠습니다")) {
+    PLUG.status = `${p.display_name} 플러그인을 지웠습니다.`;
+    renderHub();
+  }
+}
+
+function pluginSwitch(p, inst) {
+  const on = inst.enabled !== false;
+  return h("button", { class: "switch" + (on ? " on" : ""), role: "switch", "aria-checked": String(on),
+    "aria-label": `${p.display_name} 사용`, title: on ? "켜짐: 에이전트가 이 플러그인의 스킬을 씁니다" : "꺼짐",
+    onclick: async () => {
+      if (await pluginAction(api().plugin_set_enabled(p.name, !on), on ? `${p.display_name}을(를) 껐습니다` : `${p.display_name}을(를) 켰습니다`)) renderHub();
+    } }, h("span", { class: "switch-thumb", "aria-hidden": "true" }), h("span", { class: "switch-label" }, on ? "켜짐" : "꺼짐"));
+}
+
+function pluginCard(p) {
+  const inst = (PLUG.data.installed || {})[p.name];
+  const count = (p.skills || []).length + (p.commands || []).length;
+  const titleId = `plugin-${p.name}`;
+  const actions = p.installable ? (inst
+    ? [pluginSwitch(p, inst),
+      h("button", { class: "btn", onclick: () => showPluginDetail(p.name), "aria-describedby": titleId }, "스킬 보기"),
+      h("button", { class: "link-btn danger", onclick: () => removePlugin(p), "aria-label": `${p.display_name} 제거` }, "제거")]
+    : [h("button", { class: "btn primary", disabled: !!PLUG.busy, onclick: () => installPlugin(p), "aria-describedby": titleId },
+      PLUG.busy === p.name ? "설치 중..." : "설치"),
+      h("button", { class: "btn", onclick: () => showPluginDetail(p.name), "aria-describedby": titleId }, "자세히")])
+    : [p.homepage ? h("a", { class: "btn", href: p.homepage, target: "_blank", rel: "noopener" }, "홈페이지") : null];
+  return h("li", { class: "plugin-card" + (inst && inst.enabled !== false ? " installed" : "") },
+    h("div", { class: "plugin-head" },
+      h("h3", { id: titleId }, p.display_name),
+      h("span", { class: "badge" }, p.external ? "다른 저장소" : p.partner ? "파트너" : "Anthropic"),
+      inst ? h("span", { class: "badge st-ok" }, "설치됨") : null),
+    p.summary ? h("p", { class: "plugin-summary" }, p.summary) : null,
+    h("p", { class: "plugin-desc", lang: "en" }, p.description),
+    p.installable ? h("p", { class: "plugin-meta" }, `스킬 ${count}개` + (p.version ? ` · v${p.version}` : "")
+      + ((p.connectors || []).length ? ` · 외부 도구 ${p.connectors.length}개 연동 안내` : "")) : null,
+    h("div", { class: "row wrap plugin-actions" }, actions));
+}
+
+async function renderPlugins(panel, refresh = false) {
+  if (!PLUG.data || refresh) {
+    const res = await api().plugins_state(refresh);
+    if (res.ok === false) {
+      PLUG.data = null;
+      return fill(panel, pageIntro("플러그인", "직무별 스킬 묶음을 설치하면 에이전트가 그 분야의 절차대로 일합니다."),
+        h("div", { class: "po-card po-warn", role: "alert" }, res.error, " 인터넷 연결을 확인하고 다시 시도하세요."),
+        h("div", { class: "row" }, h("button", { class: "btn primary", onclick: () => renderPlugins(panel, true) }, "다시 시도")));
+    }
+    PLUG.data = res;
+  }
+  const data = PLUG.data;
+  const installed = data.installed || {};
+  const all = data.plugins || [];
+  const lists = {
+    browse: all.filter((p) => p.installable),
+    installed: all.filter((p) => installed[p.name]),
+    external: all.filter((p) => !p.installable),
+  };
+  const shown = (lists[PLUG.tab] || lists.browse).filter((p) => pluginMatches(p, PLUG.query));
+  const search = h("input", { type: "search", id: "plugin-search", value: PLUG.query, placeholder: "이름·스킬·설명으로 찾기 (예: pdf, 논문, SQL)",
+    "aria-label": "플러그인 검색", autocomplete: "off" });
+  search.addEventListener("input", () => {
+    PLUG.query = search.value;
+    const list = panel.querySelector(".plugin-grid");
+    const items = (lists[PLUG.tab] || lists.browse).filter((p) => pluginMatches(p, PLUG.query));
+    if (list) fill(list, items.map(pluginCard));
+    const count = panel.querySelector("#plugin-count");
+    if (count) count.textContent = `${items.length}개`;
+  });
+  const updated = data.updated ? new Date(data.updated * 1000).toLocaleString() : "";
+  const refreshBtn = h("button", { class: "btn", onclick: async (e) => {
+    e.target.disabled = true;
+    PLUG.status = "목록을 새로 받는 중...";
+    renderHub();
+    await renderPlugins(panel, true);
+    PLUG.status = "목록을 새로 받았습니다.";
+    renderHub();
+  } }, "목록 새로 받기");
+  fill(panel,
+    pageIntro("플러그인",
+      "직무별 스킬 묶음을 설치하면 에이전트가 그 분야의 절차대로 일합니다. 설치한 스킬은 에이전트가 알아서 쓰고, 입력창에 /플러그인:스킬 로 직접 부를 수도 있습니다.",
+      refreshBtn),
+    h("p", { class: "visually-hidden", role: "status", "aria-live": "polite" }, PLUG.status),
+    PLUG.status ? h("div", { class: "po-card po-warn", "aria-hidden": "true" }, PLUG.status) : null,
+    pageTabs(PLUG, [["browse", "둘러보기", lists.browse.length], ["installed", "설치됨", Object.keys(installed).length || null],
+      ["external", "다른 저장소", lists.external.length]]),
+    h("div", { class: "row wrap plugin-toolbar" }, search, h("small", { class: "muted", id: "plugin-count", "aria-live": "polite" }, `${shown.length}개`)),
+    PLUG.tab === "external" ? h("p", { class: "po-card po-warn" },
+      "다른 회사 저장소에 있는 플러그인입니다. POSCHAT이 그 코드를 검토할 수 없어 앱 안에서는 설치하지 않습니다. 홈페이지에서 내용을 확인하세요.") : null,
+    shown.length ? h("ul", { class: "plugin-grid", "aria-label": "플러그인 목록" }, shown.map(pluginCard))
+      : h("p", { class: "po-empty" }, PLUG.tab === "installed" && !PLUG.query
+        ? "아직 설치한 플러그인이 없습니다. '둘러보기'에서 하나 골라 설치해 보세요. 학생·연구자에게는 Productivity, Bio Research, Data를 먼저 권합니다."
+        : "맞는 플러그인이 없습니다."),
+    h("div", { class: "row wrap tool-footer" },
+      h("span", { style: "flex:1" }, "출처: ", h("a", { href: data.source, target: "_blank", rel: "noopener" }, "anthropics/knowledge-work-plugins"),
+        " (Apache-2.0)" + (updated ? ` · 목록 ${updated}` : "") + ". 플러그인의 외부 커넥터(Slack 등)는 연결하지 않고, 첨부한 자료와 POSCHAT 커넥터로 동작합니다."),
+      h("button", { class: "link-btn", onclick: () => showHub() }, "연결·도구 열기")));
+}
+
+async function showPluginDetail(name) {
+  const res = await api().plugin_detail(name);
+  if (res.ok === false) return toast(res.error);
+  const p = res.plugin;
+  const inst = res.installed;
+  const items = [...(p.skills || []).map((x) => ({ ...x, kind: "스킬" })), ...(p.commands || []).map((x) => ({ ...x, kind: "명령" }))];
+  const skillList = h("ul", { class: "plugin-skills" }, items.map((it) => {
+    const cmd = pluginSlash(p, it);
+    return h("li", {},
+      h("div", { class: "plugin-skill-head" },
+        h("code", {}, cmd), h("span", { class: "badge" }, it.kind),
+        inst && inst.enabled !== false ? h("button", { class: "link-btn", "aria-label": `${cmd} 대화에서 쓰기`,
+          onclick: () => { dlg.close(); usePluginSkill(cmd); } }, "대화에서 쓰기") : null),
+      h("p", { lang: "en" }, it.description || "(설명 없음)"),
+      it.argument ? h("small", { class: "muted" }, `인자: ${it.argument}`) : null);
+  }));
+  const body = h("div", { class: "plugin-detail" },
+    p.summary ? h("p", {}, p.summary) : null,
+    h("p", { class: "muted", lang: "en" }, p.description),
+    h("p", { class: "small muted" }, [p.partner ? `파트너 제작${p.author ? ` (${p.author})` : ""}` : "Anthropic 제작", p.version ? `v${p.version}` : ""].filter(Boolean).join(" · "),
+      " · ", h("a", { href: p.homepage, target: "_blank", rel: "noopener" }, "원본 보기")),
+    h("h3", {}, `스킬과 명령 ${items.length}개`),
+    inst ? null : h("p", { class: "small muted" }, "설치하면 에이전트가 요청에 맞는 스킬을 알아서 쓰고, 입력창에 아래 이름으로 직접 부를 수도 있습니다."),
+    skillList,
+    (p.connectors || []).length ? h("div", { class: "po-card po-warn" },
+      h("b", {}, "외부 도구 안내: "), p.connectors.join(", "),
+      h("br"), "원래 플러그인은 이 도구들에 연결해 씁니다. POSCHAT은 이 연결을 만들지 않으므로, 필요한 자료는 첨부하거나 붙여 넣거나 ",
+      "POSCHAT 커넥터(GitHub·Google·Notion·Zotero)를 켜서 쓰세요.") : null,
+    p.readme ? h("details", { class: "plugin-readme" }, h("summary", {}, "설명서 (README, 영문)"), renderMarkdown(p.readme)) : null);
+  const buttons = p.installable ? (inst
+    ? [{ label: "제거", action: async (close) => { close(); await removePlugin(p); } }, { label: "닫기", class: "primary" }]
+    : [{ label: "닫기" }, { label: "설치", class: "primary", action: async (close) => { close(); await installPlugin(p); } }])
+    : [{ label: "닫기", class: "primary" }];
+  const dlg = modal({ title: p.display_name, body, wide: true, buttons });
+}
+
+$("#btn-plugins").addEventListener("click", () => pageOpen("plugins"));
 
 $("#btn-research").addEventListener("click", () => pageOpen("research"));
 $("#btn-auto").addEventListener("click", () => pageOpen("automation"));
