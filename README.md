@@ -1,6 +1,8 @@
 # POSCHAT
 
-버전 1.11.0 — **이름을 POSCHAT으로 정식 변경**, **일반 AI 모델(Claude)**: 설정 → API 방식에서 고르면 본인 Claude API 키로 대화·에이전트·노트 만들기 등 모든 모델 호출을 합니다(기본은 그대로 POSTECH GenAI). **연구 라이브러리·에이전트 자동화를 PO노트처럼 사이드바에서 여는 화면으로** 옮겼고, 업데이트할 때 설치 프로그램에서 '설치'를 두 번 눌러야 하던 문제를 고쳤습니다. 자세히: [릴리스 노트](docs/release-notes/v1.11.0.md)
+버전 1.11.1 — 업데이트 뒤 앱이 열리지 않던 문제(python312.dll·VCRUNTIME140.dll 오류) 수정: 새 파일을 먼저 풀고 이전 파일과 바꾸며, 실패하면 이전 버전을 되돌립니다. 1.11.0에서 앱이 열리지 않으면 Releases의 `POSCHAT-Setup.exe`를 받아 설치하세요. [릴리스 노트](docs/release-notes/v1.11.1.md)
+
+1.11.0 — **이름을 POSCHAT으로 정식 변경**, **일반 AI 모델(Claude)**: 설정 → API 방식에서 고르면 본인 Claude API 키로 대화·에이전트·노트 만들기 등 모든 모델 호출을 합니다(기본은 그대로 POSTECH GenAI). **연구 라이브러리·에이전트 자동화를 PO노트처럼 사이드바에서 여는 화면으로** 옮겼고, 업데이트할 때 설치 프로그램에서 '설치'를 두 번 눌러야 하던 문제를 고쳤습니다. 자세히: [릴리스 노트](docs/release-notes/v1.11.0.md)
 
 
 1.10.0 — **POSCHAT 2.0: 연결·도구**. 왼쪽 아래 **연결·도구**에서(모두 기본 꺼짐) GitHub·Google Workspace(Drive·Docs·Sheets·Slides·Gmail·Calendar)·Zotero 커넥터, 통합 논문 검색·라이브러리·BibTeX·출처가 붙은 문서 검색(RAG), 프로젝트·연구 메모리와 에이전트 인계, 기기 사이 종단간 암호화 동기화, Python·Jupyter·SSH 실행(PC, 매번 승인), 사용량·진단과 모델 평가. 메일 전송·리뷰 제출·삭제·코드 실행은 자동 허용 설정이어도 매번 묻습니다. 1.6부터 에이전트의 MCP 도구 호출이 실패하던 버그 수정. 자세히: [릴리스 노트](docs/release-notes/v1.10.0.md) · [설치·설정](docs/setup.md) · [마이그레이션](docs/migration-1.10.md) · [보안](docs/security.md) · [API](docs/api/reference.md) · [아키텍처](docs/architecture/) **안드로이드 앱에서도 PO노트 녹음**: 휴대폰의 로컬 AI(sherpa-onnx)가 받아 적고 불확실한 구간만 POSTECH GenAI가 보정하는 하이브리드를 데스크톱과 같이 씁니다(화면을 꺼도 녹음 유지, 알림에서 중지). 로컬 AI가 작은 소리를 받아 적지 못하던 문제 수정. 데스크톱의 sherpa-onnx를 1.13.8로 고정

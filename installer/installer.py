@@ -12,7 +12,6 @@ build_installer.py가 앱 폴더를 payload.zip으로 묶어 이 스크립트와
 바로가기는 PowerShell 대신 COM(IShellLink)으로 직접 만든다.
 """
 import ctypes
-import shutil
 import subprocess
 import sys
 import threading
@@ -26,6 +25,9 @@ from tkinter import filedialog, messagebox, ttk
 # 소스에서 실행할 때는 저장소 최상위의 version.py를 찾는다(빌드한 exe에는 함께 묶인다).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from version import APP_VERSION  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import appfiles  # noqa: E402
 
 APP_NAME = "POSCHAT"
 LEGACY_NAMES = ("POSTECH GenAI Chat",)  # 1.10 이전 바로가기 이름
@@ -166,46 +168,29 @@ def register_uninstall(dest, size_kb, shortcuts):
         winreg.SetValueEx(k, "Shortcuts", 0, winreg.REG_MULTI_SZ, shortcuts)  # 제거할 때 지울 바로가기
 
 
-def _remove(path, attempts=20):
-    """앱을 막 종료한 직후에는 DLL·WebView2 프로세스·백신 검사 때문에 잠시 잠겨 있을 수 있어 재시도한다."""
-    for i in range(attempts):
-        try:
-            if path.is_dir():
-                shutil.rmtree(path)
-            elif path.exists():
-                path.unlink()
-            return
-        except PermissionError:
-            if i == attempts - 1:
-                raise
-            time.sleep(0.5)
-
-
 def wait_app_closed(timeout=APP_CLOSE_WAIT):
     end = time.time() + timeout
     while app_running():
         if time.time() > end:
             raise RuntimeError(f"{APP_NAME}이(가) 실행 중입니다. 앱을 닫은 뒤 다시 설치하세요.")
         time.sleep(0.5)
+    time.sleep(1)  # 프로세스가 끝난 직후에는 Windows·백신이 파일을 잠깐 더 붙잡고 있다
 
 
 def install(dest, desktop, progress):
+    """새 파일을 설치 폴더 안의 임시 폴더에 다 푼 뒤 이전 파일과 바꾼다(appfiles). 사용자 데이터(%APPDATA%\\PostechChat)는 건드리지 않는다.
+
+    바꾸다 실패하면 이전 버전을 되돌려 두므로, 설치가 중간에 멈춰도 앱이 열리지 않는 상태가 되지 않는다.
+    """
     dest = Path(dest)
+    appfiles.cleanup(dest)  # 지난 설치가 남긴 작업 폴더
     with zipfile.ZipFile(resource("payload.zip")) as zf:
-        members = zf.infolist()
-        # 이전 버전의 앱 파일만 지운다. 사용자 데이터는 %APPDATA%\PostechChat에 있어 영향이 없다.
-        if dest.exists():
-            progress(1, "이전 버전 정리 중...")
-            wait_app_closed()
-            for name in ("_internal", APP_EXE, "uninstall.ps1"):
-                _remove(dest / name)
-        dest.mkdir(parents=True, exist_ok=True)
-        total = sum(m.file_size for m in members) or 1
-        done = 0
-        for m in members:
-            zf.extract(m, dest)
-            done += m.file_size
-            progress(done / total * 90, "파일 복사 중...")
+        total = sum(m.file_size for m in zf.infolist()) or 1
+        stage = appfiles.extract(zf, dest, progress, share=88)
+    appfiles.verify(stage, APP_EXE)
+    progress(89, "이전 버전과 바꾸는 중...")
+    wait_app_closed()
+    appfiles.replace(dest, stage)
     progress(93, "바로가기 만드는 중...")
     shortcuts, failed = create_shortcuts(dest / APP_EXE, desktop)
     progress(97, "등록하는 중...")
