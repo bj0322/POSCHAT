@@ -24,7 +24,7 @@ v1.15(B1 수정 + POSCHAT Code)는 작업 브랜치에서 구현과 자동 시�
 - 원인: 네이티브 이벤트 처리기(UI 스레드) → `Browser.navigated()` → `Bridge._push()` → `window.evaluate_js()`가 UI 스레드의 결과를 기다리며 교착.
 - 수정: `ui_events.EventPump`(큐 + 전용 스레드, 순서 유지, 연달은 상태 이벤트만 합침, 상한, 예외 격리, 종료). `Bridge._push`는 바로 돌아온다.
 - 시험: `tests/test_ui_events.py`(UI 스레드 흉내 창으로 예전 방식 교착 재현·새 방식 해결), `tests/browser_spike.py`(실제 창, 단계마다 앱 응답 확인,
-  `--legacy-push`로 교착 재현 — Windows CI에서 재현 확인).
+  `--legacy-push`로 교착 재현 — Windows·macOS CI 창에서 예전 방식은 멈추고 고친 방식은 통과함을 확인).
 
 ### 2. v1.15 POSCHAT Code — 구현됨
 구조 [architecture/poschat-code.md](architecture/poschat-code.md), 사용법 [code-editor-guide.md](code-editor-guide.md), 보안 [code-security.md](code-security.md).
