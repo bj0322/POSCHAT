@@ -278,7 +278,9 @@ def main():
             print("... event flood", flush=True)
             before = len(events)
             b.open(f"{url}flood")
-            flooded = wait_for(lambda: b.state["title"] == "flood-done", timeout=40)
+            # Windows는 제목·주소가 바뀔 때마다 이벤트가 온다. macOS 백엔드는 다 열릴 때만 알리므로 페이지를 직접 읽어 끝났는지 본다.
+            flooded = wait_for(lambda: b.state["title"] == "flood-done"
+                               or js_value(b._backend.read("document.title")) == "flood-done", timeout=40)
             step("event flood", flooded, f"events={len(events) - before} state={json.dumps(b.state)}")
             alive("during/after event flood")
             step("event queue drained", pump.flush(15), json.dumps(pump.stats))
