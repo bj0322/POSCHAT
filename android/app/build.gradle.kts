@@ -44,7 +44,7 @@ val syncSharedPython by tasks.registering(Sync::class) {
             // 1.16: POSCHAT Lab(안드로이드는 기록 보기·가져오기·그래프만, 실행은 막는다), Code 에이전트(PC 전용)
             "lab_store.py", "lab_results.py", "lab_api.py", "code_agent.py", "browser_agent.py",
             // 1.17: Adaptive AI(라우터·검증기·엔진은 안드로이드에서도 돈다. 로컬 AI 실행기는 PC 전용이라 '쓸 수 없음')
-            "local_ai.py", "adaptive_router.py", "quality_gate.py", "adaptive_engine.py", "adaptive_api.py",
+            "local_ai.py", "adaptive_router.py", "quality_gate.py", "adaptive_engine.py", "adaptive_api.py", "adaptive_cost.py",
         )
     }
     into(sharedPythonDir)

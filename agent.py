@@ -298,7 +298,8 @@ class Agent:
     def __init__(self, api_key, workspace, agent_mode, max_steps, history_messages,
                  on_status, on_tool, confirm, cancelled, thread_id=None, share_threads=True, mcp=None,
                  api_settings=None, on_delta=None, ai_memory_state=None, on_ai_memory_state=None, policy=None,
-                 browser=None, paper=None, review=None, browser_progress=None, browser_paused=None, engine=None):
+                 browser=None, paper=None, review=None, browser_progress=None, browser_paused=None, engine=None,
+                 prompt_cache=False):
         self.api_key = api_key
         self.workspace = Path(workspace).resolve() if workspace else None
         self.agent_mode = agent_mode
@@ -341,22 +342,26 @@ class Agent:
         # 1.17 Adaptive AI: adaptive_engine.AdaptiveEngine — 대화의 모델이 "auto"·"local:…"일 때. None이면 예전처럼 api.ask.
         # 엔진은 글만 돌려주는 순수한 호출이라(다시 하기·Cloud 승격도 그 안에서 끝난다) 단계 실행은 한 번뿐이다.
         self.engine = engine
+        # 1.17 프롬프트 캐싱(AI 실행 정책에서 켬): 단계마다 같은 앞부분(지시·도구·대화)을 캐시 대상으로 표시한다
+        self.prompt_cache = bool(prompt_cache)
         self._task_text = ""          # 라우팅 분류에 쓰는 사용자 요청(앱의 지시문은 빼고)
 
     step_purpose = "agent_step"       # CodeAgent는 code_agent_step
 
-    def _ask(self, prompt, on_delta=None, images=None, purpose="chat"):
+    def _ask(self, prompt, on_delta=None, images=None, purpose="chat", cache_prefix=0):
+        """cache_prefix: prompt의 앞부분 몇 글자가 단계마다 같은지(프롬프트 캐싱을 켰을 때만 쓴다)."""
+        cache_prefix = cache_prefix if self.prompt_cache else 0
         if self.engine is not None:
             import adaptive_engine
 
             try:
                 reply = self.engine.ask(prompt, purpose=purpose, task_text=self._task_text, on_delta=on_delta, images=images,
-                                        attachments=bool(self.attachment_blocks or self.images))
+                                        attachments=bool(self.attachment_blocks or self.images), cache_prefix=cache_prefix)
             except adaptive_engine.AdaptiveError as e:
                 raise ApiError(str(e)) from e
         else:
             reply = ask(self.api_key, prompt, settings=self.api_settings, on_delta=on_delta, cancelled=self.cancelled,
-                        images=images)
+                        images=images, **({"cache_prefix": cache_prefix} if cache_prefix else {}))
         reply = SERVER_COMMENT_RE.sub("", reply)
         return JUNK_CODE_RE.sub("", reply).strip()
 
@@ -648,7 +653,7 @@ class Agent:
             self.on_status(f"생각하는 중... ({step + 1}단계)")
             self.steps = step + 1
             prompt = static + self._format_log(log) + "\n\n다음 단계 JSON:"
-            reply = self._ask(prompt, images=self.images, purpose=self.step_purpose)
+            reply = self._ask(prompt, images=self.images, purpose=self.step_purpose, cache_prefix=len(static))
             action = parse_action(reply)
             if action is None:
                 # 모델이 형식을 거부하고 "사용자가 할 일" 안내문을 쓰는 경우가 있다.
@@ -681,7 +686,7 @@ class Agent:
         self.on_status("결과를 정리하는 중...")
         prompt = (static + self._format_log(log)
                   + "\n\n단계 한도에 도달했습니다. done으로 지금까지의 결과와 남은 일을 정리하세요.\n다음 단계 JSON:")
-        reply = self._ask(prompt, images=self.images, purpose="agent_final")
+        reply = self._ask(prompt, images=self.images, purpose="agent_final", cache_prefix=len(static))
         action = parse_action(reply)
         if action and action.get("action") == "done":
             return str(action.get("answer") or "")

@@ -9,6 +9,7 @@
 import threading
 import time
 
+import adaptive_cost
 import adaptive_engine
 import adaptive_router
 import api
@@ -65,7 +66,28 @@ class AdaptiveApi:
                                                   "gpt-4.1-mini-gs-2025-04-14") if m in self._model_ids(self._mode())],
                 "has_cloud_key": bool(self._api_key()),
                 "budget": adaptive_engine.budget_state(self._config), "policies": adaptive_router.POLICY_LABELS,
-                "stats": adaptive_router.load_stats(), "download": getattr(self, "_ai_download", None)}
+                "stats": adaptive_router.load_stats(), "download": getattr(self, "_ai_download", None),
+                "economics": self._adaptive_economics()}
+
+    def _adaptive_economics(self, est_tokens=2000):
+        """정책 창의 손익분기 미리 보기: 지금 단가(경량·프런티어)와 최근 실측 토큰 분포로, 요청 길이 est_tokens일 때."""
+        s = self._adaptive()
+        light, frontier = self._adaptive_light_model(), self._adaptive_cloud_model()
+        rates = (self._config.get("telemetry") or {}).get("rates") or {}
+        pl, src_l = adaptive_cost.prices_for(light, s["prices"], rates)
+        pf, src_f = adaptive_cost.prices_for(frontier, s["prices"], rates)
+        out = {"light_model": light, "frontier_model": frontier, "light_source": src_l, "frontier_source": src_f,
+               "light_prices": pl.to_dict() if pl else None, "frontier_prices": pf.to_dict() if pf else None, "est_tokens": est_tokens}
+        if not light or pl is None or pf is None or src_l != src_f:
+            return {**out, "known": False}
+        events = [e for e in telemetry.load(30) if e.get("type") == "cloud_inference" and e.get("measured")]
+        prof = adaptive_cost.measured_profile(events, est_tokens)
+        prof.R = adaptive_router.estimate_tokens(adaptive_engine.CONSULT_RULE)
+        p_esc = adaptive_engine.DEFAULT_P_ESCALATE   # 미리 보기는 작업을 모르므로 기본 승격 확률
+        d = adaptive_cost.decide(pl, pf, prof, p_esc, cache=s["prompt_cache"])
+        d_cache = adaptive_cost.decide(pl, pf, prof, p_esc, cache=True)
+        return {**out, **d, "known": True, "measured_samples": len(events),
+                "breakeven_consult_cached": d_cache["breakeven_consult"]}
 
     def adaptive_save(self, values):
         """정책 창의 저장. 알 수 없는 값은 무시하고, 주소는 정책(local_ai.check_endpoint)을 통과해야 저장한다."""
@@ -102,7 +124,14 @@ class AdaptiveApi:
                 s["consult_max"] = max(0, min(2, int(values["consult_max"])))
             except (TypeError, ValueError):
                 pass
-        for key in ("escalation", "show_badge", "manual_fallback", "consult"):
+        if isinstance(values.get("prices"), dict):  # {모델: {input, output, cache_read, cache_write, call}} — 둘 다 있어야 저장
+            prices = {}
+            for model, raw in list(values["prices"].items())[:20]:
+                p = adaptive_cost.Prices.from_config(raw)
+                if p is not None and model in self._model_ids(self._mode()):
+                    prices[model] = {k: v for k, v in p.to_dict().items() if v is not None and (k != "call" or v)}
+            s["prices"] = prices
+        for key in ("escalation", "show_badge", "manual_fallback", "consult", "tiered", "prompt_cache"):
             if key in values:
                 s[key] = bool(values[key])
         for key, lo, hi in (("max_escalations", 0, adaptive_engine.MAX_ESCALATIONS), ("local_retries", 0, 1)):
@@ -265,6 +294,51 @@ class AdaptiveApi:
         return {"ok": True, "summary": adaptive_engine.summary(days, config=self._config),
                 "budget": adaptive_engine.budget_state(self._config)}
 
+    def adaptive_breakeven(self, light_prices=None, frontier_prices=None, est_tokens=2000, cache=None):
+        """정책 창의 '계산': 저장하지 않은 단가로 손익분기를 바로 계산한다(모델을 부르지 않는다)."""
+        pl, pf = adaptive_cost.Prices.from_config(light_prices), adaptive_cost.Prices.from_config(frontier_prices)
+        if pl is None or pf is None:
+            return {"ok": False, "error": "경량·프런티어 모델의 입력·출력 단가를 모두 넣으세요(0보다 큰 수)."}
+        try:
+            est = max(50, min(400000, int(est_tokens or 2000)))
+        except (TypeError, ValueError):
+            est = 2000
+        events = [e for e in telemetry.load(30) if e.get("type") == "cloud_inference" and e.get("measured")]
+        prof = adaptive_cost.measured_profile(events, est)
+        prof.R = adaptive_router.estimate_tokens(adaptive_engine.CONSULT_RULE)
+        use_cache = self._adaptive()["prompt_cache"] if cache is None else bool(cache)
+        d = adaptive_cost.decide(pl, pf, prof, adaptive_engine.DEFAULT_P_ESCALATE, cache=use_cache)
+        return {"ok": True, **d, "measured_samples": len(events),
+                "breakeven_consult_cached": adaptive_cost.breakeven_ratio(pf, prof, "consult", True)}
+
+    def adaptive_dev_data(self, days=7):
+        """개발자 모드: 라우팅·모델 호출·검증·승격·상담 기록(내용 없이)과 실측 토큰 합계, 손익분기, 설정. 개발자 모드일 때만."""
+        if not self._config.get("developer_mode"):
+            return {"ok": False, "error": "설정에서 개발자 모드를 켜면 볼 수 있습니다."}
+        days = max(1, min(90, int(days or 7)))
+        kinds = ("routing_decision", "local_inference", "cloud_inference", "quality_check", "escalation", "consult", "routing_failure")
+        events = [e for e in telemetry.load(days) if e.get("type") in kinds]
+        tokens = {}
+        for e in events:
+            if e.get("type") not in ("cloud_inference", "local_inference") or not e.get("ok"):
+                continue
+            tier = "local" if e["type"] == "local_inference" else (e.get("tier") or "frontier")
+            row = tokens.setdefault(tier, {"calls": 0, "measured_calls": 0, "est_input": 0, "input_tokens": 0, "output_tokens": 0,
+                                           "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0})
+            row["calls"] += 1
+            row["est_input"] += int(e.get("est_tokens") or 0)
+            if e.get("measured") or e["type"] == "local_inference":
+                row["measured_calls"] += 1
+                for k in adaptive_engine.USAGE_KEYS:
+                    row[k] += int(e.get(k) or 0)
+        for row in tokens.values():
+            row["cache_hit_ratio"] = round(row["cache_read_input_tokens"] / row["input_tokens"], 3) if row["input_tokens"] else None
+        s = self._adaptive()
+        return {"ok": True, "days": days, "events": events[-300:], "event_count": len(events), "tokens": tokens,
+                "economics": {str(t): self._adaptive_economics(t) for t in (500, 2000, 8000, 32000)},
+                "settings": {k: v for k, v in s.items() if k != "local"} | {"local": {k: v for k, v in s["local"].items() if k != "speed"}},
+                "stats": adaptive_router.load_stats()}
+
     # ---- 대화 실행에서 쓰는 도우미 ----
 
     def _thread_routed(self, model):
@@ -285,12 +359,18 @@ class AdaptiveApi:
         settings = self._thread_api_settings(thread)
         cloud_model = self._adaptive_cloud_model()
 
-        def cloud_ask(prompt, chosen, on_delta, images):
+        def cloud_ask(prompt, chosen, on_delta, images, cache_prefix=0):
+            """(글, 서버가 알려 준 토큰 사용량). cache_prefix는 프롬프트 캐싱을 켰을 때만 엔진이 넘긴다."""
             import agent as agent_module  # 시험에서 agent.ask를 바꿔 끼울 수 있게 부를 때 찾는다
 
             s = ApiSettings(**{**settings.__dict__, "model": chosen or cloud_model})
-            return agent_module.ask(api_key, prompt, settings=s, on_delta=on_delta, cancelled=cancelled, images=images,
-                                    **({"timeout": 600} if area == "po_note" else {}))
+            usage = {}
+            extra = {"timeout": 600} if area == "po_note" else {}
+            if cache_prefix:
+                extra["cache_prefix"] = cache_prefix
+            text = agent_module.ask(api_key, prompt, settings=s, on_delta=on_delta, cancelled=cancelled, images=images,
+                                    usage_out=usage, **extra)
+            return text, usage
 
         return adaptive_engine.AdaptiveEngine(self._config, self._local_runtime(), cloud_ask, cloud_model,
                                               cloud_available=bool(api_key), mode=model, on_event=on_event,

@@ -1,6 +1,6 @@
 # POSCHAT 로드맵과 다음 작업 (v1.16부터)
 
-마지막 갱신: 2026-10-24, v1.16.0 릴리스 뒤 v1.17(Adaptive Hybrid AI Engine) 개발 시작 시점. 작업 지침은 저장소 최상위 [CLAUDE.md](../CLAUDE.md).
+마지막 갱신: 2026-10-24, v1.17.0 릴리스 시점. 작업 지침은 저장소 최상위 [CLAUDE.md](../CLAUDE.md).
 
 **플랫폼 정책(2026-10, 사용자 지시)**: 안드로이드 앱은 따로 요청하지 않으면 기능을 맞추지 않는다. 데스크톱(Windows·macOS)만 손본다.
 공유 Python·화면 코드는 안드로이드 빌드에도 들어가므로 새 모듈은 계속 공유 목록에 넣고, 안드로이드에서 안 되는 기능은 '쓸 수 없음'으로 막는다. CI의 android 작업과 APK 자산은 그대로 둔다.
@@ -13,16 +13,16 @@
 | 1.14 | 논문 읽기(POSCHAT Paper) | 릴리스 |
 | 1.15 | B1 수정(ui_events 큐) + POSCHAT Code(편집기·변경 검토·Git·실행) | 릴리스 |
 | 1.16 | Code 에이전트(작업 탭), POSCHAT Lab, AI 브라우저 에이전트, 사이드바 정리, 보안 검토 반영(사이트 승인 kind `site`, `.git` 수정 금지) | 릴리스 |
-| 1.17 | Adaptive Hybrid AI Engine: 로컬 AI(Ollama)·자동 모델 선택(4정책)·3단계(경량 Cloud·프런티어 상담)·품질 검증·승격·비용 통계·벤치마크 | 구현·자동 시험 완료, 실제 모델 측정·릴리스 대기 |
+| 1.17 | Adaptive Hybrid AI Engine: 로컬 AI(Ollama)·자동 모델 선택(4정책)·3단계(경량 Cloud·프런티어 상담)·품질 검증·승격·비용 통계·벤치마크 | 릴리스(3단계·캐싱은 기본 꺼짐, 실제 모델 측정은 남음) |
 
 ## 지금 할 일
 
-### 1. v1.17 마무리: 실제 모델 측정 → (사용자 승인 뒤) 릴리스
-v1.17(Adaptive Hybrid AI Engine)은 구현과 자동 시험을 마쳤다. 구조 [architecture/adaptive-ai.md](architecture/adaptive-ai.md), 결과 [adaptive-ai-benchmark-results.md](adaptive-ai-benchmark-results.md).
+### 1. v1.17 뒤: 실제 모델 측정
+v1.17(Adaptive Hybrid AI Engine)은 릴리스했다(사용자 승인, 2026-10-24). 3단계·프롬프트 캐싱은 기본 꺼짐, 단가를 넣으면 손익분기(`adaptive_cost`)로 경로를 고른다. 구조 [architecture/adaptive-ai.md](architecture/adaptive-ai.md), 결과 [adaptive-ai-benchmark-results.md](adaptive-ai-benchmark-results.md).
 - 사용자 PC에서 `tools/local_ai_check.py`와 `tools/adaptive_benchmark.py --run`(A·B·E·F·G, Cloud 호출 상한)으로 실제 품질·비용을 재고 결과 문서에 적는다.
   성공률 하락이 2%p를 넘는 작업 유형은 `LOCAL_ELIGIBLE`·`LIGHT_DIRECT`에서 뺀다.
 - 실제 Windows·macOS 앱에서 Ollama 연결·모델 받기·정책 창·라우팅 표시·상담을 손으로 확인한다.
-- 사용자 지시(2026-10): **릴리스(태그·배포)는 하지 않는다. 가장 멀리 가도 머지까지.**
+- 개발자 모드(설정)의 실측 토큰·캐시 적중률로 상담·캐싱의 실제 이득을 확인하고, 손익분기 프로필의 기본값(O·C·A·승격 확률)을 실측으로 고친다.
 - 1.16 실제 앱 손 확인(아래 '알려진 한계')은 계속 남아 있다.
 
 ### 2. 다음 후보(v1.18 이후)

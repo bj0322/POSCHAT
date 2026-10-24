@@ -165,6 +165,29 @@ class AnthropicApiTests(unittest.TestCase):
                 self.assertNotIn("fallbacks", body)
                 self.assertNotIn("anthropic-beta", {k.lower() for k in FakeAnthropic.requests[-1]["headers"]})
 
+    def test_prompt_cache_prefix_and_usage(self):
+        # 1.17: 앞부분을 cache_control 블록으로 나누고, 서버가 알려 준 캐시 토큰을 따로 돌려준다
+        params, _ = api._anthropic_params(self.settings(), "앞부분뒷부분", None, True, cache_prefix=3)
+        self.assertEqual(params["messages"][0]["content"], [
+            {"type": "text", "text": "앞부분", "cache_control": {"type": "ephemeral"}}, {"type": "text", "text": "뒷부분"}])
+        params, _ = api._anthropic_params(self.settings(), "전부", [("image/png", "aGk=")], True, cache_prefix=99)
+        self.assertEqual(params["messages"][0]["content"][-1], {"type": "text", "text": "전부", "cache_control": {"type": "ephemeral"}})
+        params, _ = api._anthropic_params(self.settings(), "그대로", None, True)
+        self.assertEqual(params["messages"][0]["content"], "그대로")
+        self.assertEqual(api._anthropic_usage({"input_tokens": 10, "cache_read_input_tokens": 900, "cache_creation_input_tokens": 0,
+                                               "output_tokens": 5}),
+                         {"input_tokens": 910, "output_tokens": 5, "cache_read_input_tokens": 900})
+        self.assertEqual(api._usage({"usage": {"prompt_tokens": 2000, "completion_tokens": 10,
+                                               "prompt_tokens_details": {"cached_tokens": 1024}}}),
+                         {"input_tokens": 2000, "output_tokens": 10, "cache_read_input_tokens": 1024})
+        for name, sdk in self.paths():
+            with self.subTest(path=name), patch.object(api, "_sdk_module", sdk):
+                out = {}
+                api.ask(GOOD_KEY, "안녕", settings=self.settings(stream=False), usage_out=out, cache_prefix=1)
+                self.assertEqual(out, {"input_tokens": 11, "output_tokens": 4})
+                body = FakeAnthropic.requests[-1]["body"]
+                self.assertEqual(body["messages"][0]["content"][0]["cache_control"], {"type": "ephemeral"})
+
     def test_older_models_get_no_effort(self):
         params, betas = api._anthropic_params(self.settings("claude-opus-4-8"), "hi", None, True)
         self.assertNotIn("output_config", params)

@@ -40,6 +40,28 @@ async function adaptiveRefreshModels() {
 
 /* ---------- 라우팅 표시 ---------- */
 
+/* 개발자 모드: 호출 하나의 실제 토큰(서버가 알려 준 값)과 손익분기 계산 */
+const TIER_NAME = { local: "로컬", light: "경량", frontier: "프런티어", cloud: "Cloud" };
+function devTokens(u) {
+  if (!u || !Object.keys(u).length) return "토큰: 서버가 알려 주지 않음";
+  return `입력 ${u.input_tokens ?? "-"} · 출력 ${u.output_tokens ?? "-"}` +
+    (u.cache_read_input_tokens ? ` · 캐시 읽기 ${u.cache_read_input_tokens}` : "") +
+    (u.cache_creation_input_tokens ? ` · 캐시 쓰기 ${u.cache_creation_input_tokens}` : "");
+}
+function devAttempt(t) {
+  return `${TIER_NAME[t.provider] || t.provider} ${t.model || ""} · ${t.ok ? "성공" : "실패" + (t.error ? `(${t.error})` : "")}` +
+    ` · ${t.ms ?? "-"}ms` + (t.consult ? " · 상담" : "") + (t.after_consult ? " · 상담 뒤 최종 답" : "") + " · " + devTokens(t.usage);
+}
+function econText(e) {
+  if (!e) return "-";
+  if (!e.known) return "단가를 몰라 계산하지 않음(AI 실행 정책 → 단가에 경량·프런티어 단가를 넣으면 계산합니다)";
+  const c = e.costs || {};
+  const best = { frontier: "프런티어 직접", light: "경량 혼자", consult: "경량 + 상담" }[e.best] || e.best;
+  return `단가 비율 r = ${e.ratio} · 손익분기 r*: 상담 ${e.breakeven_consult ?? "없음"}, 경량 혼자 ${e.breakeven_light ?? "없음"}` +
+    ` · 기대 비용: 프런티어 ${c.frontier}, 경량 ${c.light}, 상담 ${c.consult} → ${best}` +
+    ` · 승격 확률 ${e.p_escalate}` + (e.cache ? " · 캐시 켬" : "");
+}
+
 function routeBadge(route) {
   if (!route) return null;
   const local = route.provider === "local";
@@ -69,11 +91,21 @@ function routeBadge(route) {
   }
   if (route.escalated) rows.push(["승격 이유", route.escalation_reason || "-"]);
   if (route.escalation_error) rows.push(["승격 실패", route.escalation_error]);
+  const dev = !!(S.config || {}).developer_mode;
+  if (dev) {
+    (route.attempts || []).forEach((t, i) => rows.push([`시도 ${i + 1}`, devAttempt(t)]));
+    rows.push(["손익분기", econText(route.economics)]);
+    if (route.reason_code) rows.push(["이유 코드", route.reason_code]);
+  }
   if (route.calls > 1 && route.counts) rows.push(["이번 실행의 모델 호출", `${route.calls}번 (로컬 ${route.counts.local}, 경량 ${route.counts.light || 0}, Cloud ${route.counts.cloud}, 승격 ${route.counts.escalated}, 상담 ${route.counts.consulted || 0})`]);
   details.append(h("table", { class: "route-table" }, rows.map(([k, v]) => h("tr", {}, h("th", {}, k), h("td", {}, String(v))))));
   if (route.provisional) {
     details.append(h("details", { class: "route-provisional" }, h("summary", {}, "검증에 실패한 로컬 임시 답 보기"),
       h("pre", {}, route.provisional)));
+  }
+  if (dev) {
+    details.append(h("details", { class: "route-provisional route-json" }, h("summary", {}, "원본 JSON (개발자 모드)"),
+      h("pre", {}, JSON.stringify(route, null, 2))));
   }
   const btn = h("button", { class: cls, type: "button", title: "모델 선택 이유 보기", "aria-expanded": "false" }, route.label || (local ? "Local" : "Cloud"));
   btn.addEventListener("click", () => {
@@ -294,6 +326,48 @@ async function showAdaptive() {
   consult.checked = s.consult !== false;
   const consultMax = h("select", {}, [0, 1, 2].map((n) => h("option", { value: n }, `${n}번`)));
   consultMax.value = String(s.consult_max ?? 1);
+  const tiered = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
+  tiered.checked = !!s.tiered;
+  const promptCache = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
+  promptCache.checked = !!s.prompt_cache;
+  const syncTier = () => { [lightModel, consult, consultMax].forEach((x) => { x.disabled = !tiered.checked; }); };
+  tiered.addEventListener("change", syncTier);
+  syncTier();
+  // 단가(100만 토큰당, 단위는 두 모델이 같게): 손익분기를 단가 비율로 계산한다
+  const PRICE_KEYS = [["input", "입력"], ["output", "출력"], ["cache_read", "캐시 읽기"], ["cache_write", "캐시 쓰기"], ["call", "호출당"]];
+  const priceInputs = () => Object.fromEntries(PRICE_KEYS.map(([k]) => [k, h("input", { type: "number", min: 0, step: "any", style: "width:84px" })]));
+  const lightPrice = priceInputs();
+  const frontierPrice = priceInputs();
+  const econ = st.economics || {};
+  const fillPrices = (inputs, model, derived) => {
+    const p = (s.prices || {})[model] || {};
+    for (const [k] of PRICE_KEYS) {
+      inputs[k].value = p[k] ?? "";
+      inputs[k].placeholder = derived && derived[k] != null ? String(Math.round(derived[k] * 100) / 100) : "";
+    }
+  };
+  const frontierId = () => cloudModel.value || st.cloud_model;
+  fillPrices(lightPrice, lightModel.value, econ.light_source === "credits" ? econ.light_prices : null);
+  fillPrices(frontierPrice, frontierId(), econ.frontier_source === "credits" ? econ.frontier_prices : null);
+  lightModel.addEventListener("change", () => fillPrices(lightPrice, lightModel.value));
+  cloudModel.addEventListener("change", () => fillPrices(frontierPrice, frontierId()));
+  const priceValues = (inputs) => {
+    const out = {};
+    for (const [k] of PRICE_KEYS) if (inputs[k].value !== "") out[k] = Number(inputs[k].value);
+    return out;
+  };
+  const priceTable = h("table", { class: "route-table adaptive-prices" },
+    h("tr", {}, h("th", {}, ""), PRICE_KEYS.map(([, label]) => h("th", {}, label))),
+    h("tr", {}, h("th", {}, "경량"), PRICE_KEYS.map(([k]) => h("td", {}, lightPrice[k]))),
+    h("tr", {}, h("th", {}, "프런티어"), PRICE_KEYS.map(([k]) => h("td", {}, frontierPrice[k]))));
+  const estTokens = h("input", { type: "number", min: 50, value: 2000, style: "width:120px;flex:none" });
+  const econBox = h("small", { class: "muted block adaptive-econ" }, econ.known ? econText(econ) :
+    "경량·프런티어 단가를 넣고 '손익분기 계산'을 누르세요. 단가가 없으면 규칙대로만 고릅니다.");
+  const calcBtn = h("button", { class: "btn", type: "button", onclick: async () => {
+    const r = await api().adaptive_breakeven(priceValues(lightPrice), priceValues(frontierPrice), estTokens.value, promptCache.checked);
+    econBox.textContent = r.ok ? econText({ ...r, known: true }) +
+      ` · 실측 표본 ${r.measured_samples}개` + (r.cache ? "" : ` · 캐시를 켜면 상담 손익분기 ${r.breakeven_consult_cached ?? "없음"}`) : r.error;
+  } }, "손익분기 계산");
 
   // 비용·지연
   const weeklyCalls = h("input", { type: "number", min: 0, value: s.budget.weekly_calls || 0 });
@@ -340,6 +414,8 @@ async function showAdaptive() {
         h("small", {}, "누를 때만 받습니다. 받기 전에 크기·출처·라이선스를 먼저 보여 줍니다. 받은 모델은 Ollama 폴더에 저장됩니다."))),
     section("Cloud와 승격",
       h("div", { class: "field" }, h("label", {}, "프런티어(기본 Cloud) 모델"), cloudModel),
+      check(tiered, "3단계 켜기: 사용자 → 경량 모델 → 프런티어 (실험)",
+        "끄면(기본) 경량 모델을 골라 두어도 쓰지 않고 예전처럼 로컬 → 프런티어 2단계로 동작합니다."),
       h("div", { class: "field" }, h("label", {}, "경량 Cloud 모델 (중간 단계)"), lightModel,
         h("small", {}, "Haiku·GPT-5 mini처럼 싸고 빠른 모델을 고르면 사용자 → 경량 모델 → 프런티어의 3단계가 됩니다. ",
           "가벼운 일은 로컬, 보통 일은 경량 모델이 답하고, 어려운 일은 경량 모델이 대화를 이끌며 필요한 부분만 프런티어에 짧게 묻습니다. ",
@@ -347,6 +423,15 @@ async function showAdaptive() {
       check(consult, "경량 모델이 필요할 때 프런티어에 상담 (Economy·Balanced)",
         "프런티어에는 대화 전체 대신 경량 모델이 고른 짧은 질문과 발췌만 보냅니다(이 대화의 지난 상담 기록과 함께). 상담하면 경량 모델을 한 번 더 부르므로 조금 느려집니다."),
       h("div", { class: "field" }, h("label", {}, "요청 하나에서 상담 최대 횟수"), consultMax),
+      check(promptCache, "프롬프트 캐싱",
+        "같은 앞부분(대화·지시)을 서버 캐시에 표시합니다(Claude API). 상담 뒤 경량 모델의 두 번째 호출과 에이전트 단계에서 입력 비용을 줄입니다. " +
+        "캐시 쓰기는 일반 입력보다 비쌀 수 있고, 짧은 글(모델별 최소 길이 미만)은 캐시되지 않습니다."),
+      h("div", { class: "field" }, h("label", {}, "단가 (100만 토큰당 · 두 모델이 같은 단위)"), h("div", { class: "adaptive-scroll" }, priceTable),
+        h("div", { class: "row", style: "margin-top:6px" }, h("small", { style: "margin:0" }, "요청 길이(토큰)"), estTokens, calcBtn),
+        econBox,
+        h("small", {}, "경량 단가 ÷ 프런티어 단가(r)가 손익분기(r*)보다 작을 때만 경량 모델·상담이 싸집니다. r*는 요청 길이·상담 질문과 답의 길이(실측 평균)·",
+          "경량 답의 승격 확률·캐시에 따라 요청마다 다시 계산합니다. 단가를 넣으면 규칙이 경량을 골라도 프런티어 직접이 더 싼 요청은 프런티어로 보냅니다. ",
+          "비워 두면 앱 안내에 크레딧 근거가 있는 모델(Claude Sonnet·Opus 5.5)만 크레딧으로 계산합니다(희미한 값). 앱은 모델 가격을 지어내지 않습니다.")),
       check(escalation, "로컬 답이 검증을 통과하지 못하면 Cloud로 다시 답하기", "Local Only에서는 하지 않습니다. 이미 받은 로컬 답은 접어서 함께 보여 줍니다."),
       h("div", { class: "field" }, h("label", {}, "요청 하나에서 Cloud 승격 최대 횟수"), maxEsc),
       check(retries, "형식 문제(빈 답·JSON 아님)면 같은 로컬 모델로 한 번 더", null),
@@ -379,7 +464,14 @@ async function showAdaptive() {
           latency: latency.value, privacy: { sensitive_local_only: sensitiveLocal.checked, attachments_to_cloud: attachCloud.checked },
           local_only_tools: tools.value, show_badge: badge.checked,
           light_model: lightModel.value, consult: consult.checked, consult_max: consultMax.value,
+          tiered: tiered.checked, prompt_cache: promptCache.checked, prices: { ...(s.prices || {}) },
         };
+        for (const [model, inputs] of [[lightModel.value, lightPrice], [frontierId(), frontierPrice]]) {
+          if (!model) continue;
+          const p = priceValues(inputs);
+          if (p.input > 0 && p.output > 0) values.prices[model] = p;
+          else delete values.prices[model];
+        }
         if (values.enabled && values.policy === "local_only" && !values.default_model) {
           return toast("Local Only 정책을 쓰려면 기본 로컬 모델을 고르세요.");
         }
@@ -434,6 +526,8 @@ function adaptiveSettingsField() {
 
 window.adaptiveModelOptions = adaptiveModelOptions;
 window.routeBadge = routeBadge;
+window.econText = econText;
+window.devTokens = devTokens;
 window.streamingRouteNode = streamingRouteNode;
 window.routeEvent = routeEvent;
 window.adaptiveEvent = adaptiveEvent;

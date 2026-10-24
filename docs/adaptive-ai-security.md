@@ -18,6 +18,8 @@
 | 상담 발췌 속 지시(프롬프트 주입) | 경량 모델이 고른 발췌는 `connectors.wrap_untrusted`로 감싸 프런티어에 보낸다. 질문 1,500자·발췌 4,000자 상한 | `test_consult_sends_only_the_question_to_the_frontier` |
 | 끝없는 승격·상담 비용 | 요청당 승격 0~2번·상담 0~2번, 실행당 승격 6번·상담 6번, 주간 예산·요청당 한도 | `test_escalation_cap_per_run`, `test_consult_cap`, `test_budget_exceeded_keeps_work_local` |
 | 기록에 내용이 남음 | telemetry에는 작업 유형·모델·시간·토큰 추정·검증 결과·실패 유형만. 프롬프트·답·첨부·상담 질문은 남기지 않음 | `test_events_have_no_content`, `test_stats_show_light_share_consults_and_frontier_tokens` |
+| 개발자 데이터에 내용·키가 남음 | 개발자 모드는 설정에서 켜야 하고, 보이는 것은 telemetry 기록(내용 없음)·토큰 수·단가·설정(로컬 실행기 속도 기록 제외)뿐. API 키는 설정에 없어 나가지 않음 | `test_bridge_prices_breakeven_and_developer_data` |
+| 단가·캐시 설정이 품질을 낮춤 | 단가는 규칙이 고른 경량 경로를 프런티어로 바꾸는 쪽으로만 쓴다(싸다고 경량으로 내리지 않음). 3단계·캐싱은 기본 꺼짐 | `test_breakeven_sends_expensive_light_requests_to_the_frontier`, `test_tiered_is_off_by_default` |
 | 사용자에게 보이는 이유에 개인 정보 | 이유는 작업 유형·정책·제약 코드로 만든 짧은 글이며 프롬프트를 담지 않음 | `test_reason_has_no_prompt_text` |
 | 모델 다운로드 | 사용자가 누를 때만. 이름은 정규식으로 검사(`../`, 공백, `;` 거부). 받기 전에 크기·출처·라이선스·디스크를 보임 | `test_pull_progress_cancel_and_errors`, `test_model_names` |
 

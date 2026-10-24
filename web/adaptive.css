@@ -44,3 +44,11 @@
   .adaptive-actions { white-space: normal; }
   .adaptive-body .row { flex-wrap: wrap; }
 }
+/* 1.17 단가·손익분기, 개발자 모드 */
+.adaptive-prices { width: auto; margin-top: 4px; }
+.adaptive-prices td { padding: 2px 6px 2px 0; }
+.adaptive-prices input { padding: 4px 6px; }
+.adaptive-econ { margin-top: 6px; }
+.route-json pre { max-height: 320px; overflow: auto; font-size: 11px; }
+.dev-events { max-height: 360px; overflow: auto; }
+.adaptive-scroll { overflow-x: auto; max-width: 100%; }

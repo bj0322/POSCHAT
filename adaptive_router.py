@@ -353,6 +353,7 @@ class Route:
     stage: str = "rule"           # rule | semantic | measured | default
     tier: str = ""                # local | light | frontier (1.17 3단계: 경량 Cloud 모델을 켰을 때)
     consult: bool = False         # 경량 모델이 필요할 때 프런티어 모델에 짧게 상담할 수 있는지
+    economics: object = None      # 손익분기 계산(adaptive_cost.decide, 단가를 알 때만)
 
     def to_dict(self):
         return asdict(self)

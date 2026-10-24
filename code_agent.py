@@ -20,6 +20,7 @@ import time
 import uuid
 from pathlib import Path
 
+import adaptive_engine
 import code_runner
 import code_workspace as cw
 import storage
@@ -435,7 +436,8 @@ class CodeAgentApi:
             policy=None, browser=None, paper=None, review=self._ca_review(task_id, approval, alive),
             runner=self._code_runner(), on_plan=on_plan, on_run=on_run,
             # 1.17: 자동 선택을 켰으면 엔진을 거친다. 코드 수정 단계는 '중요·위험'이라 Cloud 먼저, Local Only면 로컬 모델로
-            engine=self._make_engine({"model": "auto"}, api_key, lambda: not alive(), area="code_agent"))
+            engine=self._make_engine({"model": "auto"}, api_key, lambda: not alive(), area="code_agent"),
+            prompt_cache=adaptive_engine.settings(self._config)["prompt_cache"])
         status, answer = "done", ""
         try:
             answer = agent.run(history, msg)

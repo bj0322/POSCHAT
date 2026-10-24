@@ -159,12 +159,65 @@ class AdaptiveUiTests(unittest.TestCase):
                 # 사용량·진단의 Adaptive 통계
                 page.evaluate("showHub('diagnostics')")
                 page.wait_for_selector(".hub-group h3:has-text('Adaptive AI')")
-                sec = page.locator(".hub-group:has(h3:has-text('Adaptive AI'))")
+                sec = page.locator(".hub-group:has(h3:has-text('자동 모델 선택'))")
                 self.assertIn("로컬로 끝냄", sec.inner_text())
                 self.assertIn("Cloud API 청구 비용만 0", sec.inner_text())
                 self.shot(page, "adaptive-stats")
                 self.assertEqual([e for e in errors if "favicon" not in e], [])
             finally:
+                browser.close()
+
+    def test_developer_mode_prices_and_breakeven(self):
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser, page, errors = self.open(p)
+            try:
+                # 설정 → 개발자 모드 켜기
+                page.click("#btn-settings")
+                page.locator(".modal label:has-text('원자료 보기') input").check()
+                page.locator(".modal-foot button:has-text('저장')").last.click()
+                page.wait_for_function("() => S.config.developer_mode === true")
+                # AI 실행 정책: 3단계는 켜야 쓴다(끄면 경량 모델 칸이 잠김), 단가로 손익분기 계산
+                page.evaluate("showAdaptive()")
+                dlg = page.locator(".modal:has(h2:has-text('AI 실행 정책'))")
+                dlg.wait_for()
+                tier_box = dlg.locator("label:has-text('3단계 켜기') input")
+                self.assertFalse(tier_box.is_checked())
+                light = dlg.locator(".field:has(label:has-text('경량 Cloud 모델')) select")
+                self.assertTrue(light.is_disabled())
+                tier_box.check()
+                self.assertFalse(light.is_disabled())
+                rows = dlg.locator(".adaptive-prices tr")
+                for row, (inp, out) in ((1, ("1", "5")), (2, ("5", "25"))):
+                    cells = rows.nth(row).locator("input")
+                    cells.nth(0).fill(inp)
+                    cells.nth(1).fill(out)
+                dlg.locator("button:has-text('손익분기 계산')").click()
+                page.wait_for_selector(".adaptive-econ:has-text('단가 비율 r = 0.2')")
+                self.assertIn("손익분기 r*", dlg.locator(".adaptive-econ").inner_text())
+                self.shot(page, "adaptive-breakeven")
+                page.keyboard.press("Escape")
+                # 라우팅 표시를 펼치면 호출마다 실제 토큰·손익분기·원본 JSON(개발자 모드)
+                text = page.evaluate("""() => {
+                  const n = routeBadge({ provider: 'light', model: 'm', label: 'Light · 요약', status: 'verified', reason_code: 'light',
+                    attempts: [{ provider: 'light', model: 'm', ok: true, ms: 12, usage: { input_tokens: 1200, output_tokens: 80,
+                    cache_read_input_tokens: 1000 } }], economics: { known: true, ratio: 0.2, breakeven_consult: 0.28,
+                    breakeven_light: 0.81, costs: { frontier: 0.02, light: 0.006, consult: 0.017 }, best: 'light', p_escalate: 0.15 } });
+                  document.body.append(n); n.querySelector('button').click(); return n.innerText; }""")
+                self.assertIn("캐시 읽기 1000", text)
+                self.assertIn("단가 비율 r = 0.2", text)
+                self.assertIn("원본 JSON", text)
+                # 사용량·진단의 개발자 데이터
+                page.evaluate("showHub('diagnostics')")
+                sec = page.locator(".hub-group:has(h3:has-text('개발자 데이터'))")
+                sec.wait_for()
+                sec.locator("button:has-text('개발자 데이터 불러오기')").click()
+                sec.locator("button:has-text('JSON 복사')").wait_for()
+                self.assertIn("요청 길이(토큰)", sec.inner_text())
+                self.assertEqual([e for e in errors if "favicon" not in e], [])
+            finally:
+                self.bridge.save_settings({"developer_mode": False})
                 browser.close()
 
     def test_phone_width(self):

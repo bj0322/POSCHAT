@@ -22,6 +22,7 @@ import re
 import threading
 import time
 
+import adaptive_cost
 import adaptive_router as router
 import connectors
 import local_ai
@@ -33,6 +34,11 @@ DEFAULTS = {
     # 3단계(1.17): 경량 Cloud 모델(예: Claude Haiku 5.5·GPT-5 mini). 비우면 쓰지 않는다(로컬 → 프런티어 2단계).
     # consult: 경량 모델이 필요할 때 프런티어에 짧은 질문만 보내 상담. consult_max: 요청 하나에서 상담 횟수(0~2).
     "light_model": "", "consult": True, "consult_max": 1,
+    # tiered: 3단계(경량 모델·상담)를 쓸지. 기본 꺼짐 — 켜야 light_model을 쓴다(설정 → AI 실행 정책 → 3단계 켜기).
+    # prompt_cache: 같은 앞부분(대화·지시)을 프롬프트 캐시로 표시(Claude API). 상담의 두 번째 경량 호출·에이전트 단계에서 쓴다.
+    # prices: {모델: {input, output, cache_read, cache_write, call}} 100만 토큰당 단가(단위는 모두 같게). 경량·프런티어 단가가
+    #   모두 있으면 요청마다 손익분기(adaptive_cost)로 경량·상담·프런티어 중 싼 쪽을 고른다. 없으면 크레딧 기준, 그것도 없으면 규칙만.
+    "tiered": False, "prompt_cache": False, "prices": {},
     "local": {"endpoint": local_ai.DEFAULT_ENDPOINT, "allow_remote": False, "default_model": "", "num_ctx": 8192, "speed": {}},
     "cloud_model": "", "budget": {"weekly_calls": 0, "weekly_credits": 0}, "max_cost_per_request": 0, "latency": "normal",
     "privacy": {"sensitive_local_only": False, "attachments_to_cloud": True}, "local_only_tools": "allow",
@@ -52,6 +58,9 @@ CONSULT_RULE = (
     "그 답을 받아 당신이 사용자에게 최종 답을 씁니다.\n"
     '<<CONSULT>>{"question": "상위 모델에게 물을 구체적인 질문 하나", "context": "질문에 꼭 필요한 원문·조건만 짧게(대화 전체를 붙이지 마세요)"}')
 MAX_CONSULT_QUESTION, MAX_CONSULT_CONTEXT = 1500, 4000
+DEFAULT_P_ESCALATE = 0.15    # 경량 모델 답이 검증에 실패할 확률(표본이 모자랄 때의 어림)
+MIN_P_ESCALATE_SAMPLES = 10
+USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
 RETRY_HINTS = {
     "json": "[형식 안내] 설명 없이 JSON 객체 하나로만 답하세요.",
     "action": '[형식 안내] {"action": ...} 형식의 JSON 객체 하나로만 답하세요. action은 [단계 종류]에 있는 이름만 씁니다.',
@@ -79,6 +88,9 @@ def settings(config):
     out["max_escalations"] = max(0, min(MAX_ESCALATIONS, int(out.get("max_escalations") or 0)))
     out["local_retries"] = max(0, min(1, int(out.get("local_retries") or 0)))
     out["consult_max"] = max(0, min(2, int(out.get("consult_max") or 0)))
+    out["tiered"] = bool(out.get("tiered"))
+    out["prompt_cache"] = bool(out.get("prompt_cache"))
+    out["prices"] = out["prices"] if isinstance(out.get("prices"), dict) else {}
     return out
 
 
@@ -234,7 +246,11 @@ class AdaptiveEngine:
         self.escalations = 0
         self.consults = 0
         self._budget = None
-        self.light_model = light_model if (light_model and self.cloud_available and light_model != cloud_model) else ""
+        # 3단계는 설정에서 켰을 때만(tiered). 끄면 경량 모델을 골라 두었어도 예전처럼 로컬 → 프런티어 2단계다.
+        self.light_model = light_model if (self.s["tiered"] and light_model and self.cloud_available
+                                           and light_model != cloud_model) else ""
+        self.last_usage = {}          # 마지막 Cloud 호출에서 서버가 알려 준 토큰 사용량(없으면 {})
+        self._profile = None          # 손익분기 계산에 쓰는 토큰 분포(실측 평균, 실행마다 한 번 읽는다)
         self.frontier_session = list(frontier_session or [])[-6:]
 
     # ---- 도우미 ----
@@ -269,21 +285,37 @@ class AdaptiveEngine:
                          load_ms=res.load_ms, done_reason=res.done_reason)
         return res
 
-    def _cloud(self, prompt, on_delta, images, model=None, escalated=False, tier="frontier", purpose=""):
+    def _cloud(self, prompt, on_delta, images, model=None, escalated=False, tier="frontier", purpose="", cache_prefix=0):
+        """cloud_ask(prompt, model, on_delta, images[, cache_prefix=]) → 글 또는 (글, 사용량). 사용량은 서버가 알려 준 실제 토큰
+        {input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens}이고 self.last_usage에 남긴다."""
         model = model or self.cloud_model
         start = time.monotonic()
         tokens = router.estimate_tokens(prompt)
+        cache_prefix = cache_prefix if self.s["prompt_cache"] and cache_prefix else 0
+        self.last_usage = {}
         try:
-            text = self.cloud_ask(prompt, model, on_delta, images)
+            reply = self.cloud_ask(prompt, model, on_delta, images, **({"cache_prefix": cache_prefix} if cache_prefix else {}))
         except Exception as e:
             telemetry.record("cloud_inference", model=model, ms=int((time.monotonic() - start) * 1000), ok=False,
                              error=type(e).__name__, area=self.area_hint, escalated=escalated, tier=tier, est_tokens=tokens,
                              purpose=purpose)
             raise
-        est = cloud_cost(model, tokens, self._rates())
+        text, usage = reply if isinstance(reply, tuple) else (reply, None)
+        usage = {k: int(v) for k, v in (usage or {}).items() if k in USAGE_KEYS and isinstance(v, (int, float))}
+        self.last_usage = usage
+        est = telemetry.credit_estimate(model, usage.get("input_tokens", tokens), usage.get("output_tokens", EST_OUTPUT_TOKENS), 1,
+                                        self._rates())
         telemetry.record("cloud_inference", model=model, ms=int((time.monotonic() - start) * 1000), ok=True, error="",
-                         area=self.area_hint, credits_est=est, escalated=escalated, tier=tier, est_tokens=tokens, purpose=purpose)
+                         area=self.area_hint, credits_est=est, escalated=escalated, tier=tier, est_tokens=tokens, purpose=purpose,
+                         cache_prefix=bool(cache_prefix), measured=bool(usage), **usage)
         return text
+
+    def _attempt(self, provider, model, t0, **extra):
+        """기록할 시도 하나. Cloud 호출이면 서버가 알려 준 토큰 사용량(있으면)을 붙인다."""
+        row = {"provider": provider, "model": model, "ok": True, "ms": int((time.monotonic() - t0) * 1000), **extra}
+        if provider != "local" and self.last_usage:
+            row["usage"] = dict(self.last_usage)
+        return row
 
     def _name(self, tier):
         return {"local": "Local", "light": "Light"}.get(tier) or ("Frontier" if self.light_model else "Cloud")
@@ -301,8 +333,11 @@ class AdaptiveEngine:
 
     # ---- 본체 ----
 
-    def ask(self, prompt, purpose="chat", task_text="", on_delta=None, images=None, side_effects=False, attachments=False):
+    def ask(self, prompt, purpose="chat", task_text="", on_delta=None, images=None, side_effects=False, attachments=False,
+            cache_prefix=0):
+        """cache_prefix: prompt의 앞부분 몇 글자가 호출마다 같은지(에이전트 단계의 지시·도구·대화). 프롬프트 캐싱을 켰을 때만 쓴다."""
         started = time.monotonic()
+        self._cache_prefix = int(cache_prefix or 0)
         a = router.analyze(prompt, task_text, purpose, images=bool(images), attachments=attachments, side_effects=side_effects)
         manual_local = local_model_of(self.mode)
         record = {"purpose": purpose, "task": a.task, "difficulty": a.difficulty, "policy": self.s["policy"], "attempts": [],
@@ -317,12 +352,15 @@ class AdaptiveEngine:
             route = self._route(a, purpose)
         record.update(provider=route.provider, model=route.model, reason=route.reason, reason_code=route.reason_code,
                       stage=route.stage, constraints=list(route.constraints), tier=route.tier or "")
+        if route.economics:
+            record["economics"] = route.economics
         telemetry.record("routing_decision", area=self.area_hint or purpose, purpose=purpose, task=a.task, difficulty=a.difficulty,
                          method=a.method, confidence=a.confidence, provider=route.provider,
                          model=(f"local:{route.model}" if route.provider == "local" else route.model), policy=self.s["policy"],
                          reason=route.reason_code, stage=route.stage, constraints=list(route.constraints),
                          ms=int((time.monotonic() - started) * 1000), est_tokens=a.est_tokens, tier=route.tier or "",
                          consult=bool(route.consult),
+                         breakeven=_econ_row(route.economics),
                          cloud_cost_est=cloud_cost(self.cloud_model, a.est_tokens, self._rates()) if self.cloud_model else None)
         if route.provider == "none":
             telemetry.record("routing_failure", kind=route.reason_code, policy=self.s["policy"], purpose=purpose)
@@ -334,8 +372,8 @@ class AdaptiveEngine:
             record.update(api_call=True, est_cost=route.est_cost, label=self._label("cloud", a.task), status="cloud")
             self._emit(kind="route", route=record)
             t0 = time.monotonic()
-            text = self._cloud(prompt, on_delta, images, route.model, purpose=purpose)
-            record["attempts"].append({"provider": "cloud", "model": route.model, "ok": True, "ms": int((time.monotonic() - t0) * 1000)})
+            text = self._cloud(prompt, on_delta, images, route.model, purpose=purpose, cache_prefix=self._cache_prefix)
+            record["attempts"].append(self._attempt("cloud", route.model, t0))
             gate = quality_gate.check(quality_gate.area_for(a.task, purpose), text, self._gate_ctx(prompt, a, purpose))
             telemetry.record("quality_check", provider="cloud", model=route.model, task=a.task, area=quality_gate.area_for(a.task, purpose),
                              ok=gate.ok, verifiable=gate.verifiable, failures=gate.failures, purpose=purpose)
@@ -357,11 +395,50 @@ class AdaptiveEngine:
         light = router.Candidate(provider="cloud", model=self.light_model, cost=cloud_cost(self.light_model, a.est_tokens, self._rates())) \
             if self.light_model else None
         route = router.tier(route, a, light, self.s, allow_consult=purpose in CONSULT_PURPOSES and self.consults < RUN_CONSULT_CAP)
+        if route.provider == "light":
+            route = self._economics(route, a)
         if local is None and why_not and route.provider != "local" and "local_unavailable" not in route.constraints:
             route.constraints.append("local_unavailable")
             if route.provider == "none" or route.reason_code in ("local_unavailable", "local_required_unavailable"):
                 route.reason = route.reason.replace("로컬 모델 없음", why_not)
         return route
+
+    def _economics(self, route, a):
+        """규칙이 경량 모델(혼자·상담)을 고른 요청을 단가로 다시 본다(adaptive_cost). 프런티어가 더 싸면 프런티어로 바꾼다.
+        품질 때문에 규칙이 프런티어로 정한 요청은 단가가 싸도 경량으로 내리지 않는다(값은 판단을 비싼 쪽으로만 바꾼다)."""
+        pl, src_l = adaptive_cost.prices_for(self.light_model, self.s["prices"], self._rates())
+        pf, src_f = adaptive_cost.prices_for(self.cloud_model, self.s["prices"], self._rates())
+        if pl is None or pf is None or src_l != src_f:
+            route.economics = {"known": False, "light_source": src_l, "frontier_source": src_f}
+            return route
+        rate, n = router.success_rate(router.load_stats(), self.light_model, a.task)
+        p_esc = (1 - rate) if rate is not None and n >= MIN_P_ESCALATE_SAMPLES else DEFAULT_P_ESCALATE
+        d = adaptive_cost.decide(pl, pf, self._cost_profile(a.est_tokens), p_esc, cache=self.s["prompt_cache"])
+        d.update(known=True, source=src_l, p_escalate_samples=n)
+        route.economics = d
+        mode = "consult" if route.reason_code == "light_consult" else "light"
+        r, be = d["ratio"], d["breakeven_" + mode]
+        if d["costs"][mode] >= d["costs"]["frontier"]:
+            route.provider, route.model, route.tier, route.consult = "cloud", self.cloud_model, "frontier", False
+            route.reason_code = "breakeven_frontier"
+            route.est_cost = cloud_cost(self.cloud_model, a.est_tokens, self._rates())
+            route.reason = (f"{router.TASK_LABELS.get(a.task, a.task)} · 단가 비율 {r} ≥ 손익분기 {be} → 프런티어가 더 쌈"
+                            if be is not None else f"{router.TASK_LABELS.get(a.task, a.task)} · 프런티어 직접이 더 쌈")
+        elif mode == "light" and route.consult and d["costs"]["consult"] >= d["costs"]["frontier"]:
+            route.consult = False   # 상담까지 하면 프런티어 직접보다 비싸다: 경량 모델 혼자, 실패하면 승격
+            route.reason += " · 상담은 손익분기를 넘어 끔"
+        return route
+
+    def _cost_profile(self, est_tokens):
+        """손익분기 계산의 토큰 분포: 최근 30일 서버 사용량의 평균(실측)과 이번 요청 길이. 기록은 실행마다 한 번만 읽는다."""
+        if self._profile is None:
+            try:
+                self._profile = [e for e in telemetry.load(30) if e.get("type") == "cloud_inference" and e.get("measured")]
+            except Exception:
+                self._profile = []
+        prof = adaptive_cost.measured_profile(self._profile, est_tokens)
+        prof.R = router.estimate_tokens(CONSULT_RULE)
+        return prof
 
     def _gate_ctx(self, prompt, a, purpose):
         return {"prompt": prompt, "korean": a.korean, "json": purpose == "memory_extract", "pages": 0}
@@ -397,7 +474,8 @@ class AdaptiveEngine:
                              verifiable=gate.verifiable, failures=gate.failures, purpose=purpose)
             router.record_outcome(f"local:{route.model}", a.task, gate.ok)
             record["attempts"].append({"provider": "local", "model": route.model, "ok": gate.ok, "detail": gate.detail,
-                                       "ms": res.ms, "tokens_per_s": res.tokens_per_s})
+                                       "ms": res.ms, "tokens_per_s": res.tokens_per_s,
+                                       "usage": {"input_tokens": res.input_tokens or 0, "output_tokens": res.output_tokens or 0}})
             if gate.ok:
                 record.update(status="verified" if gate.verifiable else "unchecked", gate=gate.to_dict(),
                               ms=int((time.monotonic() - started) * 1000))
@@ -437,7 +515,8 @@ class AdaptiveEngine:
             self._emit(kind="escalating", route=record, reason=reason, to=self.cloud_model)
             t0 = time.monotonic()
             try:
-                answer = self._cloud(prompt, on_delta, images, self.cloud_model, escalated=True, purpose=purpose)
+                answer = self._cloud(prompt, on_delta, images, self.cloud_model, escalated=True, purpose=purpose,
+                                     cache_prefix=self._cache_prefix)
             except Exception as e:
                 record["attempts"].append({"provider": "cloud", "model": self.cloud_model, "ok": False, "error": type(e).__name__,
                                            "ms": int((time.monotonic() - t0) * 1000)})
@@ -449,7 +528,7 @@ class AdaptiveEngine:
                     self.routes.append(record)
                     return text
                 raise
-            record["attempts"].append({"provider": "cloud", "model": self.cloud_model, "ok": True, "ms": int((time.monotonic() - t0) * 1000)})
+            record["attempts"].append(self._attempt("cloud", self.cloud_model, t0))
             cg = quality_gate.check(area, answer, self._gate_ctx(prompt, a, purpose))
             telemetry.record("quality_check", provider="cloud", model=self.cloud_model, task=a.task, area=area, ok=cg.ok,
                              verifiable=cg.verifiable, failures=cg.failures, purpose=purpose, escalated=True)
@@ -488,13 +567,15 @@ class AdaptiveEngine:
 
         t0 = time.monotonic()
         try:
-            text = self._cloud(attempt, delta if on_delta else None, images, self.light_model, tier="light", purpose=purpose)
+            # 프롬프트 캐싱: 요청 본문(prompt)을 캐시에 써 두면 상담 뒤 두 번째 호출은 같은 앞부분을 캐시로 읽는다
+            text = self._cloud(attempt, delta if on_delta else None, images, self.light_model, tier="light", purpose=purpose,
+                               cache_prefix=max(self._cache_prefix, len(prompt)) if consult_ok else self._cache_prefix)
         except Exception as e:
             record["attempts"].append({"provider": "light", "model": self.light_model, "ok": False, "error": type(e).__name__,
                                        "ms": int((time.monotonic() - t0) * 1000)})
             return self._light_to_frontier(prompt, purpose, a, record, on_delta, images, started, fallback_text,
                                            "경량 모델 호출 실패", error=e)
-        record["attempts"].append({"provider": "light", "model": self.light_model, "ok": True, "ms": int((time.monotonic() - t0) * 1000)})
+        record["attempts"].append(self._attempt("light", self.light_model, t0))
         if CONSULT_MARK in text:
             m = CONSULT_RE.match(text)
             req = None
@@ -519,9 +600,9 @@ class AdaptiveEngine:
             record.update(consulted=True, label=self._label("light", a.task, chain=chain if len(chain) > 1 else None, consulted=True))
             self._emit(kind="consulted", route=record)
             t0 = time.monotonic()
-            text = self._cloud(final_prompt, on_delta, images, self.light_model, tier="light", purpose=purpose)
-            record["attempts"].append({"provider": "light", "model": self.light_model, "ok": True, "ms": int((time.monotonic() - t0) * 1000),
-                                       "after_consult": True})
+            text = self._cloud(final_prompt, on_delta, images, self.light_model, tier="light", purpose=purpose,
+                               cache_prefix=max(self._cache_prefix, len(prompt)))
+            record["attempts"].append(self._attempt("light", self.light_model, t0, after_consult=True))
             if CONSULT_MARK in text:
                 return self._light_to_frontier(prompt, purpose, a, record, on_delta, images, started, fallback_text,
                                                "상담 뒤에도 답하지 못함")
@@ -554,8 +635,7 @@ class AdaptiveEngine:
                          full_tokens_est=a.est_tokens, consult_tokens_est=tokens, ok=True)
         self.frontier_session.append({"q": question[:500], "a": answer[:1500], "at": round(time.time())})
         self.frontier_session = self.frontier_session[-6:]
-        record["attempts"].append({"provider": "frontier", "model": self.cloud_model, "ok": True, "consult": True,
-                                   "ms": int((time.monotonic() - t0) * 1000)})
+        record["attempts"].append(self._attempt("frontier", self.cloud_model, t0, consult=True))
         record["consult"] = {"question_chars": len(question), "context_chars": len(context), "frontier_tokens_est": tokens,
                              "full_tokens_est": a.est_tokens}
         return answer
@@ -586,7 +666,8 @@ class AdaptiveEngine:
         self._emit(kind="escalating", route=record, reason=reason, to=self.cloud_model)
         t0 = time.monotonic()
         try:
-            answer = self._cloud(prompt, on_delta, images, self.cloud_model, escalated=True, purpose=purpose)
+            answer = self._cloud(prompt, on_delta, images, self.cloud_model, escalated=True, purpose=purpose,
+                                 cache_prefix=self._cache_prefix)
         except Exception as e:
             record["attempts"].append({"provider": "frontier", "model": self.cloud_model, "ok": False, "error": type(e).__name__,
                                        "ms": int((time.monotonic() - t0) * 1000)})
@@ -596,7 +677,7 @@ class AdaptiveEngine:
                 self.routes.append(record)
                 return prev_text
             raise
-        record["attempts"].append({"provider": "frontier", "model": self.cloud_model, "ok": True, "ms": int((time.monotonic() - t0) * 1000)})
+        record["attempts"].append(self._attempt("frontier", self.cloud_model, t0))
         cg = quality_gate.check(area, answer, self._gate_ctx(prompt, a, purpose))
         telemetry.record("quality_check", provider="cloud", model=self.cloud_model, task=a.task, area=area, ok=cg.ok,
                          verifiable=cg.verifiable, failures=cg.failures, purpose=purpose, escalated=True)
@@ -620,9 +701,17 @@ class AdaptiveEngine:
             if r.get("provider") in counts:
                 counts[r["provider"]] += 1
         keep = ("provider", "model", "label", "reason", "task", "difficulty", "task_label", "difficulty_label", "policy", "status", "ms",
-                "api_call", "est_cost", "tier", "chain", "consulted", "consult",
+                "api_call", "est_cost", "tier", "chain", "consulted", "consult", "economics", "reason_code",
                 "escalated", "escalation_reason", "provisional", "attempts", "gate", "stage", "constraints", "escalation_error")
         return {**{k: main.get(k) for k in keep}, "calls": len(self.routes), "counts": counts}
+
+
+def _econ_row(e):
+    """telemetry에 남길 손익분기 요약(숫자만)."""
+    if not e or not e.get("known"):
+        return None
+    return {"ratio": e.get("ratio"), "breakeven_consult": e.get("breakeven_consult"), "breakeven_light": e.get("breakeven_light"),
+            "best": e.get("best"), "p_escalate": e.get("p_escalate"), "cache": e.get("cache")}
 
 
 # ---- 통계(사용량·진단) ----
@@ -690,7 +779,16 @@ def summary(days=30, now=None, config=None):
     light_tokens = sum(int(e.get("est_tokens") or 0) for e in ok_cloud if e.get("tier") == "light")
     consults = [e for e in events if e.get("type") == "consult"]
     cloud_credit_rows = [e for e in cloud_runs if e.get("credits_est") is not None and e.get("ok")]
+    # 서버가 알려 준 실제 토큰(1.17: 사용량을 돌려준 호출만). 추정(est_tokens)과 따로 보인다.
+    measured = {}
+    for e in ok_cloud:
+        if e.get("measured"):
+            m = measured.setdefault(e.get("tier") or "frontier", {"calls": 0, **{k: 0 for k in USAGE_KEYS}})
+            m["calls"] += 1
+            for k in USAGE_KEYS:
+                m[k] += int(e.get(k) or 0)
     return {
+        "measured_tokens": measured,
         "days": days, "requests": total, "local": local_done, "cloud": cloud_done, "routed_local": by_provider.get("local", 0),
         "blocked": by_provider.get("none", 0), "light": by_provider.get("light", 0),
         "light_ratio": round(by_provider.get("light", 0) / total, 3) if total else None,

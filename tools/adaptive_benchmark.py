@@ -208,7 +208,7 @@ class Runner:
         prompt = build_prompt(c)
         tokens = {"frontier": 0, "light": 0}
         credits = []
-        config = {"adaptive": {"enabled": True, "policy": "balanced", "consult": consult, "consult_max": 1, "local_retries": 0,
+        config = {"adaptive": {"enabled": True, "policy": "balanced", "tiered": True, "consult": consult, "consult_max": 1, "local_retries": 0,
                                "local": {"default_model": self.local_model}}}
 
         class Shim:

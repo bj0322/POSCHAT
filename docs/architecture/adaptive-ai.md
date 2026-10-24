@@ -81,6 +81,22 @@ POSCHAT의 한국어·연구 작업에 그대로 맞는다고 보지 않았다. 
   `config["telemetry"]["rates"]`에 넣은 값만. 근거가 없으면 `None`('추정 불가')이고 예산·한도 계산에 넣지 않는다.
 - 로컬은 **Cloud API 비용만 0**이다. 전기·하드웨어 비용은 재지 않고 따로라고 화면에 밝힌다. POSTECH 크레딧과 Claude API 요금(USD)은 바꾸거나 더하지 않는다.
 - 토큰은 글자 수로 어림한다(한글 1자 ≈ 1토큰, 그 밖 3.5자 ≈ 1토큰). 3단계 통계의 '프런티어 입력 토큰 줄임'은 이 추정치다.
+  서버가 사용량을 알려 주면 그 실측 값을 따로 모은다(통계의 '서버가 알려 준 실제 토큰', 개발자 데이터).
+
+## 실측 토큰·프롬프트 캐싱·손익분기(1.17)
+- `api.ask(..., usage_out=, cache_prefix=)`: 서버가 알려 준 사용량을 `usage_out`에 채운다(`input_tokens`·`output_tokens`·`cache_read_input_tokens`·
+  `cache_creation_input_tokens`; OpenAI 호환은 `prompt_tokens_details.cached_tokens`). `cache_prefix`(글자 수)를 주면 Claude API 요청의 글을 두 블록으로 나눠
+  앞 블록에 `cache_control: ephemeral`을 단다. Bridge의 `cloud_ask`는 `(글, 사용량)`을 돌려주고, 엔진은 시도마다 `usage`와 telemetry `cloud_inference`
+  (`measured`, 토큰 4종, `cache_prefix`)에 남긴다.
+- 캐시 표시(`prompt_cache` 켬): 상담의 첫 경량 호출은 요청 본문(prompt)을 캐시에 쓰고, 상담 뒤 두 번째 호출(`prompt + 상담 답 + 안내`)은 같은 앞부분을 읽는다.
+  에이전트 단계는 `Agent._agent_loop`의 고정 부분(`static`) 길이를 넘긴다. 엔진을 거치지 않는 대화도 `Agent(prompt_cache=)`로 같다.
+- `adaptive_cost`: 단가 `Prices(input, output, cache_read, cache_write, call)`(100만 토큰당), 토큰 분포 `Profile(T, O, R, Q, C, A, I)`.
+  F = f(T, O), 경량 혼자 L = l(T+R, O) + p·F, 상담 K = l(T+R, Q) + f(C, A) + l(T+A+I, O)(캐시면 T 몫은 캐시 쓰기·읽기 단가).
+  경량 단가 = r × 프런티어 단가라 두면 L·K는 r에 대해 직선이라 `breakeven_ratio`가 r\*를 닫힌 식으로 낸다. `decide`는 실제 단가로 기대 비용을 비교해 가장 싼 방식을 고르고
+  r·r\*를 함께 돌려준다(모든 단가가 같은 비율이면 두 판단이 같다).
+- 엔진 `_economics`: `tier()`가 경량(혼자·상담)을 고른 요청만 다시 본다. 두 모델의 단가가 같은 출처(사용자 단가끼리, 크레딧끼리)일 때만 비교하고,
+  그 방식의 기대 비용 ≥ 프런티어 직접이면 프런티어로(`breakeven_frontier`), 경량 혼자인데 상담이 손익분기를 넘으면 상담만 끈다. 프로필은 최근 30일 실측 평균,
+  승격 확률은 그 (경량 모델, 작업)의 검증 기록 10개 이상이면 실측, 아니면 0.15.
 
 ## 대화 모델과 상태
 - 대화의 `model`: `"auto"`(엔진이 고름), `"local:<모델>"`(그 로컬 모델만, 실패해도 Cloud로 바꾸지 않음 — `manual_fallback`을 켠 경우만),

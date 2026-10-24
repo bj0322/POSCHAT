@@ -260,6 +260,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
                 "anthropic_model": self._config.get("anthropic_model", api.DEFAULT_ANTHROPIC_MODEL),
                 "stream": self._config.get("stream", True),
                 "update_check": self._config.get("update_check", True),
+                "developer_mode": bool(self._config.get("developer_mode")),
                 "adaptive": self._adaptive_public(),
                 "notion_source": "settings" if self._config.get("notion_token") else (
                     "env" if os.environ.get("NOTION_TOKEN") or os.environ.get("NOTION_API_KEY") else None),
@@ -412,6 +413,8 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
                 self._config["stream"] = bool(settings["stream"])
             if "update_check" in settings:
                 self._config["update_check"] = bool(settings["update_check"])
+            if "developer_mode" in settings:  # 1.17: 라우팅·토큰·손익분기의 원자료를 화면에 보인다
+                self._config["developer_mode"] = bool(settings["developer_mode"])
             self._stamp_settings(before)
             storage.save_config(self._config)
         return self.get_state()
@@ -1183,6 +1186,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
             browser_progress=lambda info: self._push({"type": "browser", "kind": "agent", "thread_id": thread_id, **info}),
             browser_paused=self._browser_pause_event(),
             engine=engine,
+            prompt_cache=adaptive_engine.settings(self._config)["prompt_cache"],
         )
         started, outcome = time.monotonic(), "done"
         try:
