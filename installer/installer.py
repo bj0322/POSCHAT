@@ -1,10 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Beomjoon Kim
 # SPDX-License-Identifier: AGPL-3.0-only
-"""POSTECH GenAI Chat 설치 프로그램.
+"""POSCHAT 설치 프로그램.
 
 build_installer.py가 앱 폴더를 payload.zip으로 묶어 이 스크립트와 함께 하나의 exe로 만든다.
 관리자 권한 없이 현재 사용자에게 설치한다(%LOCALAPPDATA%\\Programs\\PostechChat).
 제거는 앱 자신이 맡는다(PostechChat.exe --uninstall).
+1.11부터 앱 이름은 POSCHAT이다. 이전 버전 위에 그대로 업데이트되도록 설치 폴더·실행 파일·등록 키(PostechChat)는 그대로 두고,
+바로가기와 설치된 앱 목록에 보이는 이름만 바꾼다(예전 이름의 바로가기는 지운다).
 
 백신(Avast 등)이 PowerShell -EncodedCommand 실행을 멈춰 세우는 것을 확인해,
 바로가기는 PowerShell 대신 COM(IShellLink)으로 직접 만든다.
@@ -25,11 +27,12 @@ from tkinter import filedialog, messagebox, ttk
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from version import APP_VERSION  # noqa: E402
 
-APP_NAME = "POSTECH GenAI Chat"
+APP_NAME = "POSCHAT"
+LEGACY_NAMES = ("POSTECH GenAI Chat",)  # 1.10 이전 바로가기 이름
 APP_ID = "PostechChat"
 APP_EXE = "PostechChat.exe"
 VERSION = APP_VERSION
-PUBLISHER = "POSTECH GenAI Chat"
+PUBLISHER = "PIDS Tech."
 UNINSTALL_KEY = rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{APP_ID}"
 CSIDL_PROGRAMS = 0x02
 CSIDL_DESKTOPDIRECTORY = 0x10
@@ -40,6 +43,7 @@ WEBVIEW2_KEYS = [
     (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"),
 ]
 NO_WINDOW = subprocess.CREATE_NO_WINDOW
+APP_CLOSE_WAIT = 30  # 설치를 누른 뒤 실행 중인 앱이 닫히기를 기다리는 시간(초)
 
 
 def shell_folder(csidl):
@@ -59,6 +63,11 @@ def app_running():
     r = subprocess.run(["tasklist", "/FI", f"IMAGENAME eq {APP_EXE}", "/NH"],
                        capture_output=True, text=True, creationflags=NO_WINDOW, errors="replace")
     return APP_EXE.lower() in r.stdout.lower()
+
+
+def kill_app():
+    """닫히지 않고 남은 앱 프로세스(창을 닫은 뒤 정리 중이거나 응답 없는 내장 MCP 서버 등)를 끝낸다."""
+    subprocess.run(["taskkill", "/F", "/T", "/IM", APP_EXE], capture_output=True, creationflags=NO_WINDOW)
 
 
 def has_webview2():
@@ -103,8 +112,32 @@ def _save_shortcuts(target, places, created, failed):
         comtypes.CoUninitialize()
 
 
+def previous_shortcuts():
+    """이전 설치가 등록해 둔 바로가기 경로들."""
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, UNINSTALL_KEY) as k:
+            value, _ = winreg.QueryValueEx(k, "Shortcuts")
+            return [str(v) for v in value or [] if v]
+    except OSError:
+        return []
+
+
+def remove_legacy_shortcuts():
+    """예전 이름(POSTECH GenAI Chat)의 바로가기를 지운다. 새 이름의 바로가기는 이어서 다시 만든다."""
+    folders = (shell_folder(CSIDL_PROGRAMS), shell_folder(CSIDL_DESKTOPDIRECTORY))
+    names = {f"{n}{suffix}.lnk" for n in LEGACY_NAMES for suffix in ("", " (2)")}
+    paths = {folder / name for folder in folders for name in names}
+    paths |= {Path(p) for p in previous_shortcuts() if Path(p).name in names}
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass  # 탐색기가 붙잡고 있으면 남겨 둔다(앱은 새 바로가기로 실행된다)
+
+
 def create_shortcuts(target, desktop, timeout=30):
     """(만든 바로가기 경로들, 실패 메시지들). 바로가기 문제로 설치 전체가 멈추거나 실패하지 않게 한다."""
+    remove_legacy_shortcuts()
     places = [shell_folder(CSIDL_PROGRAMS)]
     if desktop:
         places.append(shell_folder(CSIDL_DESKTOPDIRECTORY))
@@ -148,7 +181,7 @@ def _remove(path, attempts=20):
             time.sleep(0.5)
 
 
-def wait_app_closed(timeout=15):
+def wait_app_closed(timeout=APP_CLOSE_WAIT):
     end = time.time() + timeout
     while app_running():
         if time.time() > end:
@@ -213,7 +246,7 @@ class InstallerUI:
         titles = ttk.Frame(head)
         titles.pack(side=tk.LEFT, fill=tk.X)
         ttk.Label(titles, text=APP_NAME, style="Title.TLabel").pack(anchor="w")
-        ttk.Label(titles, text=f"버전 {VERSION} · POSTECH GenAI API 데스크톱 챗봇·에이전트", style="Muted.TLabel").pack(anchor="w")
+        ttk.Label(titles, text=f"버전 {VERSION} · POSTECH GenAI·개인 Claude API 데스크톱 챗봇·에이전트", style="Muted.TLabel").pack(anchor="w")
 
         self.body = ttk.Frame(frm)
         self.body.pack(fill=tk.BOTH, expand=True, pady=(22, 0))
@@ -250,9 +283,32 @@ class InstallerUI:
             self.dest.set(str(Path(path) / APP_ID) if Path(path).name != APP_ID else path)
 
     def start(self):
+        # 앱의 '업데이트'로 열리면 앱이 이 창을 띄운 직후 스스로 닫히는데, 내장 MCP 서버·녹음 저장 같은 정리에
+        # 몇 초 걸린다. 바로 경고하면 '설치'를 두 번 눌러야 하므로, 앱이 닫힐 때까지 기다렸다가 이어서 설치한다.
         if app_running():
-            messagebox.showwarning("설치", f"{APP_NAME}이(가) 실행 중입니다. 앱을 닫은 뒤 다시 시도하세요.", parent=self.root)
+            self.install_btn.config(state=tk.DISABLED)
+            self.status.set(f"{APP_NAME}이(가) 닫히기를 기다리는 중...")
+            self.status_label.pack(anchor="w", pady=(10, 0))
+            self._wait_for_app(time.time() + APP_CLOSE_WAIT)
             return
+        self._start()
+
+    def _wait_for_app(self, deadline):
+        if not app_running():
+            self.status_label.pack_forget()
+            self.install_btn.config(state=tk.NORMAL)
+            return self._start()
+        if time.time() < deadline:
+            self.root.after(500, lambda: self._wait_for_app(deadline))
+            return
+        self.install_btn.config(state=tk.NORMAL)
+        self.status_label.pack_forget()
+        if messagebox.askyesno("설치", f"{APP_NAME}이(가) 아직 실행 중입니다.\n\n"
+                               "앱을 강제로 종료하고 설치할까요? 저장하지 않은 입력은 사라질 수 있습니다.", parent=self.root):
+            kill_app()
+            self.root.after(1000, self.start)
+
+    def _start(self):
         dest = Path(self.dest.get().strip() or DEFAULT_DIR)
         if dest.exists() and any(dest.iterdir()) and not (dest / APP_EXE).exists() and not (dest / "_internal").exists():
             messagebox.showwarning("설치", "비어 있지 않은 다른 폴더에는 설치할 수 없습니다.\n새 폴더를 지정하세요.", parent=self.root)

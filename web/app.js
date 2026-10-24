@@ -25,6 +25,8 @@ const ICONS = {
   user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
   mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>',
   spark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><path d="m6.3 6.3 2.1 2.1M15.6 15.6l2.1 2.1M6.3 17.7l2.1-2.1M15.6 8.4l2.1-2.1"/></svg>',
+  book: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2Z"/><path d="M4 21V5"/><path d="M8 7h7"/></svg>',
+  terminal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/><path d="M13 15h4"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
   up_thumb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v11H4V10Z"/><path d="M7 10l4-7a2 2 0 0 1 3 2l-1 5h6a2 2 0 0 1 2 2.3l-1.4 7A2 2 0 0 1 17.6 21H7"/></svg>',
   down_thumb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V3h3v11Z"/><path d="M17 14l-4 7a2 2 0 0 1-3-2l1-5H5a2 2 0 0 1-2-2.3l1.4-7A2 2 0 0 1 6.4 3H17"/></svg>',
@@ -250,7 +252,7 @@ async function refreshThreads() {
 
 /* ---------- 대화 ---------- */
 async function openThread(id) {
-  if (window.poLeave) poLeave();
+  leaveViews();
   const thread = await api().load_thread(id);
   if (!thread) return refreshThreads();
   S.currentId = id;
@@ -263,6 +265,19 @@ async function openThread(id) {
   else $("#input").focus();  // 휴대폰에서는 키보드가 화면을 가리지 않게 자동으로 띄우지 않는다
 }
 
+// 지금 API 방식에서 고를 수 있는 모델과 새 대화의 기본 모델(PO노트 노트 만들기도 같은 목록을 쓴다)
+function modeModels() {
+  const mode = S.config.api_mode || "chat_completions";
+  return mode === "responses" ? (S.responsesModels || [])
+    : mode === "anthropic" ? (S.anthropicModels || []) : (S.models || []);
+}
+
+function modeDefaultModel() {
+  const models = modeModels();
+  const configured = (S.config.api_mode === "anthropic") ? S.config.anthropic_model : S.config.model;
+  return models.some((m) => m.id === configured) ? configured : ((models[0] || {}).id || "");
+}
+
 function renderThreadModel() {
   const select = $("#thread-model");
   const picker = $("#thread-model-picker");
@@ -270,17 +285,24 @@ function renderThreadModel() {
   const mode = S.config.api_mode || "chat_completions";
   picker.hidden = !S.thread || mode === "a1";
   if (picker.hidden) return;
-  const models = mode === "responses" ? (S.responsesModels || []) : (S.models || []);
+  const models = modeModels();
   select.replaceChildren(...models.map((m) => h("option", { value: m.id }, m.label)));
-  const selected = S.thread.model || S.config.model || (models[0] || {}).id;
-  select.value = models.some((m) => m.id === selected) ? selected : ((models[0] || {}).id || "");
+  // 대화에 저장된 모델이 지금 API 방식에 없으면(방식을 바꾼 경우) 그 방식의 기본 모델을 보인다(보낼 때도 같다)
+  const selected = S.thread.model;
+  select.value = models.some((m) => m.id === selected) ? selected : modeDefaultModel();
   select.disabled = S.busy;
+}
+
+// PO노트·도구 화면에서 채팅으로 돌아온다
+function leaveViews() {
+  if (window.poLeave) poLeave();
+  if (window.pageLeave) pageLeave();
 }
 
 async function newThread() {
   // 이미 비어 있는 새 대화가 열려 있으면 그대로 쓴다
   if (S.thread && !S.thread.messages.length) {
-    if (window.poLeave) poLeave();
+    leaveViews();
     $("#input").focus();
     return;
   }
@@ -879,10 +901,17 @@ function showSettings() {
     h("option", { value: "auto_all" }, "모두 자동 허용 (주의)"),
   );
   perm.value = c.permission || "ask";
+  const anthropicHint = c.anthropic_key_source === "settings" ? "저장된 키가 있습니다. 바꾸려면 새 키를 입력하세요."
+    : c.anthropic_key_source === "env" ? "환경 변수 ANTHROPIC_API_KEY의 키를 쓰고 있습니다."
+    : "console.anthropic.com → API Keys에서 만든 본인 키(sk-ant-...)를 넣으세요.";
+  const anthropicKey = h("input", { type: "password", placeholder: c.anthropic_key_source ? "••••••••••••" : "sk-ant-...",
+    autocomplete: "off" });
+  const clearAnthropic = h("input", { type: "checkbox", style: "width:auto;margin:0 6px 0 0" });
   const mode = h("select", {},
-    h("option", { value: "chat_completions" }, "OpenAI 호환 API — GPT·Claude·Gemini (권장)"),
-    h("option", { value: "responses" }, "OpenAI Responses API — GPT-5 계열"),
-    h("option", { value: "a1" }, "a1/gpt 단일 호출 (예전 기본값, 모델은 서버가 정함)"),
+    h("option", { value: "chat_completions" }, "POSTECH GenAI — OpenAI 호환 API, GPT·Claude·Gemini (권장)"),
+    h("option", { value: "anthropic" }, "일반 AI 모델 (Claude) — 내 Claude API 키로 연결"),
+    h("option", { value: "responses" }, "POSTECH GenAI — OpenAI Responses API, GPT-5 계열"),
+    h("option", { value: "a1" }, "POSTECH GenAI — a1/gpt 단일 호출 (예전 기본값, 모델은 서버가 정함)"),
   );
   mode.value = c.api_mode || "chat_completions";
   const url = h("input", { type: "url", placeholder: "https://.../agent/api/a번호/openai/responses", value: c.responses_url || "" });
@@ -925,6 +954,41 @@ function showSettings() {
       loadModels.disabled = false;
     }
   } }, "모델 목록 불러오기");
+  // 일반 AI 모델(Claude, 개인 Claude API 키): 모델 목록은 Anthropic이 알려 주는 대로(이 키로 쓸 수 있는 모델). 저장해야 반영한다.
+  const claudeModel = h("select", {});
+  const fillClaude = (models, selected) => {
+    claudeModel.replaceChildren(...models.map((m) => h("option", { value: m.id }, m.label)));
+    claudeModel.value = models.some((m) => m.id === selected) ? selected : ((models[0] || {}).id || "");
+  };
+  fillClaude(S.anthropicModels || [], c.anthropic_model);
+  const claudeHint = h("small", {}, S.anthropicModelsSource === "server"
+    ? "Anthropic에서 받은 모델 목록입니다." : "기본 목록입니다. '모델 목록 불러오기'로 이 키로 쓸 수 있는 모델을 모두 받아 옵니다.");
+  let anthropicModels = null;
+  const loadClaude = h("button", { class: "btn", type: "button", style: "margin-top:8px", onclick: async () => {
+    loadClaude.disabled = true;
+    try {
+      const result = await api().refresh_models({ api_mode: "anthropic", anthropic_api_key: anthropicKey.value.trim() });
+      if (result.ok === false) return toast(result.error);
+      anthropicModels = result.models.map((m) => m.id);
+      fillClaude(result.models, claudeModel.value);
+      claudeHint.textContent = `Anthropic에서 받은 모델 목록입니다 (${result.models.length}개). 저장하면 반영됩니다.`;
+    } catch (error) {
+      toast(`모델 목록을 불러오지 못했습니다: ${error.message || error}`);
+    } finally {
+      loadClaude.disabled = false;
+    }
+  } }, "모델 목록 불러오기");
+  const anthropicBox = h("div", {},
+    h("div", { class: "field" }, h("label", {}, "Claude API 키 (Anthropic)"), anthropicKey,
+      h("small", {}, anthropicHint, h("br"),
+        "요금은 이 키의 Anthropic 계정으로 청구되고 POSTECH 크레딧은 쓰지 않습니다. 키는 이 기기의 사용자 데이터 폴더(config.json)에 저장되며 동기화되지 않습니다."),
+      c.anthropic_key_source === "settings"
+        ? h("label", { style: "display:flex;align-items:center;font-size:13px;margin-top:4px;cursor:pointer" }, clearAnthropic, "저장된 키 지우기")
+        : null),
+    h("div", { class: "field" }, h("label", {}, "기본 모델"), claudeModel, claudeHint, loadClaude,
+      h("small", {}, "Claude Opus 5.5를 권장합니다. 비용을 줄이려면 Sonnet 5.5나 Haiku 5.5를 고르세요. ",
+        "PO노트의 서버 음성 보정과 크레딧 확인은 POSTECH GenAI 키가 있을 때만 씁니다(Claude API는 음성을 받지 않습니다).")),
+  );
   const stream = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
   stream.checked = c.stream !== false;
   const autoUpdate = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
@@ -942,22 +1006,32 @@ function showSettings() {
     h("div", { class: "field" }, h("label", {}, "기본 모델"), compatibleModel, modelsHint, loadModels,
       h("small", {}, "새 대화의 기본 모델입니다. 기존 대화의 모델은 대화 상단에서 개별 선택하며 각각 저장됩니다.")),
   );
+  const postechLabel = h("label", {}, "POSTECH GenAI API 키");
+  const postechField = h("div", { class: "field" }, postechLabel, key,
+    h("small", {}, keyHint, h("br"), "키는 이 PC의 사용자 데이터 폴더(config.json)에 저장됩니다. ",
+      "일반 AI 모델(Claude)을 쓸 때도 PO노트 서버 음성 보정·크레딧 확인에 쓰므로 있으면 넣어 두세요(선택)."));
   const syncMode = () => {
+    // Claude 방식에서는 Claude 키를 먼저 보이고, POSTECH 키는 선택 항목으로 그 아래에 둔다
+    const claude = mode.value === "anthropic";
+    postechLabel.textContent = claude ? "POSTECH GenAI API 키 (선택)" : "POSTECH GenAI API 키";
+    if (claude) anthropicBox.after(postechField);
+    else if (mode.parentNode) mode.parentNode.after(postechField);
     responsesBox.hidden = mode.value !== "responses";
     compatibleBox.hidden = mode.value !== "chat_completions";
+    anthropicBox.hidden = mode.value !== "anthropic";
     url.required = mode.value === "responses";
   };
   mode.addEventListener("change", syncMode);
-  syncMode();
+  syncMode();  // 칸 보이기·숨기기. 칸 순서는 body를 만든 뒤 한 번 더 부를 때 맞춘다
   const body = h("div", {},
     h("div", { class: "row guide-link" },
       h("span", { style: "flex:1" }, "처음 쓰거나 기능이 궁금하면 사용법 가이드를 보세요."),
       h("button", { class: "btn", onclick: showGuide }, "사용법 가이드")),
-    h("div", { class: "field" }, h("label", {}, "POSTECH GenAI API 키"), key,
-      h("small", {}, keyHint, h("br"), "키는 이 PC의 사용자 데이터 폴더(config.json)에 저장됩니다.")),
     h("div", { class: "field" }, h("label", {}, "API 방식"), mode),
+    postechField,
     responsesBox,
     compatibleBox,
+    anthropicBox,
     h("div", { class: "field" },
       h("label", { style: "display:flex;align-items:center;font-weight:600;cursor:pointer" }, stream, "답변을 받는 대로 표시 (스트리밍)"),
       h("small", {}, "일반 대화의 답변을 글자가 오는 대로 보여 줍니다. 에이전트 모드의 단계 진행은 그대로입니다.")),
@@ -987,7 +1061,7 @@ function showSettings() {
           }
         } }, "업데이트 확인"))),
     h("div", { class: "row guide-link" },
-      h("span", { style: "flex:1" }, "GitHub·Google 연결, 연구 라이브러리, 메모리·동기화, 자동화, 사용량·진단은 '연결·도구' 창에서 관리합니다."),
+      h("span", { style: "flex:1" }, "GitHub·Google·Zotero 연결, MCP 서버, 메모리·동기화, 사용량·진단은 '연결·도구' 창에서 관리합니다. 연구 라이브러리와 에이전트 자동화는 왼쪽 사이드바에서 엽니다."),
       h("button", { class: "btn", type: "button", onclick: () => showHub() }, "연결·도구 열기")),
     h("div", { class: "field" }, h("label", {}, "에이전트 권한"), perm,
       h("small", {}, "에이전트가 파일을 고치거나 명령을 실행하기 전에 승인을 받을지 정합니다. 메일 전송·리뷰 제출·삭제·코드 실행은 이 설정과 관계없이 매번 묻습니다.")),
@@ -1004,11 +1078,12 @@ function showSettings() {
       h("div", { class: "row" }, h("small", { style: "flex:1;margin:0;word-break:break-all" }, S.dataDir),
         h("button", { class: "btn", onclick: () => api().open_folder("data") }, "열기"))),
   );
-  body.append(h("p", { style: "margin:14px 0 0;color:var(--text-3);font-size:12px" }, `POSTECH GenAI Chat 버전 ${S.version}`),
+  body.append(h("p", { style: "margin:14px 0 0;color:var(--text-3);font-size:12px" }, `POSCHAT 버전 ${S.version}`),
     h("p", { style: "margin:2px 0 0;color:var(--text-3);font-size:12px" }, "서비스 대표자: 김범준"),
     h("p", { style: "margin:2px 0 0;color:var(--text-3);font-size:12px" }, "문의사항은 ",
       h("a", { href: REPO_URL, target: "_blank", style: "color:inherit" }, REPO_URL), "의 문의 메일로 보내 주세요."),
     licenseBlock());
+  syncMode();
   modal({
     title: "설정",
     body,
@@ -1020,11 +1095,20 @@ function showSettings() {
             url.focus();
             return toast("Responses API 주소를 입력하세요.");
           }
+          if (mode.value === "anthropic" && !anthropicKey.value.trim()
+              && (!c.anthropic_key_source || clearAnthropic.checked)) {
+            anthropicKey.focus();
+            return toast("일반 AI 모델(Claude)을 쓰려면 Claude API 키를 입력하세요.");
+          }
           const state = await api().save_settings({
             api_key: key.value.trim(), history_messages: hist.value, max_steps: steps.value, permission: perm.value,
             api_mode: mode.value, responses_url: url.value.trim(),
             chat_completions_url: compatibleUrl.value.trim(), server_models: serverModels,
-            model: mode.value === "responses" ? responsesModel.value : compatibleModel.value, stream: stream.checked,
+            model: mode.value === "responses" ? responsesModel.value
+              : mode.value === "anthropic" ? claudeModel.value : compatibleModel.value,
+            stream: stream.checked,
+            anthropic_api_key: anthropicKey.value.trim(), anthropic_server_models: anthropicModels,
+            clear_anthropic_key: clearAnthropic.checked && !anthropicKey.value.trim(),
             update_check: autoUpdate.checked,
             notion_token: notion.value.trim(), clear_notion: clearNotion.checked && !notion.value.trim(),
             firecrawl_key: firecrawl.value.trim(), clear_firecrawl: clearFirecrawl.checked && !firecrawl.value.trim(),
@@ -1037,7 +1121,7 @@ function showSettings() {
       },
     ],
   });
-  setTimeout(() => key.focus(), 50);
+  setTimeout(() => (mode.value === "anthropic" ? anthropicKey : key).focus(), 50);
 }
 
 /* ---------- 업데이트 ---------- */
@@ -1248,7 +1332,7 @@ function showMcp() {
 /* ---------- 사용법 가이드 (설정 → 사용법 가이드) ---------- */
 const GUIDE = [
   ["처음 시작하기", `
-1. **설정 → POSTECH GenAI API 키**에 본인의 키를 넣고 저장합니다.
+1. **설정 → POSTECH GenAI API 키**에 본인의 키를 넣고 저장합니다. 본인 Claude API 키로 쓰려면 **API 방식 → 일반 AI 모델 (Claude)**를 고르고 Claude API 키를 넣습니다.
 2. 입력창에 질문을 쓰고 **Enter**로 보냅니다(줄바꿈은 Shift+Enter).
 3. 파일을 다루게 하려면 왼쪽 아래 **작업 폴더**를 고르고 오른쪽 위 **에이전트** 스위치를 켭니다.
 
@@ -1259,7 +1343,8 @@ const GUIDE = [
 - **OpenAI 호환 API (권장, 기본)**: 주소를 비워 두면 POSTECH GenAI 콘솔의 OpenAI Compatible API 주소를 씁니다. GPT·Claude·Gemini 모델을 고릅니다.
 - **OpenAI Responses API**: 콘솔의 \`.../a번호/openai/responses\` 주소를 넣고 GPT-5 계열 모델을 고릅니다.
 - **a1/gpt 단일 호출**: 예전 기본값입니다. 모델은 서버가 정합니다.
-- OpenAI 호환 또는 Responses 방식에서는 화면 위쪽 메뉴에서 대화별 모델을 지정합니다.
+- **일반 AI 모델 (Claude)** (1.11): 본인이 [Anthropic 콘솔](https://console.anthropic.com)에서 발급한 Claude API 키로 대화·에이전트·PO노트 노트 만들기 등 모든 모델 호출을 합니다. 요금은 그 키의 Anthropic 계정으로 청구되고 POSTECH 크레딧은 쓰지 않습니다. Claude Opus 5.5(권장)·Sonnet 5.5·Haiku 5.5·Fable 5.1 중에서 고르고, '모델 목록 불러오기'로 그 키로 쓸 수 있는 모델을 모두 받아 옵니다. PO노트의 서버 음성 보정과 크레딧 확인은 POSTECH 키가 있을 때만 씁니다.
+- OpenAI 호환·Responses·Claude 방식에서는 화면 위쪽 메뉴에서 대화별 모델을 지정합니다.
 
 **답변을 받는 대로 표시(스트리밍)**를 켜면 일반 대화의 답변이 글자가 오는 대로 나옵니다. 표시가 이상하면 끄세요.`],
   ["크레딧 확인", `
@@ -1289,7 +1374,7 @@ Claude Sonnet 5.5 기준으로 1크레딧은 입력 약 250토큰, 출력 약 75
 입력창의 **+** 버튼, 파일 끌어다 놓기, 이미지 붙여 넣기(Ctrl+V, 맥은 ⌘+V)로 첨부합니다. 파일은 하나에 20MB, 한 번에 10개까지입니다.
 
 - PDF·Word·PowerPoint·Excel·한글 문서와 텍스트 파일은 내용을 읽어 질문과 함께 보냅니다.
-- 이미지는 OpenAI 호환 또는 Responses API 방식에서 모델에게 전달됩니다. a1 방식은 이미지를 전달하지 않습니다.`],
+- 이미지는 OpenAI 호환·Responses API·일반 AI 모델(Claude) 방식에서 모델에게 전달됩니다. a1 방식은 이미지를 전달하지 않습니다.`],
   ["에이전트 모드", `
 작업 폴더를 고르고 에이전트를 켜면 AI가 목표를 이룰 때까지 단계를 반복합니다: 폴더 보기·파일 읽기·검색, 파일 쓰기·수정, 명령 실행, 스킬 불러오기, MCP 도구 실행.
 
@@ -1315,13 +1400,14 @@ Claude Sonnet 5.5 기준으로 1크레딧은 입력 약 250토큰, 출력 약 75
   ["INIT.md와 스킬", `
 - **INIT.md**: 작업 폴더 최상위의 INIT.md는 모든 대화에 프로젝트 지침으로 들어갑니다. \`/init\`으로 만들 수 있습니다.
 - **스킬**: \`<스킬이름>/SKILL.md\` 형식의 작업 지침입니다. 에이전트가 요청에 맞는 스킬을 스스로 불러오고, \`/스킬이름\`으로 직접 실행할 수도 있습니다. 앱 내장(요약, 코드 검토, 논문 읽기), 사용자 스킬 폴더(**스킬 → 새 스킬 만들기**), 작업 폴더의 \`skills\\\` 순서로 읽고, 이름이 같으면 뒤의 것이 우선합니다.`],
-  ["연결·도구 (1.10)", `
+  ["연결·도구, 연구 라이브러리, 에이전트 자동화", `
 왼쪽 아래 **연결·도구**에서 외부 서비스와 확장 기능을 관리합니다. 모두 **기본으로 꺼져 있고**, 켠 것만 에이전트가 씁니다.
+**연구 라이브러리**와 **에이전트 자동화**는 PO노트처럼 왼쪽 사이드바 위쪽에서 바로 여는 화면입니다(1.11).
 
 - **커넥터**: GitHub(저장소·코드 검색·이슈·PR·리뷰·Actions 실패 분석), Google Drive·Docs·Sheets·Slides·Gmail·Calendar(서비스마다 따로 로그인), Zotero. 상태(연결됨·인증 필요·연결 오류·비활성화·사용 권한 부족)를 보고, 로그인·재인증·연결 해제·권한 확인·도구별 승인 정책을 바꿉니다. 토큰은 OS 보안 저장소에 둡니다.
-- **연구 라이브러리**: 논문 저장·태그·BibTeX, 작업 폴더 PDF·문서 인덱싱과 쪽·섹션이 붙은 원문 검색.
+- **연구 라이브러리**(사이드바): 논문 저장·태그·BibTeX, 작업 폴더 PDF·문서 인덱싱과 쪽·섹션이 붙은 원문 검색, 벡터 검색 설정.
 - **메모리·동기화**: 프로젝트(결정·진행 상태·TODO)·연구 기억, 에이전트 인계, 기기 사이 암호화 동기화(직접 켤 때만).
-- **에이전트 자동화**: Python·Jupyter 실행, SSH 원격 실행(PC 앱만, 매번 승인).
+- **에이전트 자동화**(사이드바): Python·Jupyter 실행, SSH 원격 실행과 실행 기록(PC 앱만, 매번 승인).
 - **사용량·진단**: 모델별 호출·오류율·지연·토큰·크레딧 추정, 도구 성공률, 답변 평가(👍/👎), 자동 평가.
 
 **승인**: 쓰기는 설정의 '에이전트 권한'을 따르지만, **메일 전송·PR 리뷰 제출·삭제·코드 실행은 자동 허용으로 설정해도 매번 묻습니다.** 외부 서비스·문서에서 온 내용은 '외부 데이터'로 표시되어 그 안의 지시를 따르지 않습니다.`],
@@ -1447,6 +1533,8 @@ function applyState(state) {
   S.models = state.models || [];
   S.responsesModels = state.responses_models || [];
   S.modelsSource = state.models_source || "builtin";
+  S.anthropicModels = state.anthropic_models || [];
+  S.anthropicModelsSource = state.anthropic_models_source || "builtin";
   S.memory = state.memory || [];
   S.defaultChatUrl = state.default_chat_completions_url || "";
   if (state.credit) S.credit = state.credit;
@@ -1574,7 +1662,7 @@ async function init() {
   if (S.threads.length) await openThread(S.threads[0].id);
   else await newThread();
   updateSend();
-  if (!state.config.key_source) showSettings();
+  if (!state.config.has_key) showSettings();
   // 새 버전 확인(설정에서 끌 수 있고 6시간에 한 번). 실패해도 사용에 지장이 없으므로 알리지 않는다.
   api().check_for_updates(false).then((r) => { if (r.available) offerUpdate(r); }).catch(() => {});
 }

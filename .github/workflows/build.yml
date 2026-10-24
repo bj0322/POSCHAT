@@ -116,7 +116,7 @@ jobs:
           Get-Content $report
           $text = Get-Content $report -Raw
           $version = python -c "from version import APP_VERSION; print(APP_VERSION)"
-          foreach ($want in "version: $version", "web: True", "documents: OK", "attachments: OK", "word OK", "powerpoint OK", "excel OK", "paper OK", "notion OK", "firecrawl OK", "stt: OK", "crypto: OK", "rag: OK", "github OK(19)", "research OK(12)", "memory OK(8)", "python OK(3)", "ssh OK(2)") {
+          foreach ($want in "version: $version", "web: True", "documents: OK", "attachments: OK", "anthropic: OK", "word OK", "powerpoint OK", "excel OK", "paper OK", "notion OK", "firecrawl OK", "stt: OK", "crypto: OK", "rag: OK", "github OK(19)", "research OK(12)", "memory OK(8)", "python OK(3)", "ssh OK(2)") {
             if (-not $text.Contains($want)) { Write-Error "selftest에 '$want'이(가) 없습니다."; exit 1 }
           }
 
@@ -124,18 +124,22 @@ jobs:
         shell: pwsh
         run: |
           $dir = Join-Path $env:RUNNER_TEMP "PostechChat-install"
-          Start-Process -FilePath "release\PostechChat-Setup.exe" -ArgumentList "--silent", "--dir=$dir", "--no-desktop" -Wait
+          Start-Process -FilePath "release\POSCHAT-Setup.exe" -ArgumentList "--silent", "--dir=$dir", "--no-desktop" -Wait
           Get-Content (Join-Path $env:TEMP "PostechChat-install.log")
           if (-not (Test-Path (Join-Path $dir "PostechChat.exe"))) { Write-Error "설치 폴더에 PostechChat.exe가 없습니다."; exit 1 }
           $version = python -c "from version import APP_VERSION; print(APP_VERSION)"
           $registered = (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\PostechChat").DisplayVersion
           Write-Output "version.py: $version / 설치 프로그램 등록 버전: $registered"
           if ($registered -ne $version) { Write-Error "설치 프로그램 버전($registered)이 앱 버전($version)과 다릅니다."; exit 1 }
+          $name = (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\PostechChat").DisplayName
+          if ($name -ne "POSCHAT") { Write-Error "설치된 앱 목록의 이름($name)이 POSCHAT이 아닙니다."; exit 1 }
+          $description = (Get-Item (Join-Path $dir "PostechChat.exe")).VersionInfo.FileDescription
+          if ($description -ne "POSCHAT") { Write-Error "실행 파일 정보의 이름($description)이 POSCHAT이 아닙니다."; exit 1 }
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PostechChat-Setup
-          path: release/PostechChat-Setup.exe
+          name: POSCHAT-Setup
+          path: release/POSCHAT-Setup.exe
 
   macos:
     # Apple Silicon(M1 이후) 맥용 앱. 서명용 Apple 개발자 인증서가 없어 임시(ad-hoc) 서명만 한다.
@@ -161,7 +165,7 @@ jobs:
           report="$HOME/Library/Application Support/PostechChat/selftest.txt"
           cat "$report"
           version=$(python -c "from version import APP_VERSION; print(APP_VERSION)")
-          for want in "version: $version" "web: True" "documents: OK" "attachments: OK" "word OK" "powerpoint OK" "excel OK" "paper OK" "notion OK" "firecrawl OK" "stt: OK" "crypto: OK" "rag: OK" "github OK(19)" "research OK(12)" "memory OK(8)" "python OK(3)" "ssh OK(2)"; do
+          for want in "version: $version" "web: True" "documents: OK" "attachments: OK" "anthropic: OK" "word OK" "powerpoint OK" "excel OK" "paper OK" "notion OK" "firecrawl OK" "stt: OK" "crypto: OK" "rag: OK" "github OK(19)" "research OK(12)" "memory OK(8)" "python OK(3)" "ssh OK(2)"; do
             grep -qF "$want" "$report" || { echo "selftest에 '$want'이(가) 없습니다."; exit 1; }
           done
           codesign --verify --deep --strict "$app"
@@ -169,9 +173,9 @@ jobs:
 
       - name: Check the disk image
         run: |
-          hdiutil verify release/PostechChat-mac.dmg
+          hdiutil verify release/POSCHAT-mac.dmg
           mnt=$(mktemp -d)
-          hdiutil attach release/PostechChat-mac.dmg -nobrowse -mountpoint "$mnt"
+          hdiutil attach release/POSCHAT-mac.dmg -nobrowse -mountpoint "$mnt"
           test -x "$mnt/PostechChat.app/Contents/MacOS/PostechChat"
           test -L "$mnt/Applications"
           python tools/license_check.py package --python-licenses "$mnt"
@@ -179,8 +183,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PostechChat-mac
-          path: release/PostechChat-mac.dmg
+          name: POSCHAT-mac
+          path: release/POSCHAT-mac.dmg
 
   android:
     runs-on: ubuntu-latest
@@ -232,13 +236,13 @@ jobs:
 
       - name: Collect APK
         run: |
-          cp android/app/build/outputs/apk/release/app-release.apk PostechChat.apk
-          python tools/license_check.py package PostechChat.apk
+          cp android/app/build/outputs/apk/release/app-release.apk POSCHAT.apk
+          python tools/license_check.py package POSCHAT.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PostechChat-Android
-          path: PostechChat.apk
+          name: POSCHAT-Android
+          path: POSCHAT.apk
 
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -269,6 +273,11 @@ jobs:
             echo "Third-party components keep their own licenses (THIRD_PARTY_NOTICES.md, docs/license-audit.md)."
             echo
           } > notes.md
-          gh release create "$TAG" dist/PostechChat-Setup.exe dist/PostechChat-mac.dmg dist/PostechChat.apk \
-            --repo "$GITHUB_REPOSITORY" --title "POSTECH GenAI Chat $TAG" --target "$GITHUB_SHA" \
+          # 1.9.1~1.10.0 앱의 자동 업데이트는 예전 파일 이름(PostechChat-*)을 찾으므로 같은 파일을 그 이름으로도 올린다
+          cp dist/POSCHAT-Setup.exe dist/PostechChat-Setup.exe
+          cp dist/POSCHAT-mac.dmg dist/PostechChat-mac.dmg
+          cp dist/POSCHAT.apk dist/PostechChat.apk
+          gh release create "$TAG" dist/POSCHAT-Setup.exe dist/POSCHAT-mac.dmg dist/POSCHAT.apk \
+            dist/PostechChat-Setup.exe dist/PostechChat-mac.dmg dist/PostechChat.apk \
+            --repo "$GITHUB_REPOSITORY" --title "POSCHAT $TAG" --target "$GITHUB_SHA" \
             --notes-file notes.md --generate-notes

@@ -27,7 +27,7 @@ import secret_store
 
 LOGIN_TIMEOUT = 300
 REFRESH_MARGIN = 60
-DONE_PAGE = ("<!doctype html><meta charset='utf-8'><title>POSTECH GenAI Chat</title>"
+DONE_PAGE = ("<!doctype html><meta charset='utf-8'><title>POSCHAT</title>"
              "<body style='font-family:sans-serif;padding:40px'><h2>{title}</h2><p>{text}</p></body>")
 
 
@@ -181,7 +181,7 @@ class LoopbackFlow:
                     flow._result = ("error", "인증 코드가 없습니다.")
                 ok = flow._result[0] == "code"
                 self._page(200 if ok else 400, "인증을 마쳤습니다" if ok else "인증하지 못했습니다",
-                           "이 창을 닫고 POSTECH GenAI Chat으로 돌아가세요." if ok else flow._result[1])
+                           "이 창을 닫고 POSCHAT으로 돌아가세요." if ok else flow._result[1])
                 flow._done.set()
 
             def _page(self, status, title, text):

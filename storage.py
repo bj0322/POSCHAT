@@ -294,7 +294,7 @@ def backup_user_data(label):
             for p in threads:
                 shutil.copy2(p, target / "threads" / p.name)
         (target / "README.txt").write_text(
-            "POSTECH GenAI Chat 백업입니다. 되돌리려면 앱을 끈 뒤 이 폴더의 파일을 데이터 폴더(이 폴더의 두 단계 위)에 "
+            "POSCHAT 백업입니다. 되돌리려면 앱을 끈 뒤 이 폴더의 파일을 데이터 폴더(이 폴더의 두 단계 위)에 "
             "같은 이름으로 덮어쓰세요. 자세한 방법: docs/migration-1.10.md\n", encoding="utf-8")
     except OSError:
         return None

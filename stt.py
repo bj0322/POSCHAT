@@ -173,7 +173,7 @@ def download(key, on_progress=None, cancelled=None):
         target, part = directory / name, directory / (name + ".part")
         digest = hashlib.sha256()
         try:
-            with requests.get(url, stream=True, timeout=(15, 60), headers={"User-Agent": "POSTECH-GenAI-Chat"}) as r:
+            with requests.get(url, stream=True, timeout=(15, 60), headers={"User-Agent": "POSCHAT"}) as r:
                 if r.status_code != 200:
                     raise SttError(f"모델을 내려받지 못했습니다(HTTP {r.status_code}): {name}")
                 with open(part, "wb") as out:

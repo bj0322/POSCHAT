@@ -504,7 +504,7 @@ pre.bib div { white-space: pre-wrap; }
 .new-chat.po-entry { margin-top: 2px; }
 .new-chat.po-entry.active { background: var(--active); }
 .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); margin-left: auto; animation: pulse 1.2s infinite; }
-#po-view { flex: 1; overflow-y: auto; }
+#po-view, #tool-view { flex: 1; overflow-y: auto; }
 .po-wrap { max-width: 900px; margin: 0 auto; padding: 12px 24px 40px; display: flex; flex-direction: column; gap: 12px; }
 .po-intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 8px 0 4px; }
 .po-intro h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.01em; }
@@ -585,3 +585,23 @@ pre.bib div { white-space: pre-wrap; }
   .po-material { max-width: 100%; }
 }
 .update-notes { max-height: 40vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; font-size: 13.5px; }
+
+/* ---------- 도구 화면: 연구 라이브러리·에이전트 자동화 (hub.js, PO노트와 같은 틀) ---------- */
+.tool-page { min-height: 0; }
+.tool-stack { display: flex; flex-direction: column; gap: 10px; }
+.tool-page .po-pane { min-height: 200px; padding-top: 4px; }
+.tool-page .po-card .feature-toggle:first-child { margin-top: 0; }
+.tool-page .field:last-child { margin-bottom: 0; }
+.tool-page .po-actions { margin: 10px 0 0; gap: 8px; }
+.tool-page .hub-details { margin: 2px 2px 6px; }
+.tool-page .paper-item { border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; margin: 0; }
+.tool-page .paper-item:hover { background: transparent; }
+.tool-page .tag-row { margin: 0; }
+.tool-start { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 18px; }
+.tool-start b { font-size: 15px; }
+.tool-start p { margin: 0 0 6px; color: var(--text-2); font-size: 14px; }
+.tool-footer { gap: 8px; align-items: center; font-size: 12.5px; color: var(--text-3); border-top: 1px solid var(--border); padding-top: 10px; margin-top: 6px; }
+@media (max-width: 720px) {
+  .po-wrap.tool-page { padding: 8px 12px 32px; }
+  .tool-page .po-intro h1 { font-size: 22px; }
+}

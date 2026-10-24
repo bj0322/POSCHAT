@@ -18,10 +18,18 @@ RELEASE_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{REPOSITORY}/releases/latest"
 DOWNLOAD_PREFIX = f"https://github.com/{REPOSITORY}/releases/download/"
 ASSETS = {
+    "windows": "POSCHAT-Setup.exe",
+    "macos": "POSCHAT-mac.dmg",
+    "android": "POSCHAT.apk",
+}
+# 1.10 이전 이름. 1.9.1~1.10.0 앱이 자동 업데이트할 수 있도록 릴리스에 같은 파일을 이 이름으로도 올린다.
+# 이 앱은 새 이름을 먼저 찾고, 새 이름이 없는 릴리스(1.10.0 이전)에서는 예전 이름을 쓴다.
+LEGACY_ASSETS = {
     "windows": "PostechChat-Setup.exe",
     "macos": "PostechChat-mac.dmg",
     "android": "PostechChat.apk",
 }
+USER_AGENT = "POSCHAT"
 MAX_DOWNLOAD_BYTES = 1024 * 1024 * 1024
 
 
@@ -49,7 +57,7 @@ def version_tuple(value):
 def latest_release(timeout=15):
     """최신 정식 릴리스 {"version", "name", "notes", "url", "assets": {이름: asset}}."""
     headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28",
-               "User-Agent": "POSTECH-GenAI-Chat"}
+               "User-Agent": USER_AGENT}
     try:
         response = requests.get(RELEASE_URL, headers=headers, timeout=(10, timeout))
     except requests.RequestException as e:
@@ -70,21 +78,28 @@ def latest_release(timeout=15):
     version_tuple(version)
     return {
         "version": version,
-        "name": str(release.get("name") or f"POSTECH GenAI Chat {version}"),
+        "name": str(release.get("name") or f"POSCHAT {version}"),
         "notes": str(release.get("body") or "").strip(),
         "url": str(release.get("html_url") or RELEASES_PAGE),
         "assets": {a.get("name"): a for a in release.get("assets") or [] if isinstance(a, dict)},
     }
 
 
+def asset_name(release, platform=None):
+    """릴리스에 있는 이 기기용 설치 파일 이름(새 이름 우선) 또는 None."""
+    platform = platform or current_platform()
+    for name in (ASSETS.get(platform), LEGACY_ASSETS.get(platform)):
+        if name and name in release["assets"]:
+            return name
+    return None
+
+
 def check(installed_version, platform=None):
     """{"available", "version", "name", "notes", "url", "asset"(이 기기용 파일 이름 또는 None)}."""
     release = latest_release()
     newer = version_tuple(release["version"]) > version_tuple(installed_version)
-    asset = ASSETS.get(platform or current_platform())
     return {"available": newer, "version": release["version"], "name": release["name"],
-            "notes": release["notes"][:4000], "url": release["url"],
-            "asset": asset if asset in release["assets"] else None}
+            "notes": release["notes"][:4000], "url": release["url"], "asset": asset_name(release, platform)}
 
 
 def download(installed_version, directory, platform=None, on_progress=None, cancelled=None):
@@ -92,7 +107,7 @@ def download(installed_version, directory, platform=None, on_progress=None, canc
     release = latest_release()
     if version_tuple(release["version"]) <= version_tuple(installed_version):
         raise UpdateError("이미 최신 버전입니다.")
-    name = ASSETS.get(platform or current_platform())
+    name = asset_name(release, platform)
     asset = release["assets"].get(name) if name else None
     if not asset:
         raise UpdateError(f"{release['version']} 릴리스에 이 기기용 설치 파일이 없습니다. Releases 페이지에서 받으세요.")
@@ -108,7 +123,7 @@ def download(installed_version, directory, platform=None, on_progress=None, canc
     path, part = directory / name, directory / (name + ".part")
     sha, done = hashlib.sha256(), 0
     try:
-        with requests.get(url, headers={"User-Agent": "POSTECH-GenAI-Chat"}, timeout=(15, 120), stream=True) as r:
+        with requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=(15, 120), stream=True) as r:
             if r.status_code != 200:
                 raise UpdateError(f"업데이트 파일을 내려받지 못했습니다 (HTTP {r.status_code}).")
             with open(part, "wb") as out:

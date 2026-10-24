@@ -163,6 +163,52 @@ class SettingsTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("401", result["error"])
 
+    @patch.object(app_main.storage, "save_config")
+    def test_personal_claude_api_uses_its_own_key_and_model(self, _save_config):
+        with patch.dict(app_main.os.environ, {}, clear=True):
+            bridge = self.bridge({"api_key": "postech-key", "model": "gpt-6-astra"})
+            bridge.get_state = lambda: {"ok": True}
+            bridge.save_settings({"api_mode": "anthropic", "anthropic_api_key": " sk-ant-mine ",
+                                  "model": "claude-haiku-5-5"})
+            self.assertEqual(bridge._config["api_mode"], "anthropic")
+            self.assertEqual(bridge._config["anthropic_api_key"], "sk-ant-mine")
+            self.assertEqual(bridge._config["anthropic_model"], "claude-haiku-5-5")
+            self.assertEqual(bridge._config["model"], "gpt-6-astra")  # POSTECH 쪽 기본 모델은 그대로
+            # 대화는 Anthropic 키로, 크레딧·PO노트 서버 음성 인식은 POSTECH 키로
+            self.assertEqual(bridge._api_key(), "sk-ant-mine")
+            self.assertEqual(bridge._postech_key(), "postech-key")
+            self.assertEqual(bridge._default_model(), "claude-haiku-5-5")
+            self.assertEqual(app_main.ApiSettings.from_config(bridge._config).model, "claude-haiku-5-5")
+            # POSTECH 모델 ID는 개인 Claude API에서 고를 수 없다
+            bridge.save_settings({"model": "gpt-6-astra"})
+            self.assertEqual(bridge._config["anthropic_model"], "claude-haiku-5-5")
+            bridge.save_settings({"clear_anthropic_key": True})
+            self.assertEqual(bridge._api_key(), "")
+            self.assertIn("Claude API 키", bridge._missing_key_error())
+            bridge.save_settings({"api_mode": "chat_completions"})
+            self.assertEqual(bridge._api_key(), "postech-key")
+
+    def test_anthropic_key_can_come_from_the_environment(self):
+        with patch.dict(app_main.os.environ, {"ANTHROPIC_API_KEY": "sk-ant-env"}, clear=True):
+            bridge = self.bridge({"api_mode": "anthropic"})
+            self.assertEqual(bridge._api_key(), "sk-ant-env")
+            self.assertEqual(bridge._postech_key(), "")
+
+    @patch.object(app_main.api, "list_anthropic_models", return_value=["claude-opus-5-5", "claude-opus-4-8"])
+    @patch.object(app_main.storage, "save_config")
+    def test_claude_model_list_is_kept_only_after_saving(self, _save_config, list_models):
+        with patch.dict(app_main.os.environ, {}, clear=True):
+            bridge = self.bridge({"api_mode": "anthropic"})
+            self.assertFalse(bridge.refresh_models({"api_mode": "anthropic"})["ok"])  # 키가 없다
+            result = bridge.refresh_models({"api_mode": "anthropic", "anthropic_api_key": "sk-ant-new"})
+            list_models.assert_called_once_with("sk-ant-new")
+            self.assertEqual([m["id"] for m in result["models"]], ["claude-opus-5-5", "claude-opus-4-8"])
+            self.assertNotIn("anthropic_server_models", bridge._config)
+            bridge.get_state = lambda: {"ok": True}
+            bridge.save_settings({"anthropic_server_models": ["claude-opus-4-8"], "model": "claude-opus-4-8"})
+            self.assertEqual(bridge._config["anthropic_model"], "claude-opus-4-8")
+            self.assertEqual([m for m, _ in bridge._models("anthropic")], ["claude-opus-4-8"])
+
 
 if __name__ == "__main__":
     unittest.main()

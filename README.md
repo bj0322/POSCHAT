@@ -1,6 +1,9 @@
-# POSTECH GenAI Chat
+# POSCHAT
 
-버전 1.10.0 — **POSCHAT 2.0: 연결·도구**. 왼쪽 아래 **연결·도구**에서(모두 기본 꺼짐) GitHub·Google Workspace(Drive·Docs·Sheets·Slides·Gmail·Calendar)·Zotero 커넥터, 통합 논문 검색·라이브러리·BibTeX·출처가 붙은 문서 검색(RAG), 프로젝트·연구 메모리와 에이전트 인계, 기기 사이 종단간 암호화 동기화, Python·Jupyter·SSH 실행(PC, 매번 승인), 사용량·진단과 모델 평가. 메일 전송·리뷰 제출·삭제·코드 실행은 자동 허용 설정이어도 매번 묻습니다. 1.6부터 에이전트의 MCP 도구 호출이 실패하던 버그 수정. 자세히: [릴리스 노트](docs/release-notes/v1.10.0.md) · [설치·설정](docs/setup.md) · [마이그레이션](docs/migration-1.10.md) · [보안](docs/security.md) · [API](docs/api/reference.md) · [아키텍처](docs/architecture/) **안드로이드 앱에서도 PO노트 녹음**: 휴대폰의 로컬 AI(sherpa-onnx)가 받아 적고 불확실한 구간만 POSTECH GenAI가 보정하는 하이브리드를 데스크톱과 같이 씁니다(화면을 꺼도 녹음 유지, 알림에서 중지). 로컬 AI가 작은 소리를 받아 적지 못하던 문제 수정. 데스크톱의 sherpa-onnx를 1.13.8로 고정
+버전 1.11.0 — **이름을 POSCHAT으로 정식 변경**, **일반 AI 모델(Claude)**: 설정 → API 방식에서 고르면 본인 Claude API 키로 대화·에이전트·노트 만들기 등 모든 모델 호출을 합니다(기본은 그대로 POSTECH GenAI). **연구 라이브러리·에이전트 자동화를 PO노트처럼 사이드바에서 여는 화면으로** 옮겼고, 업데이트할 때 설치 프로그램에서 '설치'를 두 번 눌러야 하던 문제를 고쳤습니다. 자세히: [릴리스 노트](docs/release-notes/v1.11.0.md)
+
+
+1.10.0 — **POSCHAT 2.0: 연결·도구**. 왼쪽 아래 **연결·도구**에서(모두 기본 꺼짐) GitHub·Google Workspace(Drive·Docs·Sheets·Slides·Gmail·Calendar)·Zotero 커넥터, 통합 논문 검색·라이브러리·BibTeX·출처가 붙은 문서 검색(RAG), 프로젝트·연구 메모리와 에이전트 인계, 기기 사이 종단간 암호화 동기화, Python·Jupyter·SSH 실행(PC, 매번 승인), 사용량·진단과 모델 평가. 메일 전송·리뷰 제출·삭제·코드 실행은 자동 허용 설정이어도 매번 묻습니다. 1.6부터 에이전트의 MCP 도구 호출이 실패하던 버그 수정. 자세히: [릴리스 노트](docs/release-notes/v1.10.0.md) · [설치·설정](docs/setup.md) · [마이그레이션](docs/migration-1.10.md) · [보안](docs/security.md) · [API](docs/api/reference.md) · [아키텍처](docs/architecture/) **안드로이드 앱에서도 PO노트 녹음**: 휴대폰의 로컬 AI(sherpa-onnx)가 받아 적고 불확실한 구간만 POSTECH GenAI가 보정하는 하이브리드를 데스크톱과 같이 씁니다(화면을 꺼도 녹음 유지, 알림에서 중지). 로컬 AI가 작은 소리를 받아 적지 못하던 문제 수정. 데스크톱의 sherpa-onnx를 1.13.8로 고정
 
 1.9.2 — 자동 업데이트 시험용 릴리스(기능 변경 없음). 1.9.1에서 업데이트 알림부터 설치까지 확인하는 데 씁니다
 
@@ -24,7 +27,7 @@
 
 1.2.0 — PDF·Word·PowerPoint·Excel·한글 문서 읽기, MCP 지원과 내장 오피스 MCP 서버(Word·PowerPoint·Excel 만들기·고치기), 답변의 LaTeX 수식 표시
 
-POSTECH GenAI API를 쓰는 Windows·macOS 데스크톱·안드로이드 챗봇입니다. PIDS Tech. 팀이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 소프트웨어 라이선스(AGPL-3.0-only, 과거 버전은 MIT)는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
+POSTECH GenAI API(기본) 또는 본인의 Claude API 키를 쓰는 Windows·macOS 데스크톱·안드로이드 챗봇 POSCHAT입니다(1.10까지의 이름은 POSTECH GenAI Chat). PIDS Tech. 팀이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 소프트웨어 라이선스(AGPL-3.0-only, 과거 버전은 MIT)는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
 
 ## 문의
 
@@ -34,22 +37,22 @@ POSTECH GenAI API를 쓰는 Windows·macOS 데스크톱·안드로이드 챗봇�
 
 ## 설치
 
-설치 파일(`PostechChat-Setup.exe`)은 저장소의 [Releases](https://github.com/bj0322/POSCHAT/releases)에서 받습니다. 저장소 자체에는 exe를 넣지 않습니다. 설치 파일 하나에 Python, 화면 라이브러리(marked·DOMPurify·KaTeX), 문서 라이브러리, 내장 MCP 서버가 모두 들어 있으므로 npm·curl·Python을 따로 설치할 필요가 없습니다. 직접 빌드하려면 아래 [개발](#개발)을 보세요.
+설치 파일(`POSCHAT-Setup.exe`)은 저장소의 [Releases](https://github.com/bj0322/POSCHAT/releases)에서 받습니다. 저장소 자체에는 exe를 넣지 않습니다. 설치 파일 하나에 Python, 화면 라이브러리(marked·DOMPurify·KaTeX), 문서 라이브러리, 내장 MCP 서버가 모두 들어 있으므로 npm·curl·Python을 따로 설치할 필요가 없습니다. 직접 빌드하려면 아래 [개발](#개발)을 보세요.
 
-1. Releases에서 받은 `PostechChat-Setup.exe`(또는 직접 빌드한 `release\PostechChat-Setup.exe`)를 실행합니다.
+1. Releases에서 받은 `POSCHAT-Setup.exe`(또는 직접 빌드한 `release\POSCHAT-Setup.exe`)를 실행합니다.
 2. 설치 프로그램에는 아직 코드 서명이 없어서 Windows가 "Windows의 PC 보호" 경고를 띄울 수 있습니다. 파일을 Releases에서 받았는지 확인한 뒤 **추가 정보 → 실행**을 누르세요. 경고를 없애려면 코드 서명 인증서가 필요합니다([배포](#배포) 참고). 보호 기능을 끄거나 예외를 추가하는 것을 설치 절차로 요구하지 않습니다.
 3. **설치**를 누릅니다. 관리자 권한은 필요 없습니다.
-   - 설치 위치: `%LOCALAPPDATA%\Programs\PostechChat`
+   - 설치 위치: `%LOCALAPPDATA%\Programs\PostechChat` (이전 버전에서 그대로 업데이트되도록 폴더·실행 파일·데이터 폴더 이름은 1.10과 같습니다)
    - 시작 메뉴와 바탕화면에 바로가기가 생깁니다.
-4. 처음 실행하면 설정 창이 열립니다. POSTECH GenAI API 키를 입력하세요.
+4. 처음 실행하면 설정 창이 열립니다. POSTECH GenAI API 키를 입력하세요. 본인 Claude API 키로 쓰려면 API 방식에서 **일반 AI 모델 (Claude)**를 고르고 Claude API 키를 넣습니다.
 
-제거는 **설정 → 앱 → 설치된 앱 → POSTECH GenAI Chat → 제거**에서 합니다. 대화 기록과 설정(`%APPDATA%\PostechChat`)은 지우지 않고 남겨 둡니다.
+제거는 **설정 → 앱 → 설치된 앱 → POSCHAT → 제거**에서 합니다. 대화 기록과 설정(`%APPDATA%\PostechChat`)은 지우지 않고 남겨 둡니다.
 
 ### macOS
 
-Releases의 `PostechChat-mac.dmg`를 받아 엽니다. Apple Silicon(M1 이후) 맥용이며 Intel 맥은 지원하지 않습니다.
+Releases의 `POSCHAT-mac.dmg`를 받아 엽니다. Apple Silicon(M1 이후) 맥용이며 Intel 맥은 지원하지 않습니다.
 
-1. 열린 창에서 **POSTECH GenAI Chat**을 **Applications(응용 프로그램)** 폴더로 끌어다 놓습니다.
+1. 열린 창에서 **POSCHAT**(앱 파일 이름은 PostechChat.app)을 **Applications(응용 프로그램)** 폴더로 끌어다 놓습니다.
 2. 앱에는 Apple 개발자 서명·공증이 없어서, 처음 실행하면 "확인되지 않은 개발자" 또는 "열 수 없음" 경고가 뜹니다. 응용 프로그램 폴더에서 앱을 **Control 키를 누른 채 클릭 → 열기**를 누르세요. macOS 15 이후에서는 **시스템 설정 → 개인정보 보호 및 보안**의 아래쪽에서 **그래도 열기**를 누릅니다. 한 번 허용하면 이후에는 그대로 실행됩니다.
 3. 처음 실행하면 설정 창이 열립니다. POSTECH GenAI API 키를 입력하세요.
 
@@ -59,13 +62,13 @@ Releases의 `PostechChat-mac.dmg`를 받아 엽니다. Apple Silicon(M1 이후) 
 
 설치 중 오류나 지연이 발생하면 보안 제품의 알림과 설치 로그를 확인하세요. 조직에서 관리하는 PC는 관리자 정책을 따르세요.
 
-- 시작 메뉴에 `POSTECH GenAI Chat (2)`라는 이름으로 바로가기가 생길 수 있습니다. 같은 이름의 이전 바로가기를 탐색기가 아직 붙잡고 있을 때 생기며, 재부팅하면 풀립니다.
+- 시작 메뉴에 `POSCHAT (2)`라는 이름으로 바로가기가 생길 수 있습니다. 같은 이름의 이전 바로가기를 탐색기가 아직 붙잡고 있을 때 생기며, 재부팅하면 풀립니다.
 - 바로가기를 만들지 못해도 설치는 끝납니다. 이때는 `%LOCALAPPDATA%\Programs\PostechChat\PostechChat.exe`로 실행하세요.
 - 조용한 설치 로그: `%TEMP%\PostechChat-install.log`
 
 ### 안드로이드
 
-Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 7.0 이상, 64비트 ARM). 스토어 앱이 아니므로 처음 설치할 때 "출처를 알 수 없는 앱 설치"를 허용해야 합니다. 새 버전도 APK를 그대로 설치하면 대화·설정을 유지한 채 업데이트됩니다. 1.9.1부터는 앱이 새 버전을 알려 주고 APK를 받아 설치 화면을 엽니다.
+Releases의 `POSCHAT.apk`를 휴대폰에서 받아 설치합니다(Android 7.0 이상, 64비트 ARM). 스토어 앱이 아니므로 처음 설치할 때 "출처를 알 수 없는 앱 설치"를 허용해야 합니다. 새 버전도 APK를 그대로 설치하면 대화·설정을 유지한 채 업데이트됩니다. 1.9.1부터는 앱이 새 버전을 알려 주고 APK를 받아 설치 화면을 엽니다.
 
 데스크톱과 같은 화면과 Python 코드(에이전트, 문서 읽기, 내장 MCP 서버, 스트리밍, 수식)를 앱 안에서 그대로 실행합니다. 다른 점은 다음과 같습니다.
 
@@ -88,9 +91,11 @@ Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 
 | 파일 첨부 | 입력창의 + 버튼, 파일 끌어다 놓기, 이미지 붙여 넣기(Ctrl+V) |
 | 내 정보(USER.md) | 왼쪽 아래 **내 정보**, `/user` |
 | 메모리(memory.md) | 왼쪽 아래 **메모리**, `/remember 내용`, `/memory` |
-| MCP 서버 켜기·끄기, 외부 서버 추가 | 왼쪽 아래 **MCP** |
+| MCP 서버 켜기·끄기, 외부 서버 추가 | 왼쪽 아래 **연결·도구** → MCP 서버 |
+| 연구 라이브러리·에이전트 자동화 | 왼쪽 위 **연구 라이브러리**·**에이전트 자동화** (1.11부터 PO노트처럼 본문 화면) |
+| 본인 Claude API 키로 쓰기 | **설정 → API 방식 → 일반 AI 모델 (Claude)** ([아래](#모델과-스트리밍)) |
 | PO노트(강의 녹음·전사·필기 노트) | 왼쪽 위 **PO노트** ([아래](#po노트)) |
-| 대화별 모델 선택 | OpenAI 호환 또는 Responses API에서 위쪽 **대화 모델** 메뉴로 고릅니다. 각 대화의 선택은 따로 저장됩니다. |
+| 대화별 모델 선택 | OpenAI 호환·Responses API·일반 AI 모델(Claude)에서 위쪽 **대화 모델** 메뉴로 고릅니다. 각 대화의 선택은 따로 저장됩니다. |
 | 크레딧 확인 | 왼쪽 아래 **설정** → POSTECH GenAI 크레딧(PO노트 화면에도 표시). 이 키의 이번 주 사용량·한도·남은 양. 확인 자체는 크레딧을 쓰지 않습니다. |
 | 모델 API 사용량 보기 | 왼쪽 아래 **설정** → 모델 API 사용량. 이 앱에서 보낸 요청의 오늘·이번 달·최근 30일 호출 수와(서버가 알려 주면) 토큰 수. |
 
@@ -188,6 +193,7 @@ Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 
 | OpenAI 호환 (기본, 권장) | 비워 두면 POSTECH 주소. 기본 주소(`.../v1`)만 넣어도 됨 | GPT·Claude·Gemini | Chat Completions, 표준 SSE 스트리밍. 인증은 `x-api-key`(다른 OpenAI 호환 서버를 위해 Bearer도 함께 보냄) |
 | Responses | 콘솔에서 확인한 `.../a<번호>/openai/responses` | GPT-5 계열 | OpenAI Responses API, 표준 SSE 스트리밍 |
 | a1/gpt (예전 기본값) | `agent/api/a1/gpt` | 서버가 정함 | 2026년 10월 현재 서버가 답변 대신 오류 코드 10000만 돌려줍니다. 1.9는 a1을 쓰던 설정을 한 번 OpenAI 호환으로 옮깁니다. |
+| 일반 AI 모델 (Claude) (1.11) | `api.anthropic.com` (Claude Messages API) | Claude Opus 5.5(권장)·Sonnet 5.5·Haiku 5.5·Fable 5.1, 또는 키로 쓸 수 있는 모델 전체 | 본인 Claude API 키. 공식 Anthropic SDK(데스크톱)·같은 HTTP 요청(안드로이드), SSE 스트리밍, 이미지 첨부 |
 
 모델 선택 방식에서 고를 수 있는 GPT 모델은 POSTECH 게이트웨이가 허용하는 목록입니다. 가격은 OpenAI 공개 가격(입력/출력 100만 토큰당, USD)이며, 학교 계정의 실제 과금·한도는 POSTECH GenAI 콘솔에서 확인하세요.
 
@@ -205,6 +211,8 @@ Releases의 `PostechChat.apk`를 휴대폰에서 받아 설치합니다(Android 
 | Gemini 3.8 Flash | POSTECH GenAI 2026년 10월 안내 모델 | 콘솔에서 확인 |
 
 표의 10개 모델은 모두 OpenAI 호환 API에서 응답하는 것을 확인했습니다(2026년 10월). Claude 모델 ID는 점이 아니라 `-`를 씁니다(`claude-opus-5-5`, `claude-sonnet-5-5`). POSTECH 서버는 모델 목록(`GET .../models`)을 알려 주지 않으므로 기본 목록을 씁니다. 다른 OpenAI 호환 서버는 **모델 목록 불러오기**로 그 서버의 모델을 받아 저장할 때 반영합니다. GPT-5 계열은 Responses API에서도 계속 사용할 수 있습니다.
+
+**일반 AI 모델 (Claude)** (1.11): [Anthropic 콘솔](https://console.anthropic.com)에서 발급한 본인 Claude API 키(`sk-ant-...`, 또는 환경 변수 `ANTHROPIC_API_KEY`)로 대화·에이전트·PO노트 노트 만들기·대화 요약·모델 평가를 모두 Claude API로 보냅니다. 요금은 그 키의 Anthropic 계정으로 청구되고 POSTECH 크레딧은 쓰지 않습니다. 키와 기본 모델은 POSTECH 쪽과 따로 저장되므로 방식만 바꿔 오갈 수 있고, 동기화되지 않습니다. Claude API는 음성을 받지 않으므로 PO노트의 서버 음성 보정과 크레딧 확인은 POSTECH 키가 있을 때만 씁니다(없으면 로컬 AI로만 받아 적습니다). Opus 5.5·Sonnet 5.5·Fable 5.1은 안전 정책으로 답하지 않으면 Anthropic이 권하는 다른 모델로 다시 답하게 합니다(server-side fallback).
 
 **크레딧**: POSTECH GenAI는 모든 응답 헤더(`x-role-ratelimit-credit-usage`, `-limit`, `-interval`)에 이 키의 이번 주 크레딧 사용량과 한도를 담아 줍니다. 앱은 이 값을 설정 창과 PO노트에 보여 주고, **확인**을 누르면 크레딧을 쓰지 않는 요청(404가 나는 `GET .../models`)으로 새로 받습니다. 직접 잰 값(Claude Sonnet 5.5): 1크레딧 ≈ 입력 약 250토큰 또는 출력 약 75토큰이고, 짧은 질문도 호출마다 약 24크레딧이 듭니다. Claude Opus 5.5는 모두 두 배입니다. 에이전트 모드는 단계마다 모델을 한 번씩 부르므로 단계 수만큼 이 기본 비용이 붙습니다.
 
@@ -356,7 +364,7 @@ POSTECH GenAI 서버의 모델은 자체 시스템 프롬프트 때문에 "사�
 
 - 소스로 실행: `run.bat`
 - 진단: `PostechChat.exe --selftest`를 실행하면 API 연결, 문서 라이브러리, 내장 MCP 서버 연결 결과가 `%APPDATA%\PostechChat\selftest.txt`에 기록됩니다. 제거 명령은 `PostechChat.exe --uninstall`입니다.
-- 설치 파일 빌드: `build.bat`, 또는 `python build_installer.py`. 결과는 `release\PostechChat-Setup.exe`입니다.
+- 설치 파일 빌드: `build.bat`, 또는 `python build_installer.py`. 결과는 `release\POSCHAT-Setup.exe`입니다.
   - **python.org 공식 Python(3.10 이상, tcl/tk 포함)으로 빌드하세요.** Anaconda Python으로 빌드한 exe는 HTTPS 요청 때 `OPENSSL_Uplink: no OPENSSL_Applink` 오류로 꺼집니다. 빌드 스크립트가 이 경우를 미리 막습니다.
 - 앱의 HTTPS 요청은 `truststore`를 통해 운영체제 인증서 저장소를 사용합니다. 인증서 오류가 발생하면 Windows 인증서와 네트워크 설정을 확인하세요. TLS 검증을 비활성화하지 마세요.
 
@@ -382,7 +390,7 @@ py -3 -m venv .venv
 .\.venv\Scripts\python.exe build_installer.py
 ```
 
-빌드는 `%TEMP%\PostechChat-build`를 사용하며 결과는 `release\PostechChat-Setup.exe`입니다. 빌드 결과는 Git에 포함하지 않습니다.
+빌드는 `%TEMP%\PostechChat-build`를 사용하며 결과는 `release\POSCHAT-Setup.exe`입니다. 빌드 결과는 Git에 포함하지 않습니다.
 
 ## 배포
 
@@ -390,7 +398,7 @@ py -3 -m venv .venv
 
 설치 파일은 GitHub Releases에 올립니다. `.github/workflows/build.yml`이 Windows·macOS·Android 빌드와 플랫폼별 검증을 자동으로 수행합니다.
 
-- PR을 올리거나 Actions에서 **Build installer**를 수동 실행하면, 빌드한 `PostechChat-Setup.exe`를 실행 결과의 Artifacts에서 받을 수 있습니다.
+- PR을 올리거나 Actions에서 **Build installer**를 수동 실행하면, 빌드한 `POSCHAT-Setup.exe`를 실행 결과의 Artifacts에서 받을 수 있습니다.
 - 버전 태그를 push하면 같은 빌드가 그 태그의 Release에 첨부됩니다. 단위 테스트가 실패하면 Release를 만들지 않습니다.
 
   ```powershell
@@ -399,9 +407,9 @@ py -3 -m venv .venv
   ```
 
   태그를 직접 push하지 않고 Actions에서 **Build installer → Run workflow**의 `release` 칸에 `v1.2.0`을 넣어 실행해도 됩니다. 이 경우 실행한 커밋에 태그와 Release가 만들어집니다.
-- 사용자에게는 항상 최신 버전을 가리키는 링크 `https://github.com/bj0322/POSCHAT/releases/latest/download/PostechChat-Setup.exe`를 안내하면 됩니다. 저장소가 비공개이면 저장소 권한이 있는 사용자만 받을 수 있습니다.
-- **자동 업데이트**(1.9.1부터): 앱이 시작할 때(6시간에 한 번) `https://api.github.com/repos/bj0322/POSCHAT/releases/latest`로 최신 정식 릴리스를 확인합니다. 새 버전이 있으면 릴리스 노트와 함께 알리고, **업데이트**를 누르면 이 기기용 파일(`PostechChat-Setup.exe`·`PostechChat-mac.dmg`·`PostechChat.apk`)을 받아 Releases가 알려 준 크기와 SHA-256(digest)을 확인합니다.
-  - Windows: 설치 프로그램을 지금 설치 폴더로 열고 앱이 스스로 닫힙니다. 설치 프로그램에서 **설치**를 누르면 대화·설정을 유지한 채 바뀝니다.
+- 사용자에게는 항상 최신 버전을 가리키는 링크 `https://github.com/bj0322/POSCHAT/releases/latest/download/POSCHAT-Setup.exe`를 안내하면 됩니다. 저장소가 비공개이면 저장소 권한이 있는 사용자만 받을 수 있습니다.
+- **자동 업데이트**(1.9.1부터): 앱이 시작할 때(6시간에 한 번) `https://api.github.com/repos/bj0322/POSCHAT/releases/latest`로 최신 정식 릴리스를 확인합니다. 새 버전이 있으면 릴리스 노트와 함께 알리고, **업데이트**를 누르면 이 기기용 파일(`POSCHAT-Setup.exe`·`POSCHAT-mac.dmg`·`POSCHAT.apk`, 1.11부터의 이름. 릴리스에는 1.9.1~1.10.0 앱을 위해 예전 이름 `PostechChat-*`도 함께 올립니다)을 받아 Releases가 알려 준 크기와 SHA-256(digest)을 확인합니다.
+  - Windows: 설치 프로그램을 지금 설치 폴더로 열고 앱이 스스로 닫힙니다. 설치 프로그램에서 **설치**를 누르면 앱이 완전히 닫히기를 기다렸다가(1.11부터, 한 번만 누르면 됨) 대화·설정을 유지한 채 바뀝니다. 30초가 지나도 닫히지 않으면 강제로 종료할지 묻습니다.
   - macOS: 디스크 이미지를 엽니다. 앱을 끝낸 뒤 응용 프로그램 폴더로 끌어다 놓아 바꿉니다.
   - Android: 설치 화면을 엽니다(처음 한 번 "이 출처 허용"이 필요합니다).
   - 토큰 없이 공개 API를 쓰므로 **저장소가 공개일 때만** 동작합니다. 비공개인 동안은 확인하지 못했다고만 알리고(시작할 때는 알리지 않음) 사용에는 지장이 없습니다.

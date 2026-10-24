@@ -45,6 +45,7 @@ const isRecordingNote = (id) => !!recording() && recording().note_id === id;
 
 /* ---------- 화면 전환 ---------- */
 async function poOpen() {
+  if (window.pageLeave) pageLeave();
   PO.open = true;
   for (const sel of ["#scroll", "#composer-wrap", "#thread-model-picker", "#agent-label"]) $(sel).hidden = true;
   $("#po-view").hidden = false;
@@ -285,10 +286,10 @@ function generateBar() {
   const busy = PO.state && PO.state.generating;
   const mine = busy === note.id;
   const mode = S.config.api_mode || "chat_completions";
-  const models = mode === "responses" ? (S.responsesModels || []) : (S.models || []);
+  const models = modeModels();
   const select = mode === "a1" ? null : h("select", { class: "po-model", title: "노트를 만들 모델" },
     models.map((m) => h("option", { value: m.id }, m.label)));
-  if (select) select.value = models.some((m) => m.id === PO.model) ? PO.model : (S.config.model || (models[0] || {}).id || "");
+  if (select) select.value = models.some((m) => m.id === PO.model) ? PO.model : modeDefaultModel();
   select?.addEventListener("change", () => { PO.model = select.value; });
   const has = note.transcript.length || (note.materials || []).length;
   return h("div", { class: "po-gen" },
