@@ -28,6 +28,8 @@ const ICONS = {
   book: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2Z"/><path d="M4 21V5"/><path d="M8 7h7"/></svg>',
   terminal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/><path d="M13 15h4"/></svg>',
   blocks: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/></svg>',
+  paper: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h4"/></svg>',
+  minus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>',
   globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
   forward: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>',
   external: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
@@ -1366,6 +1368,18 @@ const GUIDE = [
 **설정 → POSTECH GenAI 크레딧**에서 이 키의 이번 주 크레딧 사용량·한도·남은 양을 봅니다. **확인**을 눌러도 크레딧은 줄지 않습니다. PO노트 화면 위쪽에도 같은 내용이 나옵니다.
 
 Claude Sonnet 5.5 기준으로 1크레딧은 입력 약 250토큰, 출력 약 75토큰이고, 짧은 질문도 호출마다 약 24크레딧이 듭니다. Opus 5.5는 두 배입니다. 에이전트 모드는 단계마다 한 번씩 호출하므로 단계가 많을수록 크레딧을 많이 씁니다.`],
+  ["논문: 채팅 옆 PDF 읽기 (1.14)", `
+왼쪽 위 **논문**을 누르면 채팅 오른쪽에 논문 화면이 열립니다. 가운데 막대를 끌어 너비를 바꿉니다.
+
+- **PDF 파일 열기**로 이 기기의 PDF를, 주소 칸에 **arXiv 번호**(예: 1706.03762)나 PDF 주소를 넣어 엽니다. 연구 라이브러리의 논문(PDF나 arXiv 번호가 있는 것)도 바로 열립니다.
+- **선택한 부분 묻기**: PDF에서 드래그한 글을 쪽 번호와 함께 첨부합니다. **이 쪽 묻기**: 보고 있는 쪽 전체를 첨부합니다.
+- **영역 잘라 묻기**: 그림·표·수식을 드래그해 이미지로 첨부합니다(Esc로 그만). 이미지를 읽는 모델에서 씁니다.
+- **논문 요약**: 첫 쪽과 실험·결과 쪽을 발췌해 첨부하고, 쪽 번호를 단 요약을 요청합니다.
+- **비교표**: 첫 화면의 연구 라이브러리 목록에서 논문을 2~6편 고르고 **선택한 논문 비교**를 누르면, 실험 조건·결과를 표로 비교해 달라는 질문과 함께 발췌가 첨부됩니다.
+- **라이브러리에 저장**: 연 PDF를 연구 라이브러리에 더합니다(DOI·arXiv 번호를 찾으면 정보를 채웁니다).
+- 에이전트 모드에서는 에이전트가 열린 논문을 \`paper_read\`로 필요한 쪽만 읽고 (p. N)으로 근거를 밝힙니다.
+
+PDF 안의 스크립트·링크·양식은 실행하지 않고, 논문 글은 '외부 데이터'로 표시되어 그 안의 지시를 따르지 않습니다.`],
   ["브라우저: 채팅 옆 웹페이지 (1.13)", `
 왼쪽 위 **브라우저**를 누르면 앱 창이 나뉘어 오른쪽에 웹페이지가 열립니다. 가운데 막대를 끌어 너비를 바꿉니다.
 

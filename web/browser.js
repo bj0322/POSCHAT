@@ -70,6 +70,7 @@ async function browserCall(promise) {
 async function browserToggle() {
   if (BR.open) return browserClose();
   leaveViews();
+  if (window.paperLeave) paperLeave();  // 오른쪽 화면은 하나만(1.14 논문 화면)
   if (!BR.available) return toast("이 실행 방식에서는 브라우저를 쓸 수 없습니다.");
   BR.open = true;
   renderBrowserBar();

@@ -64,6 +64,10 @@ MAX_SEARCH_DOC_BYTES = 20 * 1024 * 1024
 BROWSER_ACTION_DOC = (
     '{"action": "browser_read", "what": "page"}  사용자가 옆 브라우저에서 보고 있는 웹페이지 읽기 (what: page|selection)\n'
     '{"action": "browser_open", "url": "주소 또는 검색어"}  옆 브라우저에서 주소 열기 (사용자 승인)')
+PAPER_ACTION_DOC = (
+    '{"action": "paper_read", "pages": "3-5", "query": "찾을 낱말", "paper": ""}  논문 PDF 읽기. paper를 비우면 '
+    '사용자가 논문 화면에 열어 둔 PDF, 연구 라이브러리 id를 주면 그 논문의 PDF(이 기기에 있는 것만). '
+    'pages를 비우면 query가 많이 나오는 쪽, 둘 다 비우면 앞쪽부터. 한 번에 12쪽까지. 답할 때 (p. N)으로 쪽을 밝히세요')
 MCP_ACTION_DOC = '{"action": "mcp", "tool": "서버.도구", "args": {"인자": "값"}}  MCP 도구 실행 (아래 [MCP 도구] 목록)'
 MCP_RULE = ("- Word(.docx)·PowerPoint(.pptx)·Excel(.xlsx) 파일을 만들거나 고칠 때는 write/edit 대신 mcp 도구를 쓰세요. "
             "고치기 전에 read로 내용을 확인하세요.\n"
@@ -271,7 +275,7 @@ class Agent:
     def __init__(self, api_key, workspace, agent_mode, max_steps, history_messages,
                  on_status, on_tool, confirm, cancelled, thread_id=None, share_threads=True, mcp=None,
                  api_settings=None, on_delta=None, ai_memory_state=None, on_ai_memory_state=None, policy=None,
-                 browser=None):
+                 browser=None, paper=None):
         self.api_key = api_key
         self.workspace = Path(workspace).resolve() if workspace else None
         self.agent_mode = agent_mode
@@ -303,6 +307,7 @@ class Agent:
         self.denied = []              # 사용자가 거부한 단계 — 인계의 '필요한 승인'
         self.project = ""             # 통합 메모리의 프로젝트 키("workspace/project")
         self.browser = browser        # browser.Browser — 옆 브라우저가 열려 있을 때(1.13)
+        self.paper = paper            # 논문 화면에 열린 PDF {"id", "path", "title", "pages", "workspace"} (1.14)
         self.steps = 0                # 이번 실행에서 모델이 고른 단계 수(관측용)
 
     def _ask(self, prompt, on_delta=None, images=None):
@@ -667,9 +672,9 @@ class Agent:
             "JSON 객체 하나로만 답하세요. 설명 문장 금지. 최종 답변은 done의 answer에 한국어로 쓰세요.\n"
             + MATH_RULE + "\nanswer는 JSON 문자열이므로 LaTeX의 백슬래시는 두 번 쓰세요. 예: \"\\\\(x^2\\\\)\"",
             "[단계 종류]\n" + ACTION_DOCS + ("\n" + MCP_ACTION_DOC if self.mcp_servers else "")
-            + ("\n" + BROWSER_ACTION_DOC if self.browser else ""),
+            + ("\n" + BROWSER_ACTION_DOC if self.browser else "") + "\n" + PAPER_ACTION_DOC,
             "[규칙]\n" + RULES + ("\n" + MCP_RULE if self.mcp_servers else "")
-            + ("\n" + connectors.UNTRUSTED_RULE if self.mcp_servers or self.browser else "")
+            + "\n" + connectors.UNTRUSTED_RULE
             + ("\n" + AI_MEMORY_RULE.format(name=self.ai_memory.server.name) if self.ai_memory else ""),
             f"[작업 폴더]\n{self.workspace}",
         ]
@@ -948,6 +953,43 @@ class Agent:
             time.sleep(0.25)
         self.on_tool(f"🌐 browser_open {target}", "")
         return f"브라우저에서 열었습니다: {self.browser.state.get('url') or target}. 내용은 browser_read로 읽으세요."
+
+    # ---- 논문 읽기(1.14) ----
+
+    def _tool_paper_read(self, pages="", query="", paper=""):
+        import paper as paper_mod
+        import research_library
+
+        if paper:
+            try:
+                p = research_library.find(str(paper))
+            except research_library.LibraryError as e:
+                raise ToolError(str(e))
+            if not p.get("pdf"):
+                raise ToolError("이 논문에는 이 기기에 있는 PDF가 없습니다. 사용자에게 논문 화면에서 열어 달라고 하세요.")
+            path = Path(p["pdf"])
+            if not path.is_absolute() and self.workspace:
+                path = self.workspace / path
+            doc = {"path": str(path), "title": p.get("title") or p["id"]}
+        elif self.paper:
+            doc = self.paper
+        else:
+            raise ToolError("논문 화면에 열린 PDF가 없습니다. paper에 연구 라이브러리 id를 주거나 사용자에게 논문을 열어 달라고 하세요.")
+        try:
+            texts = paper_mod.page_texts(paper_mod._check_pdf(doc["path"]))
+            if not str(pages or "").strip() and str(query or "").strip():
+                found = paper_mod.find_pages(texts, query)
+                if not found:
+                    return f"'{query}'이(가) 나오는 쪽이 없습니다. 이 논문은 {len(texts)}쪽입니다."
+                chosen = sorted(found)
+            else:
+                chosen = paper_mod.parse_pages(pages, len(texts))
+        except paper_mod.PaperError as e:
+            raise ToolError(str(e))
+        body = f"# {doc['title']} (전체 {len(texts)}쪽)\n\n" + paper_mod.pages_markdown(texts, chosen, MAX_OBS_CHARS - 600)
+        text = connectors.wrap_untrusted(body, paper_mod.source_label(doc, chosen))
+        self.on_tool(f"📄 paper_read {doc['title'][:60]} p.{','.join(map(str, chosen))}", _truncate(text, 4000))
+        return _truncate(text, MAX_OBS_CHARS)
 
     def _mcp_tool_docs(self):
         lines = []
