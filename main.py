@@ -28,6 +28,7 @@ import telemetry
 import ui_events
 import updates
 from browser_api import BrowserApi
+from code_api import CodeApi
 from paper_api import PaperApi
 from workspace_api import WorkspaceApi
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
@@ -92,8 +93,9 @@ def _installed_package_licenses():
     return sorted(items, key=lambda x: x["name"].lower())
 
 
-class Bridge(WorkspaceApi, BrowserApi, PaperApi):
-    """JS에서 호출하는 API. 밑줄로 시작하는 이름은 JS에 노출되지 않는다. '연결·도구' 창의 API는 WorkspaceApi에 있다."""
+class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi):
+    """JS에서 호출하는 API. 밑줄로 시작하는 이름은 JS에 노출되지 않는다. '연결·도구' 창의 API는 WorkspaceApi,
+    브라우저는 BrowserApi(1.13), 논문은 PaperApi(1.14), 코드 편집기는 CodeApi(1.15)에 있다."""
 
     def __init__(self):
         storage.ensure_dirs()
@@ -1147,6 +1149,8 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi):
             policy=connectors.Policy(dict(self._config)),
             browser=self._browser_for_agent(),
             paper=self._paper_for_agent(),
+            # 1.15: Code 화면이 열려 있으면 파일 수정은 승인 창 대신 Code 화면의 변경 검토(덩어리별)로
+            review=lambda *a: self._code_review_edit(thread_id, alive, *a),
         )
         started, outcome = time.monotonic(), "done"
         try:
@@ -1390,6 +1394,7 @@ def run_app():
     finally:
         bridge._events.stop()  # 창이 닫혔다: 더 보내지 않는다(보내는 중인 evaluate_js를 오래 기다리지 않는다)
         bridge._po_shutdown()
+        bridge._code_shutdown()  # 실행 패널에서 돌던 명령을 끝낸다(프로세스가 남지 않게)
         bridge._mcp.shutdown()
         if bridge._browser_obj is not None:
             bridge._browser_obj.close()
