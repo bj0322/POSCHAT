@@ -8,7 +8,7 @@
 1. 네이티브 방식(Windows WebView2 컨트롤, macOS WKWebView 분할)으로 붙는지(mode == "native")
 2. 로컬 페이지를 열고 주소·제목·불러오기 완료 이벤트가 오는지
 3. 페이지의 글과 선택한 글, 논문 식별자(meta citation_doi)를 읽는지
-4. 격리: 웹페이지 쪽에 window.pywebview·postMessage가 없고, chrome.webview.hostObjects로 앱 객체에 닿지 못하는지
+4. 격리: 웹페이지 쪽에 window.pywebview가 없고, chrome.webview.hostObjects로 앱 객체에 닿지 못하며, postMessage가 앱에 오지 않는지
 5. 뒤로 가기·숨기기·다시 보이기·닫기가 오류 없이 되는지
 """
 import json
@@ -44,6 +44,26 @@ window.__hostProbe = 'pending';
 })();
 </script></body></html>"""
 PAGE_TWO = "<!doctype html><title>Two</title><p>second page</p>"
+
+
+def message_probe(backend):
+    """WebView2: 앱 쪽에 WebMessageReceived를 달아 두고 웹페이지가 postMessage를 보내게 한 뒤, 받은 수를 센다.
+    IsWebMessageEnabled=False면 함수는 남아 있어도 메시지가 앱에 오지 않아야 한다. 다른 플랫폼은 None."""
+    if getattr(backend, "view", None) is None or not hasattr(backend, "_invoke"):
+        return None
+    got = []
+
+    def on_message(sender, args):
+        got.append(1)
+
+    backend._invoke(lambda: backend.view.CoreWebView2.add_WebMessageReceived(on_message))
+    try:
+        backend.read("(function(){try{window.chrome.webview.postMessage('poschat-probe');"
+                     "window.chrome.webview.postMessage({probe:1});return 'sent'}catch(e){return 'threw'}})()")
+        time.sleep(1.5)
+    finally:
+        backend._invoke(lambda: backend.view.CoreWebView2.remove_WebMessageReceived(on_message))
+    return len(got)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -130,9 +150,10 @@ def main():
                     break
                 time.sleep(0.25)
             iso["hostProbe"] = probe
+            iso["messagesReceived"] = message_probe(b._backend)
             step("isolation", iso.get("pywebview") == "undefined" and probe in ("none", "blocked")
                  and iso.get("webkitHandlers") in ("undefined", None)
-                 and iso.get("postMessage") in ("undefined", None), iso)
+                 and iso["messagesReceived"] in (0, None), iso)
             try:
                 browser.normalize("file:///C:/Windows/win.ini")
                 step("file url blocked", False, "normalize accepted file:")
