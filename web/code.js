@@ -210,6 +210,8 @@ async function codeShow() {
   }
   await codeRefreshState();
   api().code_set_active(true);
+  // 1.16: '작업'(Code 에이전트) 탭. 열린 파일이 없으면 작업 탭을 보인다
+  if (window.caOpen) await caOpen(!CODE.tabs.some((t) => t.kind !== "agent"));
   codeRenderActive();
   codeCheckDisk();
   codeGitRefresh(true);  // 파일 트리에 Git 상태 표시
@@ -241,8 +243,9 @@ async function codeRefreshState() {
     if (CODE.tabs.some((t) => t.kind === "file" && t.editor.isDirty())) {
       toast("작업 폴더가 바뀌었습니다. 저장하지 않은 탭은 그대로 둡니다(예전 폴더의 파일)");
     } else {
-      for (const t of [...CODE.tabs]) codeCloseTab(t, true);
+      for (const t of [...CODE.tabs]) if (t.kind !== "agent") codeCloseTab(t, true);
     }
+    if (window.caRefresh) caRefresh();
     CODE.tree.clear();
     CODE.expanded = new Set([""]);
     CODE.git = null;
@@ -515,7 +518,8 @@ function codeWelcome() {
   const st = CODE.state;
   return h("div", { class: "code-welcome" },
     h("h3", {}, "POSCHAT Code"),
-    h("p", {}, "왼쪽에서 파일을 열어 고치고 저장하세요(Ctrl+S). 코드를 선택해 'AI에게 묻기'로 채팅에 보낼 수 있습니다."),
+    h("p", {}, "맨 앞 '작업' 탭에서 할 일을 맡기면 에이전트가 코드를 읽고·고치고·실행해 확인합니다. " +
+      "직접 고치려면 왼쪽에서 파일을 열고 저장하세요(Ctrl+S). 코드를 선택해 'AI에게 묻기'로 채팅에 보낼 수도 있습니다."),
     h("ul", {},
       h("li", {}, "에이전트가 파일을 고치면 아래 '변경 검토'에 뜨고, 덩어리마다 받아들이거나 거부합니다."),
       codeFeature("git") ? h("li", {}, "Git: 바뀐 파일·차이 보기, 고른 파일만 스테이지, 커밋 메시지 제안.") : null,
@@ -529,12 +533,14 @@ function codeRenderTabs() {
   bar.replaceChildren(...CODE.tabs.map((t) => {
     const dirty = t.kind === "file" && t.editor.isDirty();
     const label = t.kind === "review" ? `검토: ${codeBase(t.path)}` : t.kind === "diff" ? `diff: ${codeBase(t.path)}` : t.title;
-    return h("div", { class: "code-tab" + (t.id === CODE.active ? " active" : "") + (dirty ? " dirty" : ""), role: "tab",
-      "aria-selected": String(t.id === CODE.active), title: t.path || label },
-      h("button", { class: "code-tab-name", onclick: () => codeActivate(t.id) },
-        t.kind === "review" ? h("span", { class: "code-tab-kind" }, "±") : null, label,
+    const agent = t.kind === "agent";  // 1.16: Code 에이전트 '작업' 탭은 맨 앞에 고정(닫지 않음)
+    return h("div", { class: "code-tab" + (t.id === CODE.active ? " active" : "") + (dirty ? " dirty" : "") + (agent ? " agent" : ""), role: "tab",
+      "aria-selected": String(t.id === CODE.active), title: agent ? "Code 에이전트: 작업을 맡기고 진행을 봅니다" : t.path || label },
+      h("button", { class: "code-tab-name", id: agent ? "code-tab-agent" : null, onclick: () => codeActivate(t.id) },
+        t.kind === "review" ? h("span", { class: "code-tab-kind" }, "±") : null,
+        agent ? h("span", { class: "code-tab-kind" }, "✦") : null, label,
         dirty ? h("span", { class: "code-dirty", "aria-label": "저장하지 않음" }, "●") : null),
-      h("button", { class: "code-tab-close", title: "탭 닫기", "aria-label": `${label} 탭 닫기`, html: ICONS.close,
+      agent ? null : h("button", { class: "code-tab-close", title: "탭 닫기", "aria-label": `${label} 탭 닫기`, html: ICONS.close,
         onclick: () => codeCloseTab(t) }));
   }));
 }
@@ -1223,6 +1229,10 @@ async function codeRunAsk(r) {
 /* ---------- 백엔드 이벤트 ---------- */
 
 function codeEvent(ev) {
+  if (window.caEvent && ev.kind && (ev.kind.startsWith("agent_") || ev.kind === "run_output")) {
+    caEvent(ev);
+    if (ev.kind !== "run_output") return;
+  }
   if (ev.kind === "proposal") {
     if (!CODE.state) return;
     const list = CODE.state.proposals;
