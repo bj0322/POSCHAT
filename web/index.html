@@ -8,6 +8,7 @@
   <title>POSCHAT</title>
   <link rel="stylesheet" href="vendor/katex/katex.min.css">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="code.css">
 </head>
 <body>
 <div id="app">
@@ -25,6 +26,9 @@
     </button>
     <button class="new-chat po-entry" id="btn-paper" aria-pressed="false" title="채팅 옆에 논문 PDF를 열고, 선택한 문장·쪽·그림을 AI에게 묻습니다">
       <span data-icon="paper"></span>논문
+    </button>
+    <button class="new-chat po-entry" id="btn-code" aria-pressed="false" title="채팅 옆에 작업 폴더의 코드를 열어 고치고, 에이전트의 변경을 검토하고, 명령을 실행합니다">
+      <span data-icon="code"></span>코드
     </button>
     <button class="new-chat po-entry" id="btn-research" title="논문 라이브러리·BibTeX·작업 폴더 문서 검색">
       <span data-icon="book"></span>연구 라이브러리
@@ -104,5 +108,7 @@
 <script src="hub.js"></script>
 <script src="browser.js"></script>
 <script src="paper.js"></script>
+<script src="vendor/codemirror/codemirror.min.js"></script>
+<script src="code.js"></script>
 </body>
 </html>

@@ -1,0 +1,1284 @@
+// SPDX-FileCopyrightText: 2026 Beomjoon Kim
+// SPDX-License-Identifier: AGPL-3.0-only
+"use strict";
+
+/* ---------- POSCHAT Code(1.15): 채팅 옆 코드 편집기 ----------
+   오른쪽 작업 영역(브라우저·논문과 같은 자리)에 파일 트리 + 편집기(CodeMirror 6, web/vendor/codemirror) + 아래 패널
+   (변경 검토 · Git · 실행)을 둔다. 파일 읽기·쓰기·Git·실행은 모두 Python(code_api.py)이 하고, 작업 폴더 밖에는 닿지 않는다.
+   화면을 닫거나 다른 화면(브라우저·논문)으로 바꿔도 열린 탭과 저장하지 않은 내용은 그대로 남는다(숨기기만 한다).
+   v1.16 Lab이 다시 쓸 수 있게 편집기(codeEditorTab)와 실행 패널(codeRunPanel)을 나눠 둔다. */
+
+Object.assign(ICONS, {
+  code: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m8 7-5 5 5 5"/><path d="m16 7 5 5-5 5"/><path d="m14 4-4 16"/></svg>',
+  expand: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/></svg>',
+  save: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M8 3v5h7V3"/><rect x="7" y="13" width="10" height="6" rx="1"/></svg>',
+  undo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>',
+  redo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+  wrap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M3 12h15a3 3 0 0 1 0 6h-4"/><path d="m16 16-2 2 2 2"/><path d="M3 18h7"/></svg>',
+  folderplus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 10v6M9 13h6"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>',
+  play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5v14l12-7Z"/></svg>',
+  files: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7Z"/><path d="M15 3v4h4"/><path d="M4 7v12a2 2 0 0 0 2 2h9"/></svg>',
+});
+
+const CODE = {
+  open: false, state: null, tabs: [], active: null, seq: 0, tree: new Map(), expanded: new Set([""]),
+  bottom: "review", bottomOpen: true, git: null, gitBusy: false, gitPick: new Set(), runs: [], runOut: new Map(),
+  runShown: null, full: false, filesOpen: true, search: null, dark: false, ready: false, loadingTree: false,
+};
+const CODE_PRESETS = [
+  ["explain", "코드 설명"], ["bug", "오류 분석"], ["perf", "성능 개선"], ["refactor", "리팩터링 제안"],
+  ["comment", "주석 생성"], ["test", "테스트 코드 제안"], ["rtl", "RTL 로직 검토"],
+];
+const CODE_STATUS = { pending: "검토 대기", applied: "적용함", partial: "일부 적용", edited: "고쳐서 적용", rejected: "거부함",
+  cancelled: "끝남(적용 안 함)", conflict: "충돌", auto: "자동 적용" };
+const CODE_DRAFTS = "poschat.code.drafts";
+
+/* ---------- 공용 ---------- */
+
+async function codeCall(promise, quiet = false) {
+  let res;
+  try {
+    res = await promise;
+  } catch (e) {
+    if (!quiet) toast(e.message || String(e));
+    return null;
+  }
+  if (res && res.ok === false) {
+    if (!quiet && !res.conflict) toast(res.error || "코드 오류");
+    return res.conflict ? res : null;
+  }
+  return res;
+}
+
+function codeAskText(title, value = "", placeholder = "") {
+  return new Promise((resolve) => {
+    const input = h("input", { type: "text", class: "code-input", value, placeholder, "aria-label": title,
+      spellcheck: "false", autocomplete: "off" });
+    let done = false;
+    const finish = (v, close) => { done = true; close(); resolve(v); };
+    const m = modal({
+      title, body: h("div", {}, input),
+      buttons: [{ label: "취소", action: (close) => finish(null, close) },
+        { label: "확인", class: "primary", action: (close) => finish(input.value.trim(), close) }],
+      onClose: () => { if (!done) resolve(null); },
+    });
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); finish(input.value.trim(), m.close); } });
+    setTimeout(() => { input.focus(); input.select(); }, 30);
+  });
+}
+
+function codeChoose(title, body, buttons) {
+  return new Promise((resolve) => {
+    let done = false;
+    modal({
+      title, wide: true, body,
+      buttons: buttons.map((b) => ({ label: b.label, class: b.class, action: (close) => { done = true; close(); resolve(b.value); } })),
+      onClose: () => { if (!done) resolve(null); },
+    });
+  });
+}
+
+const codeBase = (p) => String(p || "").split("/").pop();
+const codeDir = (p) => { const i = String(p || "").lastIndexOf("/"); return i < 0 ? "" : p.slice(0, i); };
+const codeFeature = (name) => !!(CODE.state && CODE.state.features && CODE.state.features[name]);
+
+/* ---------- 창 ---------- */
+
+function codePane() {
+  let pane = $("#code-pane");
+  if (pane) return pane;
+  pane = h("section", { id: "code-pane", "aria-label": "POSCHAT Code", hidden: true });
+  const resizer = h("div", { id: "code-resizer", role: "separator", "aria-orientation": "vertical", tabindex: "0",
+    "aria-label": "코드 화면 너비 조절 (왼쪽·오른쪽 화살표)", title: "끌어서 너비 조절", hidden: true });
+  resizer.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    resizer.setPointerCapture(e.pointerId);
+    const move = (ev) => codeSetWidth(window.innerWidth - ev.clientX);
+    const up = () => { resizer.removeEventListener("pointermove", move); resizer.removeEventListener("pointerup", up); };
+    resizer.addEventListener("pointermove", move);
+    resizer.addEventListener("pointerup", up);
+  });
+  resizer.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    codeSetWidth(pane.getBoundingClientRect().width + (e.key === "ArrowLeft" ? 40 : -40));
+  });
+  $("#app").append(resizer, pane);
+  try {
+    const w = Number(localStorage.getItem("poschat.codeWidth"));
+    if (w) codeSetWidth(w);
+    const b = Number(localStorage.getItem("poschat.codeBottom"));
+    if (b) document.documentElement.style.setProperty("--code-bottom-h", b + "px");
+  } catch { /* 기본 너비 */ }
+  codeBuild(pane);
+  return pane;
+}
+
+function codeSetWidth(px) {
+  const max = Math.max(420, window.innerWidth - 380);
+  const w = Math.round(Math.min(max, Math.max(420, px)));
+  document.documentElement.style.setProperty("--code-w", w + "px");
+  try { localStorage.setItem("poschat.codeWidth", String(w)); } catch { /* 무시 */ }
+}
+
+function codeBuild(pane) {
+  const btn = (icon, label, onclick, extra = {}) => h("button", { class: "icon-btn", title: label, "aria-label": label,
+    html: ICONS[icon], onclick, ...extra });
+  const bottomResizer = h("div", { class: "code-hresizer", role: "separator", "aria-orientation": "horizontal", tabindex: "0",
+    "aria-label": "아래 패널 높이 조절 (위·아래 화살표)", title: "끌어서 높이 조절" });
+  bottomResizer.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    bottomResizer.setPointerCapture(e.pointerId);
+    const rect = pane.getBoundingClientRect();
+    const move = (ev) => codeSetBottom(rect.bottom - ev.clientY);
+    const up = () => { bottomResizer.removeEventListener("pointermove", move); bottomResizer.removeEventListener("pointerup", up); };
+    bottomResizer.addEventListener("pointermove", move);
+    bottomResizer.addEventListener("pointerup", up);
+  });
+  bottomResizer.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    codeSetBottom($(".code-bottom").getBoundingClientRect().height + (e.key === "ArrowUp" ? 30 : -30));
+  });
+  pane.append(
+    h("div", { class: "code-head" },
+      btn("files", "파일 목록 보이기·숨기기", () => codeToggleFiles(), { id: "code-files-toggle", "aria-pressed": "true" }),
+      h("h2", { class: "code-title", id: "code-title" }, "코드"),
+      h("small", { class: "code-ws", id: "code-ws" }, ""),
+      btn("expand", "코드 화면 크게 보기(채팅 숨기기)", () => codeToggleFull(), { id: "code-full", "aria-pressed": "false" }),
+      btn("close", "코드 화면 닫기", () => codeLeave())),
+    h("div", { class: "code-body", id: "code-body" },
+      h("aside", { class: "code-files", id: "code-files", "aria-label": "파일" }),
+      h("div", { class: "code-main" },
+        h("div", { class: "code-tabs", id: "code-tabs", role: "tablist", "aria-label": "열린 파일" }),
+        h("div", { class: "code-toolbar", id: "code-toolbar" }),
+        h("div", { class: "code-notice", id: "code-notice", role: "status", "aria-live": "polite", hidden: true }),
+        h("div", { class: "code-stack", id: "code-stack" }),
+        h("div", { class: "code-statusbar", id: "code-statusbar" }))),
+    bottomResizer,
+    h("div", { class: "code-bottom", id: "code-bottom" },
+      h("div", { class: "code-bottom-tabs", role: "tablist", "aria-label": "아래 패널" },
+        ...[["review", "변경 검토"], ["git", "Git"], ["run", "실행"]].map(([k, label]) =>
+          h("button", { class: "code-btab", role: "tab", "data-k": k, id: `code-btab-${k}`, onclick: () => codeBottom(k) }, label)),
+        h("span", { style: "flex:1" }),
+        btn("minus", "아래 패널 접기·펴기", () => codeBottom(CODE.bottom, true), { id: "code-bottom-toggle" })),
+      h("div", { class: "code-bottom-body", id: "code-bottom-body" })));
+}
+
+function codeSetBottom(px) {
+  const h0 = Math.round(Math.min(window.innerHeight * 0.7, Math.max(90, px)));
+  document.documentElement.style.setProperty("--code-bottom-h", h0 + "px");
+  try { localStorage.setItem("poschat.codeBottom", String(h0)); } catch { /* 무시 */ }
+}
+
+function codeToggleFiles(on = !CODE.filesOpen) {
+  CODE.filesOpen = on;
+  $("#code-files").hidden = !on;
+  $("#code-files-toggle").setAttribute("aria-pressed", String(on));
+}
+
+function codeToggleFull(on = !CODE.full) {
+  CODE.full = on;
+  $("#app").classList.toggle("code-full", on);
+  $("#code-full").setAttribute("aria-pressed", String(on));
+  $("#code-full").classList.toggle("active", on);
+}
+
+async function codeToggle() {
+  if (CODE.open) return codeLeave();
+  return codeShow();
+}
+
+async function codeShow() {
+  if (window.BR && BR.open && window.browserClose) await browserClose();  // 오른쪽 화면은 하나만
+  if (window.paperLeave) paperLeave();
+  if (window.pageLeave) pageLeave();
+  if (window.poLeave) poLeave();
+  CODE.open = true;
+  const pane = codePane();
+  pane.hidden = false;
+  $("#code-resizer").hidden = isNarrow();
+  $("#app").classList.add("code-open");
+  $("#btn-code")?.classList.add("active");
+  $("#btn-code")?.setAttribute("aria-pressed", "true");
+  if (isNarrow()) { setCollapsed(true); if (CODE.tabs.length) codeToggleFiles(false); }
+  if (!window.CM) {
+    $("#code-stack").replaceChildren(h("p", { class: "muted code-empty" }, "편집기 모듈(CodeMirror)을 불러오지 못했습니다."));
+    return;
+  }
+  await codeRefreshState();
+  api().code_set_active(true);
+  codeRenderActive();
+  codeCheckDisk();
+  codeGitRefresh(true);  // 파일 트리에 Git 상태 표시
+}
+
+function codeLeave() {
+  if (!CODE.open) return;
+  CODE.open = false;
+  codeToggleFull(false);
+  $("#code-pane").hidden = true;
+  $("#code-resizer").hidden = true;
+  $("#app").classList.remove("code-open");
+  $("#btn-code")?.classList.remove("active");
+  $("#btn-code")?.setAttribute("aria-pressed", "false");
+  // 닫혀 있으면 에이전트 수정은 예전 승인 창으로 묻는다(대기 중인 제안도 넘긴다)
+  api().code_set_active(false).then((r) => { if (r && r.moved) toast("검토 중이던 변경을 승인 창으로 넘겼습니다"); });
+}
+
+async function codeRefreshState() {
+  const st = await codeCall(api().code_state());
+  if (!st) return;
+  const changed = CODE.state && CODE.state.workspace.path !== st.workspace.path;
+  CODE.state = st;
+  CODE.runs = st.runs || [];
+  $("#code-ws").textContent = st.workspace.name ? `· ${st.workspace.name}` : "";
+  $("#code-ws").title = st.workspace.path || "";
+  for (const k of ["git", "run"]) $(`#code-btab-${k}`).hidden = !codeFeature(k);
+  if (changed) {
+    if (CODE.tabs.some((t) => t.kind === "file" && t.editor.isDirty())) {
+      toast("작업 폴더가 바뀌었습니다. 저장하지 않은 탭은 그대로 둡니다(예전 폴더의 파일)");
+    } else {
+      for (const t of [...CODE.tabs]) codeCloseTab(t, true);
+    }
+    CODE.tree.clear();
+    CODE.expanded = new Set([""]);
+    CODE.git = null;
+  }
+  codeRenderFiles();
+  if (st.workspace.path && !CODE.tree.has("")) codeLoadDir("");
+  codeBottom(codeFeature(CODE.bottom) || CODE.bottom === "review" ? CODE.bottom : "review");
+  codeRenderTabs();
+}
+
+/* ---------- 파일 트리 ---------- */
+
+function codeRenderFiles() {
+  const box = $("#code-files");
+  const st = CODE.state;
+  if (!st || !st.workspace.path) {
+    box.replaceChildren(h("div", { class: "code-nows" },
+      h("p", {}, "작업 폴더를 먼저 고르세요. 코드 화면은 작업 폴더 안의 파일만 열고 저장합니다."),
+      h("button", { class: "btn primary", onclick: async () => { await chooseWorkspace(); codeRefreshState(); } }, "작업 폴더 고르기")));
+    return;
+  }
+  const tool = (icon, label, onclick, extra = {}) => h("button", { class: "icon-btn", title: label, "aria-label": label,
+    html: ICONS[icon], onclick, ...extra });
+  const q = h("input", { type: "search", class: "code-search", id: "code-search", placeholder: "파일 찾기 (Enter)",
+    "aria-label": "파일 이름 또는 내용 찾기", spellcheck: "false", autocomplete: "off" });
+  const mode = h("select", { class: "code-search-mode", "aria-label": "찾는 방식" },
+    h("option", { value: "name" }, "이름"), h("option", { value: "text" }, "내용"));
+  q.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); codeSearch(q.value, mode.value); }
+    if (e.key === "Escape") { q.value = ""; CODE.search = null; codeRenderTree(); }
+  });
+  const hidden = st.settings.show_hidden;
+  box.replaceChildren(
+    h("div", { class: "code-files-bar" },
+      tool("plus", "새 파일", () => codeNew("file")),
+      tool("folderplus", "새 폴더", () => codeNew("dir")),
+      tool("eye", hidden ? "숨김 파일 숨기기" : "숨김 파일 보이기", () => codeSetting({ show_hidden: !hidden }),
+        { "aria-pressed": String(hidden), class: "icon-btn" + (hidden ? " active" : "") }),
+      tool("retry", "새로 고침", () => { CODE.tree.clear(); codeLoadDir(""); for (const d of CODE.expanded) if (d) codeLoadDir(d); codeGitRefresh(true); }),
+      tool("gear", "제외할 폴더 설정", () => codeExcludes())),
+    h("div", { class: "code-search-row" }, q, mode),
+    h("div", { class: "code-tree", id: "code-tree", role: "tree", "aria-label": "작업 폴더 파일" }));
+  codeRenderTree();
+}
+
+async function codeLoadDir(path) {
+  const res = await codeCall(api().code_list(path), true);
+  if (!res) {
+    CODE.tree.set(path, { items: [], error: true });
+  } else {
+    CODE.tree.set(path, res);
+  }
+  codeRenderTree();
+}
+
+function codeGitMark(path) {
+  if (!CODE.git || !CODE.git.files) return null;
+  const f = CODE.git.files.find((x) => x.path === path);
+  if (!f) return null;
+  const letter = f.conflict ? "U" : f.untracked ? "?" : (f.y !== "." ? f.y : f.x);
+  return h("span", { class: `code-git-mark git-${f.conflict ? "u" : f.untracked ? "n" : f.staged && !f.unstaged ? "s" : "m"}`,
+    title: f.label + (f.staged ? " (스테이지됨)" : "") }, letter);
+}
+
+function codeRenderTree() {
+  const box = $("#code-tree");
+  if (!box) return;
+  if (CODE.search) return codeRenderSearch(box);
+  const recent = ((CODE.state && CODE.state.recent) || []).slice(0, 6);
+  const out = [];
+  if (recent.length) {
+    out.push(h("details", { class: "code-recent", open: true },
+      h("summary", {}, "최근 파일"),
+      ...recent.map((p) => h("button", { class: "code-row file", title: p, onclick: () => codeOpenFile(p) },
+        h("span", { class: "code-row-name" }, codeBase(p)), h("small", {}, codeDir(p))))));
+  }
+  const walk = (dir, depth) => {
+    const node = CODE.tree.get(dir);
+    if (!node) {
+      out.push(h("div", { class: "code-row muted", style: `--d:${depth}` }, "불러오는 중…"));
+      return;
+    }
+    if (node.error) {
+      out.push(h("div", { class: "code-row muted", style: `--d:${depth}` }, "읽지 못했습니다"));
+      return;
+    }
+    for (const it of node.items) {
+      const open = it.dir && CODE.expanded.has(it.path);
+      const active = CODE.tabs.find((t) => t.id === CODE.active);
+      const row = h("div", { class: "code-row" + (it.dir ? " dir" : " file") + (active && active.path === it.path ? " current" : ""),
+        role: "treeitem", "aria-expanded": it.dir ? String(open) : null, tabindex: "0", style: `--d:${depth}`,
+        title: it.path + (it.link ? " (링크: 따라가지 않습니다)" : ""), "data-path": it.path },
+        h("span", { class: "code-caret" }, it.dir ? (open ? "▾" : "▸") : ""),
+        h("span", { class: "code-row-name" }, it.name + (it.link ? " ↪" : "")),
+        it.dir ? null : codeGitMark(it.path),
+        h("span", { class: "code-row-tools" },
+          h("button", { class: "icon-btn", title: "이름 바꾸기", "aria-label": `${it.name} 이름 바꾸기`, html: ICONS.pencil,
+            onclick: (e) => { e.stopPropagation(); codeRename(it); } }),
+          h("button", { class: "icon-btn", title: "지우기", "aria-label": `${it.name} 지우기`, html: ICONS.trash,
+            onclick: (e) => { e.stopPropagation(); codeDelete(it); } })));
+      const act = () => {
+        if (it.link) return toast("링크는 따라가지 않습니다. 링크가 가리키는 파일을 작업 폴더 안에서 여세요");
+        if (it.dir) {
+          if (open) CODE.expanded.delete(it.path); else { CODE.expanded.add(it.path); if (!CODE.tree.has(it.path)) codeLoadDir(it.path); }
+          codeRenderTree();
+        } else codeOpenFile(it.path);
+      };
+      row.addEventListener("click", act);
+      row.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); } });
+      out.push(row);
+      if (open) walk(it.path, depth + 1);
+    }
+    if (node.more) out.push(h("div", { class: "code-row muted", style: `--d:${depth}` }, `… ${node.more}개 더 있음(찾기로 여세요)`));
+    if (!dir && !node.items.length) out.push(h("p", { class: "muted code-empty" }, "빈 폴더입니다. '새 파일'로 만들어 보세요."));
+  };
+  walk("", 0);
+  box.replaceChildren(...out);
+}
+
+async function codeSearch(query, mode) {
+  if (!String(query || "").trim()) { CODE.search = null; return codeRenderTree(); }
+  CODE.search = { query, mode, busy: true, results: [] };
+  codeRenderTree();
+  const res = await codeCall(api().code_search(query, mode, false, false));
+  CODE.search = { query, mode, busy: false, results: res ? res.results : [], truncated: res && res.truncated };
+  codeRenderTree();
+}
+
+function codeRenderSearch(box) {
+  const s = CODE.search;
+  box.replaceChildren(
+    h("div", { class: "code-search-head" },
+      h("span", {}, s.busy ? "찾는 중…" : `'${s.query}' ${s.results.length}개${s.truncated ? "+" : ""}`),
+      h("button", { class: "btn", onclick: () => { CODE.search = null; $("#code-search").value = ""; codeRenderTree(); } }, "트리로")),
+    ...s.results.map((r) => h("button", { class: "code-row file", title: r.path, onclick: () => codeOpenFile(r.path, r.line, r.col) },
+      h("span", { class: "code-row-name" }, r.line ? `${codeBase(r.path)}:${r.line}` : codeBase(r.path)),
+      h("small", {}, r.text || codeDir(r.path)))),
+    !s.busy && !s.results.length ? h("p", { class: "muted code-empty" }, "찾지 못했습니다.") : null);
+}
+
+async function codeNew(kind) {
+  const active = CODE.tabs.find((t) => t.id === CODE.active);
+  const base = active && active.path ? codeDir(active.path) : "";
+  const name = await codeAskText(kind === "dir" ? "새 폴더" : "새 파일", base ? base + "/" : "",
+    "작업 폴더 기준 경로 (예: rtl/top.sv)");
+  if (!name) return;
+  const res = await codeCall(api().code_create(name, kind));
+  if (!res) return;
+  const dir = codeDir(res.created.path);
+  CODE.expanded.add(dir);
+  await codeLoadDir(dir);
+  if (kind !== "dir") codeOpenFile(res.created.path);
+}
+
+async function codeRename(it) {
+  const name = await codeAskText("이름 바꾸기", it.path);
+  if (!name || name === it.path) return;
+  const res = await codeCall(api().code_rename(it.path, name));
+  if (!res) return;
+  for (const t of CODE.tabs) if (t.kind === "file" && t.path === it.path) { t.path = res.renamed.path; t.title = codeBase(t.path); }
+  await codeLoadDir(codeDir(it.path));
+  if (codeDir(res.renamed.path) !== codeDir(it.path)) await codeLoadDir(codeDir(res.renamed.path));
+  codeRenderTabs();
+}
+
+async function codeDelete(it) {
+  const ok = await codeChoose(`지우기: ${it.name}`,
+    h("p", {}, it.dir ? "빈 폴더만 지울 수 있습니다." : "파일을 POSCHAT 데이터 폴더의 휴지통(code-trash)으로 옮깁니다. 필요하면 거기서 되살릴 수 있습니다."),
+    [{ label: "취소", value: false }, { label: "지우기", class: "danger", value: true }]);
+  if (!ok) return;
+  const res = await codeCall(api().code_delete(it.path));
+  if (!res) return;
+  for (const t of [...CODE.tabs]) if (t.kind === "file" && t.path === it.path) codeCloseTab(t, true);
+  await codeLoadDir(codeDir(it.path));
+  toast(res.deleted.trash ? "휴지통으로 옮겼습니다" : "지웠습니다");
+}
+
+async function codeSetting(s) {
+  const res = await codeCall(api().code_save_settings(s));
+  if (!res) return;
+  CODE.state.settings = res.settings;
+  if ("show_hidden" in s || "exclude" in s) { CODE.tree.clear(); codeRenderFiles(); codeLoadDir(""); for (const d of CODE.expanded) if (d) codeLoadDir(d); }
+  if ("wrap" in s) for (const t of CODE.tabs) if (t.editor) t.editor.setWrap(res.settings.wrap);
+  if ("wrap" in s || "review" in s) codeRenderToolbar();
+}
+
+async function codeExcludes() {
+  const st = CODE.state.settings;
+  const area = h("textarea", { class: "code-input", rows: "4", "aria-label": "제외할 폴더·파일 이름(쉼표로 구분)" }, st.exclude.join(", "));
+  const review = h("select", { "aria-label": "에이전트 수정 검토" },
+    h("option", { value: "auto", selected: st.review === "auto" }, "Code 화면이 열려 있으면 여기서 덩어리별로 검토"),
+    h("option", { value: "off", selected: st.review === "off" }, "항상 예전 승인 창으로"));
+  const timeout = h("input", { type: "number", min: "10", max: "3600", value: String(st.timeout), class: "code-input", "aria-label": "명령 실행 제한 시간(초)" });
+  const ok = await codeChoose("코드 화면 설정", h("div", { class: "code-settings" },
+    h("label", {}, "파일 트리·찾기에서 뺄 이름(쉼표로 구분)"), area,
+    h("p", { class: "muted" }, "기본값: .git, node_modules, .venv, __pycache__, dist, build 같은 큰 폴더. 비우면 모두 보입니다."),
+    h("label", {}, "에이전트가 파일을 고칠 때"), review,
+    h("p", { class: "muted" }, `승인이 필요한지는 설정 → 권한(지금: ${CODE.state.permission})이 정합니다. 자동 허용이면 바로 적용하고 검토 목록에 '자동 적용'으로 남깁니다.`),
+    h("label", {}, "실행 패널 명령 제한 시간(초)"), timeout),
+  [{ label: "취소", value: false }, { label: "저장", class: "primary", value: true }]);
+  if (!ok) return;
+  codeSetting({ exclude: area.value.split(",").map((x) => x.trim()).filter(Boolean), review: review.value,
+    timeout: Number(timeout.value) || 600 });
+}
+
+/* ---------- 탭·편집기 ---------- */
+
+function codeNewTab(t) {
+  t.id = "t" + (++CODE.seq);
+  t.el = h("div", { class: "code-tabpane", role: "tabpanel", "data-tab": t.id, hidden: true });
+  $("#code-stack").append(t.el);
+  CODE.tabs.push(t);
+  return t;
+}
+
+async function codeOpenFile(path, line, col) {
+  if (!CODE.open) await codeShow();
+  const existing = CODE.tabs.find((t) => t.kind === "file" && t.path === path);
+  if (existing) {
+    codeActivate(existing.id);
+    if (line) existing.editor.gotoLine(line, col);
+    return existing;
+  }
+  const res = await codeCall(api().code_open(path));
+  if (!res) return null;
+  const f = res.file;
+  if (f.binary) { toast(f.reason); return null; }
+  const t = codeNewTab({ kind: "file", path: f.path, title: f.name, file: f });
+  t.editor = codeEditorTab(t.el, f.text, f.language, f.readonly, (ed) => codeOnChange(t), () => codeSave(t));
+  if (isNarrow() && CODE.filesOpen) codeToggleFiles(false);
+  codeActivate(t.id);
+  if (line) t.editor.gotoLine(line, col);
+  codeOfferDraft(t);
+  if (CODE.state) {
+    CODE.state.recent = [f.path, ...(CODE.state.recent || []).filter((p) => p !== f.path)].slice(0, 15);
+  }
+  return t;
+}
+
+/* 편집기 하나(v1.16 Lab에서도 쓴다): CM.createEditor를 앱 테마·설정에 맞춰 감싼다 */
+function codeEditorTab(parent, text, lang, readOnly, onChange, onSave) {
+  return CM.createEditor({
+    parent, doc: text, lang, readOnly, dark: CODE.dark, wrap: !!(CODE.state && CODE.state.settings.wrap),
+    label: "코드 편집기", onChange, onSave, onCursor: () => codeRenderStatus(),
+  });
+}
+
+function codeActivate(id) {
+  CODE.active = id;
+  for (const t of CODE.tabs) t.el.hidden = t.id !== id;
+  codeRenderTabs();
+  codeRenderActive();
+}
+
+function codeRenderActive() {
+  codeRenderToolbar();
+  codeRenderNotice();
+  codeRenderStatus();
+  const t = CODE.tabs.find((x) => x.id === CODE.active);
+  if (!CODE.tabs.length) {
+    const stack = $("#code-stack");
+    if (!stack.querySelector(".code-welcome")) stack.append(codeWelcome());
+  } else $("#code-stack .code-welcome")?.remove();
+  if (t && t.kind === "file") setTimeout(() => t.editor.focus(), 0);
+  document.querySelectorAll("#code-tree .code-row.current").forEach((el) => el.classList.remove("current"));
+  if (t && t.path) document.querySelector(`#code-tree .code-row[data-path="${CSS.escape(t.path)}"]`)?.classList.add("current");
+}
+
+function codeWelcome() {
+  const st = CODE.state;
+  return h("div", { class: "code-welcome" },
+    h("h3", {}, "POSCHAT Code"),
+    h("p", {}, "왼쪽에서 파일을 열어 고치고 저장하세요(Ctrl+S). 코드를 선택해 'AI에게 묻기'로 채팅에 보낼 수 있습니다."),
+    h("ul", {},
+      h("li", {}, "에이전트가 파일을 고치면 아래 '변경 검토'에 뜨고, 덩어리마다 받아들이거나 거부합니다."),
+      codeFeature("git") ? h("li", {}, "Git: 바뀐 파일·차이 보기, 고른 파일만 스테이지, 커밋 메시지 제안.") : null,
+      codeFeature("run") ? h("li", {}, `실행: 작업 폴더에서 명령을 실행합니다(${st ? st.shell : ""}, 매번 승인). Verilator·Icarus Verilog 같은 도구는 설치돼 있으면 씁니다.`) : null,
+      st && st.platform === "android" ? h("li", {}, "안드로이드에서는 열기·강조·찾기·묻기·간단한 편집만 됩니다(명령 실행·Git·덩어리 적용은 PC 앱).") : null));
+}
+
+function codeRenderTabs() {
+  const bar = $("#code-tabs");
+  if (!bar) return;
+  bar.replaceChildren(...CODE.tabs.map((t) => {
+    const dirty = t.kind === "file" && t.editor.isDirty();
+    const label = t.kind === "review" ? `검토: ${codeBase(t.path)}` : t.kind === "diff" ? `diff: ${codeBase(t.path)}` : t.title;
+    return h("div", { class: "code-tab" + (t.id === CODE.active ? " active" : "") + (dirty ? " dirty" : ""), role: "tab",
+      "aria-selected": String(t.id === CODE.active), title: t.path || label },
+      h("button", { class: "code-tab-name", onclick: () => codeActivate(t.id) },
+        t.kind === "review" ? h("span", { class: "code-tab-kind" }, "±") : null, label,
+        dirty ? h("span", { class: "code-dirty", "aria-label": "저장하지 않음" }, "●") : null),
+      h("button", { class: "code-tab-close", title: "탭 닫기", "aria-label": `${label} 탭 닫기`, html: ICONS.close,
+        onclick: () => codeCloseTab(t) }));
+  }));
+}
+
+async function codeCloseTab(t, force = false) {
+  if (!force && t.kind === "file" && t.editor.isDirty()) {
+    const v = await codeChoose(`${t.title}: 저장하지 않은 변경`, h("p", {}, "저장하지 않은 변경이 있습니다. 어떻게 할까요?"),
+      [{ label: "취소", value: null }, { label: "버리고 닫기", class: "danger", value: "drop" }, { label: "저장하고 닫기", class: "primary", value: "save" }]);
+    if (!v) return;
+    if (v === "save" && !(await codeSave(t))) return;
+  }
+  if (t.editor) t.editor.destroy();
+  t.el.remove();
+  if (t.kind === "file") codeDraftDrop(t.path);
+  const i = CODE.tabs.indexOf(t);
+  CODE.tabs.splice(i, 1);
+  if (CODE.active === t.id) CODE.active = CODE.tabs.length ? CODE.tabs[Math.max(0, i - 1)].id : null;
+  if (CODE.active) codeActivate(CODE.active); else { codeRenderTabs(); codeRenderActive(); }
+}
+
+function codeOnChange(t) {
+  const wasDirty = t._dirty;
+  t._dirty = t.editor.isDirty();
+  if (wasDirty !== t._dirty) codeRenderTabs();
+  clearTimeout(t._draftTimer);
+  t._draftTimer = setTimeout(() => codeDraftSave(t), 1500);
+}
+
+function codeRenderToolbar() {
+  const bar = $("#code-toolbar");
+  const t = CODE.tabs.find((x) => x.id === CODE.active);
+  if (!bar) return;
+  if (!t || t.kind !== "file") { bar.replaceChildren(); bar.hidden = true; return; }
+  bar.hidden = false;
+  const btn = (icon, label, onclick, extra = {}) => h("button", { class: "icon-btn", title: label, "aria-label": label,
+    html: ICONS[icon], onclick, ...extra });
+  const wrap = !!CODE.state.settings.wrap;
+  bar.replaceChildren(
+    btn("save", "저장 (Ctrl+S)", () => codeSave(t), { id: "code-save", disabled: t.file.readonly }),
+    btn("undo", "되돌리기 (Ctrl+Z)", () => t.editor.undo()),
+    btn("redo", "다시 하기 (Ctrl+Y)", () => t.editor.redo()),
+    btn("search", "찾기·바꾸기 (Ctrl+F)", () => t.editor.find()),
+    btn("wrap", wrap ? "긴 줄 접지 않기" : "긴 줄 접어 보기", () => codeSetting({ wrap: !wrap }),
+      { "aria-pressed": String(wrap), class: "icon-btn" + (wrap ? " active" : "") }),
+    h("span", { style: "flex:1" }),
+    h("button", { class: "btn code-ask-btn", id: "code-ask", title: "선택한 코드(없으면 현재 함수·블록)를 채팅에 첨부합니다",
+      onclick: (e) => codeAskMenu(t, e.currentTarget) }, h("span", { html: ICONS.spark }), "AI에게 묻기 ▾"));
+}
+
+function codeRenderNotice() {
+  const box = $("#code-notice");
+  const t = CODE.tabs.find((x) => x.id === CODE.active);
+  if (!box) return;
+  const parts = [];
+  if (t && t.kind === "file") {
+    if (t.file.reason) parts.push(h("span", {}, t.file.reason));
+    if (t.file.mixed_newlines) parts.push(h("span", {}, "이 파일은 줄 끝(LF·CRLF)이 섞여 있습니다. 저장하면 많은 쪽으로 맞춥니다."));
+    if (t.diskChanged) {
+      parts.push(h("span", {}, "디스크의 파일이 바뀌었습니다(다른 프로그램·에이전트). "),
+        h("button", { class: "btn", onclick: () => codeReload(t) }, t.editor.isDirty() ? "내 변경 버리고 다시 열기" : "다시 열기"),
+        h("button", { class: "btn", onclick: () => { t.diskChanged = false; codeRenderNotice(); } }, "그대로 두기"));
+    }
+    if (t.draft) {
+      parts.push(h("span", {}, "지난번에 저장하지 않은 내용이 남아 있습니다. "),
+        h("button", { class: "btn", onclick: () => { t.editor.setText(t.draft.text, false); t.draft = null; codeDraftDrop(t.path); codeRenderNotice(); codeRenderTabs(); } }, "되살리기"),
+        h("button", { class: "btn", onclick: () => { t.draft = null; codeDraftDrop(t.path); codeRenderNotice(); } }, "버리기"));
+    }
+  }
+  box.replaceChildren(...parts);
+  box.hidden = !parts.length;
+}
+
+function codeRenderStatus() {
+  const bar = $("#code-statusbar");
+  const t = CODE.tabs.find((x) => x.id === CODE.active);
+  if (!bar) return;
+  if (!t || t.kind !== "file") { bar.textContent = ""; return; }
+  const s = t.editor.selection();
+  const lang = CM.LANGS[t.editor.lang] || CM.LANGS.text;
+  const nl = { "\r\n": "CRLF", "\n": "LF", "\r": "CR" }[t.file.newline] || "LF";
+  const sel = s.empty ? "" : ` · ${s.toLine - s.fromLine + 1}줄 선택`;
+  bar.replaceChildren(...[
+    h("span", {}, `줄 ${s.cursorLine}, 칸 ${s.cursorCol}${sel}`),
+    h("span", { title: lang.tree ? "문법 트리: 강조·들여쓰기·접기·블록 인식" : "줄 단위 강조(키워드·주석·문자열·숫자)만, 접기·블록 인식은 줄 모양으로 짐작" },
+      lang.label + (lang.tree ? "" : " (기본 강조)")),
+    h("span", {}, (t.file.encoding || "utf-8").toUpperCase()), h("span", {}, nl),
+    t.file.readonly ? h("span", { class: "code-ro" }, "읽기 전용") : null].filter(Boolean));
+}
+
+async function codeSave(t, opts = {}) {
+  if (t.file.readonly) { toast("읽기 전용 파일입니다"); return false; }
+  const text = t.editor.getText();
+  const res = await codeCall(api().code_save(t.path, text, t.file.hash, opts.encoding || t.file.encoding, t.file.newline, !!opts.force));
+  if (!res) {
+    return false;
+  }
+  if (res.conflict) {
+    const v = await codeChoose(`${t.title}: 저장 충돌`, h("div", {},
+      h("p", {}, res.error), h("p", { class: "muted" }, "덮어쓰면 다른 곳에서 바꾼 내용은 사라집니다. 다시 열면 내 변경이 사라집니다.")),
+    [{ label: "취소", value: null }, { label: "디스크 내용으로 다시 열기", value: "reload" }, { label: "내 내용으로 덮어쓰기", class: "danger", value: "force" }]);
+    if (v === "force") return codeSave(t, { ...opts, force: true });
+    if (v === "reload") await codeReload(t, true);
+    return false;
+  }
+  if (!res.file) return false;
+  t.file.hash = res.file.hash;
+  if (opts.encoding) t.file.encoding = opts.encoding;
+  t.editor.markClean();
+  t._dirty = false;
+  t.diskChanged = false;
+  codeDraftDrop(t.path);
+  codeRenderTabs();
+  codeRenderNotice();
+  codeRenderStatus();
+  toast(`저장했습니다: ${t.path}`);
+  codeGitRefresh(true);
+  return true;
+}
+
+async function codeReload(t, force = false) {
+  if (!force && t.editor.isDirty()) {
+    const ok = await codeChoose("다시 열기", h("p", {}, "저장하지 않은 내 변경이 사라집니다. 다시 열까요?"),
+      [{ label: "취소", value: false }, { label: "다시 열기", class: "danger", value: true }]);
+    if (!ok) return;
+  }
+  const res = await codeCall(api().code_open(t.path));
+  if (!res) return;
+  t.file = res.file;
+  t.editor.setText(res.file.text);
+  t.editor.setReadOnly(res.file.readonly);
+  t.diskChanged = false;
+  t._dirty = false;
+  codeRenderTabs();
+  codeRenderActive();
+}
+
+/* 창으로 돌아올 때 열린 파일이 디스크에서 바뀌었는지 본다 */
+async function codeCheckDisk() {
+  for (const t of CODE.tabs) {
+    if (t.kind !== "file") continue;
+    const res = await codeCall(api().code_hash(t.path), true);
+    if (!res || res.hash === t.file.hash) continue;
+    if (!t.editor.isDirty() && res.hash !== "absent") await codeReload(t, true);
+    else t.diskChanged = true;
+  }
+  codeRenderNotice();
+}
+
+/* ---------- 저장하지 않은 내용 임시 보관(복구용, 이 기기의 화면 저장소) ---------- */
+
+function codeDrafts() {
+  try { return JSON.parse(localStorage.getItem(CODE_DRAFTS) || "{}"); } catch { return {}; }
+}
+
+function codeDraftSave(t) {
+  if (t.kind !== "file") return;
+  const all = codeDrafts();
+  const key = (CODE.state ? CODE.state.workspace.path : "") + "|" + t.path;
+  if (!t.editor.isDirty()) delete all[key];
+  else {
+    const text = t.editor.getText();
+    if (text.length > 1024 * 1024) return;
+    all[key] = { hash: t.file.hash, text, at: Date.now() };
+  }
+  try { localStorage.setItem(CODE_DRAFTS, JSON.stringify(all)); } catch { /* 저장소가 가득 참 */ }
+}
+
+function codeDraftDrop(path) {
+  const all = codeDrafts();
+  delete all[(CODE.state ? CODE.state.workspace.path : "") + "|" + path];
+  try { localStorage.setItem(CODE_DRAFTS, JSON.stringify(all)); } catch { /* 무시 */ }
+}
+
+function codeOfferDraft(t) {
+  const d = codeDrafts()[(CODE.state ? CODE.state.workspace.path : "") + "|" + t.path];
+  if (d && d.hash === t.file.hash && d.text !== t.file.text) { t.draft = d; codeRenderNotice(); }
+  else if (d) codeDraftDrop(t.path);
+}
+
+/* ---------- AI에게 묻기 ---------- */
+
+function codeAskMenu(t, anchor) {
+  document.querySelector(".code-menu")?.remove();
+  const sel = t.editor.selection();
+  const scope = h("select", { "aria-label": "보낼 범위", class: "code-scope" },
+    h("option", { value: "selection", selected: !sel.empty, disabled: sel.empty }, sel.empty ? "선택한 부분(선택 없음)" : `선택한 부분 (${sel.fromLine}-${sel.toLine}줄)`),
+    h("option", { value: "block", selected: sel.empty }, "현재 함수·블록"),
+    h("option", { value: "file" }, "파일 전체"),
+    h("option", { value: "files" }, "관련 파일 함께(고르기)"));
+  const menu = h("div", { class: "code-menu", role: "menu" },
+    h("label", { class: "code-menu-scope" }, "범위 ", scope),
+    ...CODE_PRESETS.map(([k, label]) => h("button", { role: "menuitem", class: "code-menu-item", "data-preset": k,
+      onclick: () => { menu.remove(); codeAsk(t, scope.value, k); } }, label)),
+    h("p", { class: "muted code-menu-note" }, "보낸 코드는 지금 고른 AI 모델 API로 전송됩니다. 작업 폴더 전체를 보내지 않습니다."));
+  document.body.append(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.top = Math.min(window.innerHeight - menu.offsetHeight - 8, r.bottom + 4) + "px";
+  menu.style.left = Math.max(8, Math.min(window.innerWidth - menu.offsetWidth - 8, r.right - menu.offsetWidth)) + "px";
+  const away = (e) => { if (!menu.contains(e.target) && e.target !== anchor) { menu.remove(); document.removeEventListener("pointerdown", away, true); } };
+  document.addEventListener("pointerdown", away, true);
+  menu.addEventListener("keydown", (e) => { if (e.key === "Escape") { menu.remove(); anchor.focus(); } });
+  (menu.querySelector(".code-menu-item") || scope).focus();
+}
+
+async function codeAsk(t, kind, preset) {
+  const room = S.attachLimits.max_files - S.attach.length;
+  if (room < 1) return toast(`파일은 한 번에 ${S.attachLimits.max_files}개까지 첨부할 수 있습니다`);
+  const ed = t.editor;
+  const req = { path: t.path, kind, preset };
+  if (kind === "selection") {
+    const s = ed.selection();
+    if (s.empty) return toast("묻고 싶은 코드를 먼저 선택하세요");
+    req.text = s.text;
+    req.from_line = s.fromLine;
+    req.to_line = s.toLine;
+    if (s.toLine - s.fromLine < 200) {
+      const from = Math.max(1, s.fromLine - 15);
+      req.context = ed.lineText(from, Math.min(s.lines, s.toLine + 15));
+      req.context_from = from;
+    }
+  } else if (kind === "block") {
+    const b = ed.blockRange();
+    req.text = ed.lineText(b.from, b.to);
+    req.from_line = b.from;
+    req.to_line = b.to;
+  } else if (kind === "file") {
+    req.text = ed.getText();
+    req.from_line = 1;
+    req.to_line = ed.selection().lines;
+  } else if (kind === "files") {
+    const paths = await codePickFiles(t.path, Math.min(6, room));
+    if (!paths) return;
+    req.paths = paths;
+  }
+  const res = await codeCall(api().code_ask(req));
+  if (!res) return;
+  for (const a of res.attachments) S.attach.push({ id: a.id, name: a.name, size: a.size, kind: a.kind, status: "ready", progress: 1 });
+  renderTray();
+  const input = $("#input");
+  if (!input.value.trim()) input.value = res.question;
+  autoresize();
+  updateSend();
+  if (isNarrow() || CODE.full) { codeToggleFull(false); if (isNarrow()) codeLeave(); }
+  input.focus();
+  input.select();
+  toast("코드를 첨부했습니다. 질문을 고쳐 보내세요");
+}
+
+async function codePickFiles(current, max) {
+  const choices = [...new Set([current, ...CODE.tabs.filter((t) => t.kind === "file").map((t) => t.path), ...((CODE.state && CODE.state.recent) || [])])].slice(0, 20);
+  const boxes = choices.map((p) => h("label", { class: "code-pick" },
+    h("input", { type: "checkbox", value: p, checked: p === current }), " ", p));
+  const ok = await codeChoose("함께 보낼 파일", h("div", {},
+    h("p", { class: "muted" }, `열린 파일과 최근 파일에서 ${max}개까지 고르세요. 고른 파일만 AI에게 보냅니다.`), ...boxes),
+  [{ label: "취소", value: false }, { label: "첨부", class: "primary", value: true }]);
+  if (!ok) return null;
+  const paths = boxes.map((b) => b.querySelector("input")).filter((i) => i.checked).map((i) => i.value).slice(0, max);
+  if (!paths.length) { toast("파일을 고르세요"); return null; }
+  return paths;
+}
+
+/* ---------- 아래 패널 ---------- */
+
+function codeBottom(k, toggle = false) {
+  if (toggle && k === CODE.bottom) CODE.bottomOpen = !CODE.bottomOpen;
+  else { CODE.bottom = k; CODE.bottomOpen = true; }
+  $("#code-pane").classList.toggle("bottom-closed", !CODE.bottomOpen);
+  for (const b of document.querySelectorAll(".code-btab")) {
+    b.classList.toggle("active", b.dataset.k === CODE.bottom);
+    b.setAttribute("aria-selected", String(b.dataset.k === CODE.bottom));
+  }
+  codeRenderReviewBadge();
+  if (k === "review") codeRenderReviewList();
+  else if (k === "git") codeRenderGit(true);
+  else if (k === "run") codeRunPanel($("#code-bottom-body"));
+}
+
+/* ---------- 변경 검토 ---------- */
+
+function codeRenderReviewBadge() {
+  const n = ((CODE.state && CODE.state.proposals) || []).filter((p) => p.status === "pending").length;
+  const tab = $("#code-btab-review");
+  if (tab) tab.textContent = n ? `변경 검토 (${n})` : "변경 검토";
+}
+
+function codeRenderReviewList() {
+  if (CODE.bottom !== "review") return;
+  const body = $("#code-bottom-body");
+  const list = (CODE.state && CODE.state.proposals) || [];
+  if (!codeFeature("review")) {
+    body.replaceChildren(h("p", { class: "muted code-empty" }, "이 기기에서는 덩어리별 검토를 쓰지 않습니다. 에이전트 수정은 승인 창에서 전체를 받아들이거나 거부합니다."));
+    return;
+  }
+  if (!list.length) {
+    body.replaceChildren(h("p", { class: "muted code-empty" },
+      "에이전트가 파일을 고치면 여기에 변경 제안이 뜹니다. 받아들이기 전에는 파일에 적용되지 않습니다. ",
+      CODE.state && CODE.state.settings.review === "off" ? "(지금은 '항상 승인 창으로'로 설정돼 있습니다.)" : ""));
+    return;
+  }
+  body.replaceChildren(h("ul", { class: "code-list" }, ...list.map((p) => h("li", {},
+    h("button", { class: "code-item" + (p.status === "pending" ? " pending" : ""), onclick: () => codeOpenReview(p.id) },
+      h("span", { class: `code-badge st-${p.status}` }, CODE_STATUS[p.status] || p.status),
+      h("span", { class: "code-item-path" }, p.path + (p.new_file ? " (새 파일)" : "")),
+      h("small", {}, `+${p.added} −${p.removed} · 덩어리 ${p.hunk_count}개${p.reason ? " · " + p.reason : ""}${p.message ? " · " + p.message : ""}`))))));
+}
+
+async function codeOpenReview(id) {
+  if (!CODE.open) await codeShow();
+  const res = await codeCall(api().code_proposal(id));
+  if (!res) return;
+  const p = res.proposal;
+  let t = CODE.tabs.find((x) => x.kind === "review" && x.proposalId === id);
+  if (!t) t = codeNewTab({ kind: "review", proposalId: id, path: p.path, title: codeBase(p.path) });
+  t.data = p;
+  if (!t.accepted || p.status !== "pending") t.accepted = new Set(p.status === "pending" ? p.hunks.map((x) => x.id) : p.accepted);
+  codeRenderReview(t);
+  codeActivate(t.id);
+}
+
+function codeRenderReview(t) {
+  const p = t.data;
+  const pending = p.status === "pending";
+  const count = () => `${t.accepted.size}/${p.hunks.length}개 받아들임`;
+  const counter = h("span", { class: "code-review-count" }, count());
+  const hunks = p.hunks.map((hk) => {
+    const box = h("input", { type: "checkbox", checked: t.accepted.has(hk.id), disabled: !pending,
+      "aria-label": `덩어리 ${hk.id + 1} 받아들이기` });
+    const el = h("section", { class: "code-hunk" + (t.accepted.has(hk.id) ? "" : " rejected"), "data-hunk": String(hk.id) },
+      h("div", { class: "code-hunk-head" },
+        h("label", {}, box, ` 덩어리 ${hk.id + 1}`),
+        h("code", {}, hk.header),
+        h("span", { class: "code-hunk-stat" }, `+${hk.added} −${hk.removed}`),
+        pending ? h("button", { class: "btn", onclick: () => { t.accepted = new Set([hk.id]); codeRenderReview(t); } }, "이것만") : null),
+      h("pre", { class: "diff code-diff" }, ...hk.lines.map((ln) => h("div", { class: ln.t === "+" ? "add" : ln.t === "-" ? "del" : "" },
+        h("span", { class: "ln" }, ln.old == null ? "" : String(ln.old)), h("span", { class: "ln" }, ln.new == null ? "" : String(ln.new)),
+        h("span", { class: "mk" }, ln.t), ln.text || " "))));
+    box.addEventListener("change", () => {
+      if (box.checked) t.accepted.add(hk.id); else t.accepted.delete(hk.id);
+      el.classList.toggle("rejected", !box.checked);
+      counter.textContent = count();
+    });
+    return el;
+  });
+  t.el.replaceChildren(h("div", { class: "code-review" },
+    h("div", { class: "code-review-head" },
+      h("div", {},
+        h("strong", {}, p.path), p.new_file ? " (새 파일)" : "",
+        h("span", { class: `code-badge st-${p.status}` }, CODE_STATUS[p.status] || p.status),
+        h("div", { class: "muted" }, [p.title, p.reason ? `이유: ${p.reason}` : "", p.source === "agent" ? "에이전트 제안" : "", p.message].filter(Boolean).join(" · "))),
+      p.conflict ? h("p", { class: "code-warn" }, "검토하는 사이에 파일이 바뀌었습니다. 그대로 덮어쓰지 않습니다. '현재 파일에 맞춰 적용'은 덩어리 앞뒤 문맥이 그대로인 경우에만 됩니다.") : null),
+    pending ? h("div", { class: "code-review-actions" },
+      counter,
+      h("button", { class: "btn primary", id: "code-apply", onclick: () => codeApply(t) }, "고른 변경 적용"),
+      h("button", { class: "btn", onclick: () => { t.accepted = new Set(p.hunks.map((x) => x.id)); codeApply(t); } }, "모두 적용"),
+      h("button", { class: "btn danger", id: "code-reject", onclick: () => codeReject(t) }, "모두 거부"),
+      h("button", { class: "btn", onclick: () => codeEditThenApply(t) }, "고쳐서 적용")) : null,
+    ...hunks));
+}
+
+async function codeApply(t, rebase = false) {
+  const p = t.data;
+  const ids = [...t.accepted];
+  if (!ids.length) return codeReject(t);
+  const pre = await codeCall(api().code_review_preview(p.id, ids));
+  if (!pre) return;
+  if (pre.warning) {
+    const ok = await codeChoose("적용 결과 확인", h("div", {}, h("p", {}, pre.warning),
+      h("p", { class: "muted" }, "일부 덩어리만 받아들이면 서로 기대는 변경이 빠져 코드가 깨질 수 있습니다.")),
+    [{ label: "취소", value: false }, { label: "그래도 적용", class: "danger", value: true }]);
+    if (!ok) return;
+  }
+  const res = await codeCall(api().code_review_apply(p.id, ids, null, rebase));
+  if (!res) return;
+  if (res.conflict) {
+    const v = await codeChoose("파일이 바뀌었습니다", h("p", {}, res.error),
+      [{ label: "취소", value: null }, { label: "거부", class: "danger", value: "reject" }, ...(rebase ? [] : [{ label: "현재 파일에 맞춰 적용", class: "primary", value: "rebase" }])]);
+    if (v === "rebase") return codeApply(t, true);
+    if (v === "reject") return codeReject(t);
+    return;
+  }
+  toast(res.result.status === "partial" ? `덩어리 ${res.result.accepted.length}/${res.result.total}개를 적용했습니다` : "변경을 적용했습니다");
+  await codeAfterReview(t, res.proposal);
+}
+
+async function codeReject(t) {
+  const res = await codeCall(api().code_review_reject(t.data.id));
+  if (!res) return;
+  toast("변경을 거부했습니다. 파일은 그대로입니다");
+  await codeAfterReview(t, res.proposal);
+}
+
+async function codeEditThenApply(t) {
+  const p = t.data;
+  const host = h("div", { class: "code-modal-editor" });
+  const nl = /\r\n/.test(p.original || "") ? "\r\n" : "\n";
+  let editor = null;
+  let done = false;
+  const finish = async (close, apply) => {
+    if (!apply) { done = true; close(); editor.destroy(); return; }
+    const text = editor.getText().replace(/\n/g, nl);  // 원래 줄 끝으로
+    const res = await codeCall(api().code_review_apply(p.id, [], text));
+    if (!res || res.conflict) { if (res) toast(res.error); return; }
+    done = true;
+    close();
+    editor.destroy();
+    toast("고친 내용으로 적용했습니다");
+    await codeAfterReview(t, res.proposal);
+  };
+  modal({
+    title: `고쳐서 적용: ${p.path}`, wide: true, body: h("div", {}, h("p", { class: "muted" }, "에이전트가 제안한 내용입니다. 고친 뒤 '이 내용으로 적용'을 누르세요."), host),
+    buttons: [{ label: "취소", action: (close) => finish(close, false) }, { label: "이 내용으로 적용", class: "primary", action: (close) => finish(close, true) }],
+    onClose: () => { if (!done && editor) editor.destroy(); },
+  });
+  editor = codeEditorTab(host, (p.proposed || "").replace(/\r\n/g, "\n"), p.language, false, () => {}, () => {});
+}
+
+async function codeAfterReview(t, proposal) {
+  const list = CODE.state.proposals;
+  const i = list.findIndex((x) => x.id === proposal.id);
+  if (i >= 0) list[i] = proposal; else list.unshift(proposal);
+  await codeOpenReview(proposal.id);
+  codeRenderReviewList();
+  codeRenderReviewBadge();
+  const ft = CODE.tabs.find((x) => x.kind === "file" && x.path === proposal.path);
+  if (ft && !ft.editor.isDirty()) await codeReload(ft, true);
+  else if (ft) { ft.diskChanged = true; codeRenderNotice(); }
+  codeGitRefresh(true);
+}
+
+/* ---------- Git ---------- */
+
+async function codeGitRefresh(quiet = false) {
+  if (!codeFeature("git") || !CODE.open || CODE.gitBusy) return;
+  CODE.gitBusy = true;
+  try {
+    const res = await codeCall(api().code_git_status(), quiet);
+    CODE.git = res ? res.git : null;
+  } finally {
+    CODE.gitBusy = false;
+  }
+  codeRenderTree();
+  if (CODE.bottom === "git") codeRenderGit(false);
+}
+
+function codeRenderGit(load) {
+  const body = $("#code-bottom-body");
+  if (!codeFeature("git")) {
+    body.replaceChildren(h("p", { class: "muted code-empty" }, CODE.state && CODE.state.platform === "android"
+      ? "안드로이드에서는 Git 기능을 쓸 수 없습니다." : "git이 설치되어 있지 않습니다. https://git-scm.com 에서 설치하세요."));
+    return;
+  }
+  if (load) { body.replaceChildren(h("p", { class: "muted code-empty" }, "Git 상태를 읽는 중…")); codeGitRefresh(); return; }
+  const g = CODE.git;
+  if (!g) { body.replaceChildren(h("p", { class: "muted code-empty" }, "Git 상태를 읽지 못했습니다.")); return; }
+  if (!g.repo) {
+    body.replaceChildren(h("p", { class: "muted code-empty" }, g.reason || "Git 저장소가 아닙니다.",
+      " 터미널에서 git init으로 저장소를 만들거나, 저장소 폴더를 작업 폴더로 고르세요."));
+    return;
+  }
+  const groups = [["충돌", (f) => f.conflict], ["스테이지됨", (f) => f.staged], ["바뀜(스테이지 안 됨)", (f) => f.unstaged], ["새 파일", (f) => f.untracked]];
+  const row = (f, staged) => {
+    const key = (staged ? "s:" : "w:") + f.path;
+    const box = h("input", { type: "checkbox", checked: CODE.gitPick.has(key), "aria-label": `${f.path} 고르기`,
+      onchange: () => { if (box.checked) CODE.gitPick.add(key); else CODE.gitPick.delete(key); } });
+    return h("li", { class: "code-git-row" }, box,
+      h("button", { class: "code-git-file", title: "차이 보기", onclick: () => codeGitDiff(f.path, staged) },
+        h("span", { class: "code-git-label" }, f.label), f.path + (f.orig ? ` ← ${f.orig}` : "")),
+      h("button", { class: "icon-btn", title: "파일 열기", "aria-label": `${f.path} 열기`, html: ICONS.file, onclick: () => codeOpenFile(f.path) }));
+  };
+  const sections = groups.map(([label, test]) => {
+    const files = g.files.filter(test);
+    if (!files.length) return null;
+    return h("section", {}, h("h4", {}, `${label} ${files.length}`), h("ul", { class: "code-list" }, ...files.map((f) => row(f, label === "스테이지됨"))));
+  }).filter(Boolean);
+  const msg = h("textarea", { class: "code-input code-commit-msg", rows: "2", id: "code-commit-msg", placeholder: "커밋 메시지 (예: fix: correct ADC quantization handling)",
+    "aria-label": "커밋 메시지" });
+  if (CODE.commitDraft) msg.value = CODE.commitDraft;
+  msg.addEventListener("input", () => { CODE.commitDraft = msg.value; });
+  const picked = (staged) => [...CODE.gitPick].filter((k) => k.startsWith(staged ? "s:" : "w:")).map((k) => k.slice(2));
+  body.replaceChildren(h("div", { class: "code-git" },
+    h("div", { class: "code-git-head" },
+      h("strong", {}, g.detached ? "(분리된 HEAD)" : `가지: ${g.branch || "?"}`),
+      g.upstream ? h("small", {}, ` ${g.upstream} · 앞섬 ${g.ahead} · 뒤처짐 ${g.behind}`) : null,
+      g.conflicts ? h("span", { class: "code-warn" }, ` 충돌 ${g.conflicts}개`) : null,
+      h("span", { style: "flex:1" }),
+      h("button", { class: "icon-btn", title: "새로 고침", "aria-label": "Git 새로 고침", html: ICONS.retry, onclick: () => codeGitRefresh() })),
+    g.files.length ? null : h("p", { class: "muted" }, "바뀐 파일이 없습니다."),
+    ...sections,
+    g.outside ? h("p", { class: "muted" }, `작업 폴더 밖(저장소의 다른 폴더)의 변경 ${g.outside}개는 보이지 않습니다.`) : null,
+    h("div", { class: "code-git-actions" },
+      h("button", { class: "btn", onclick: () => codeGitStage(picked(false), true) }, "고른 파일 스테이지"),
+      h("button", { class: "btn", onclick: () => codeGitStage(picked(true), false) }, "스테이지 취소"),
+      h("button", { class: "btn", onclick: () => codeGitAsk("explain") }, "AI: 변경 설명"),
+      h("button", { class: "btn", onclick: () => codeGitAsk("review") }, "AI: 코드 리뷰"),
+      h("button", { class: "btn", onclick: () => codeGitAsk("commit") }, "AI: 커밋 메시지 제안")),
+    h("div", { class: "code-commit" }, msg,
+      h("button", { class: "btn primary", id: "code-commit", onclick: () => codeGitCommit(msg.value) }, "스테이지한 변경 커밋")),
+    h("p", { class: "muted" }, "스테이지·커밋은 고른 파일만 합니다. 푸시·되돌리기(reset·clean·checkout)는 이 화면에 없습니다.")));
+}
+
+async function codeGitStage(paths, stage) {
+  if (!paths.length) return toast(stage ? "스테이지할 파일을 고르세요(바뀜·새 파일)" : "스테이지를 취소할 파일을 고르세요(스테이지됨)");
+  const res = await codeCall(stage ? api().code_git_stage(paths) : api().code_git_unstage(paths));
+  if (!res) return;
+  CODE.gitPick.clear();
+  codeGitRefresh();
+}
+
+async function codeGitDiff(path, staged) {
+  const res = await codeCall(api().code_git_diff(path, staged));
+  if (!res) return;
+  let t = CODE.tabs.find((x) => x.kind === "diff" && x.path === path && x.staged === staged);
+  if (!t) t = codeNewTab({ kind: "diff", path, staged, title: codeBase(path) });
+  const text = res.diff.diff || "(차이 없음)";
+  t.el.replaceChildren(h("div", { class: "code-review" },
+    h("div", { class: "code-review-head" }, h("strong", {}, path), h("span", { class: "muted" }, staged ? " · 스테이지된 차이" : " · 작업 폴더의 차이"),
+      res.diff.truncated ? h("span", { class: "muted" }, " · 길어서 앞부분만") : null),
+    h("div", { class: "code-review-actions" },
+      h("button", { class: "btn", onclick: () => codeGitAsk("explain", path, staged) }, "AI: 이 변경 설명"),
+      h("button", { class: "btn", onclick: () => codeGitAsk("review", path, staged) }, "AI: 이 변경 리뷰")),
+    diffOrPre(text.startsWith("diff --git") ? text.slice(text.indexOf("--- ")) : text)));
+  codeActivate(t.id);
+}
+
+async function codeGitAsk(kind, path = "", staged = false) {
+  if (S.attach.length >= S.attachLimits.max_files) return toast(`파일은 한 번에 ${S.attachLimits.max_files}개까지 첨부할 수 있습니다`);
+  const res = await codeCall(api().code_git_ask(kind, path, staged));
+  if (!res) return;
+  for (const a of res.attachments) S.attach.push({ id: a.id, name: a.name, size: a.size, kind: a.kind, status: "ready", progress: 1 });
+  renderTray();
+  const input = $("#input");
+  if (!input.value.trim()) input.value = res.question;
+  autoresize();
+  updateSend();
+  if (isNarrow()) codeLeave();
+  input.focus();
+  toast(kind === "commit" ? "스테이지한 변경을 첨부했습니다. 보내면 커밋 메시지를 제안합니다(커밋은 직접 합니다)" : "변경을 첨부했습니다. 질문을 고쳐 보내세요");
+}
+
+async function codeGitCommit(message) {
+  if (!String(message || "").trim()) return toast("커밋 메시지를 입력하세요");
+  const staged = (CODE.git && CODE.git.files || []).filter((f) => f.staged);
+  if (!staged.length) return toast("스테이지한 변경이 없습니다");
+  const ok = await codeChoose("커밋", h("div", {},
+    h("p", {}, "다음 파일의 스테이지한 변경만 커밋합니다. 푸시는 하지 않습니다."),
+    h("ul", {}, ...staged.map((f) => h("li", {}, `${f.label} ${f.path}`))),
+    h("pre", { class: "code-commit-preview" }, message)),
+  [{ label: "취소", value: false }, { label: "커밋", class: "primary", value: true }]);
+  if (!ok) return;
+  const res = await codeCall(api().code_git_commit(message));
+  if (!res) return;
+  CODE.commitDraft = "";
+  toast(`커밋했습니다: ${res.commit}`);
+  codeGitRefresh();
+}
+
+/* ---------- 실행 패널(v1.16 Lab에서도 쓴다) ---------- */
+
+function codeRunPanel(body) {
+  if (!codeFeature("run")) {
+    body.replaceChildren(h("p", { class: "muted code-empty" }, "이 기기에서는 명령을 실행할 수 없습니다(PC 앱에서 쓰세요)."));
+    return;
+  }
+  const st = CODE.state;
+  const input = h("input", { type: "text", class: "code-input code-cmd", id: "code-cmd", list: "code-cmd-history",
+    placeholder: "명령 (예: python -m pytest, verilator --lint-only -Wall design.sv)", "aria-label": "실행할 명령",
+    spellcheck: "false", autocomplete: "off" });
+  if (CODE.cmdDraft) input.value = CODE.cmdDraft;
+  input.addEventListener("input", () => { CODE.cmdDraft = input.value; });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); codeRun(input.value); } });
+  const history = h("datalist", { id: "code-cmd-history" }, ...(st.history || []).map((c) => h("option", { value: c })));
+  const tools = h("div", { class: "code-tools", id: "code-tools" });
+  const runs = CODE.runs.slice(0, 8);
+  const shown = CODE.runs.find((r) => r.id === CODE.runShown) || runs[0];
+  body.replaceChildren(h("div", { class: "code-run" },
+    h("div", { class: "code-run-row" }, input, history,
+      h("button", { class: "btn primary", id: "code-run", onclick: () => codeRun(input.value) }, h("span", { html: ICONS.play }), "실행")),
+    h("p", { class: "muted code-run-note" }, `${st.shell} · 작업 폴더에서 시작합니다. 작업 폴더는 시작 위치일 뿐 격리(샌드박스)가 아닙니다. 실행할 때마다 승인합니다.`),
+    tools,
+    runs.length ? h("div", { class: "code-runs" }, ...runs.map((r) => h("button", { class: "code-run-chip" + (shown && r.id === shown.id ? " active" : ""),
+      title: r.command, onclick: () => { CODE.runShown = r.id; codeRunPanel(body); } },
+      h("span", { class: `code-badge run-${r.status}` }, codeRunLabel(r)), r.command.slice(0, 40)))) : null,
+    shown ? codeRunView(shown) : h("p", { class: "muted code-empty" }, "실행 기록이 없습니다.")));
+  codeLoadTools(tools);
+}
+
+function codeRunLabel(r) {
+  return { running: "실행 중", stopping: "멈추는 중", done: `완료 ${r.code}`, failed: `실패 ${r.code}`, stopped: "멈춤", timeout: "시간 초과", error: "오류" }[r.status] || r.status;
+}
+
+function codeRunView(r) {
+  const out = h("pre", { class: "code-run-out", id: "code-run-out", tabindex: "0", "aria-label": "명령 출력" }, CODE.runOut.get(r.id) || "");
+  if (!CODE.runOut.has(r.id) && r.status !== "running") {
+    codeCall(api().code_run_get(r.id), true).then((res) => {
+      if (!res) return;
+      CODE.runOut.set(r.id, res.run.output_tail || "");
+      Object.assign(r, res.run);
+      if ($("#code-run-out") === out) { out.textContent = res.run.output_tail || "(출력 없음)"; codeRunLocations(r); }
+    });
+  }
+  setTimeout(() => { out.scrollTop = out.scrollHeight; }, 0);
+  return h("div", { class: "code-run-view", "data-run": r.id },
+    h("div", { class: "code-run-head" },
+      h("code", {}, r.command),
+      h("span", { class: "muted", id: "code-run-meta" }, codeRunMeta(r)),
+      r.status === "running" ? h("button", { class: "btn danger", id: "code-stop", onclick: () => api().code_run_stop(r.id) }, "중지") : null,
+      h("button", { class: "btn", title: "출력 끝부분과 명령을 채팅에 첨부합니다", onclick: () => codeRunAsk(r) }, "AI에게 출력 묻기")),
+    out,
+    h("div", { class: "code-locs", id: "code-locs" }));
+}
+
+function codeRunMeta(r) {
+  const secs = r.status === "running" ? ((Date.now() / 1000 - r.started).toFixed(0) + "초째") : `${r.seconds}초`;
+  return `${codeRunLabel(r)} · ${secs}${r.truncated ? " · 출력 일부만" : ""}${r.inputs && r.inputs.length ? " · 입력: " + r.inputs.join(", ") : ""}`;
+}
+
+function codeRunLocations(r) {
+  const box = $("#code-locs");
+  if (!box || !r.locations) return;
+  box.replaceChildren(...r.locations.slice(0, 12).map((loc) => h("button", { class: "code-loc", title: loc.text,
+    onclick: () => codeOpenFile(loc.path, loc.line, loc.col) }, `${loc.path}:${loc.line}`)));
+}
+
+async function codeLoadTools(box) {
+  if (!CODE.tools) {
+    const res = await codeCall(api().code_tools(), true);
+    CODE.tools = res ? res.tools : [];
+  }
+  const found = CODE.tools.filter((t) => t.path);
+  const rtl = ["verilator", "iverilog", "yosys"].filter((n) => !found.some((t) => t.name === n));
+  box.replaceChildren(
+    h("span", { class: "muted" }, "설치된 도구: "),
+    ...found.slice(0, 10).map((t) => h("button", { class: "code-tool", title: `${t.path}\n예: ${t.example}`,
+      onclick: () => { const i = $("#code-cmd"); i.value = t.example; CODE.cmdDraft = t.example; i.focus(); } }, t.name)),
+    rtl.length ? h("span", { class: "muted" }, ` · 없음: ${rtl.join(", ")} (POSCHAT에 들어 있지 않습니다. 쓰려면 직접 설치하세요)`) : null);
+}
+
+async function codeRun(command) {
+  command = String(command || "").trim();
+  if (!command) return toast("실행할 명령을 입력하세요");
+  const check = await codeCall(api().code_run_check(command));
+  if (!check) return;
+  const purpose = h("input", { type: "text", class: "code-input", placeholder: "무엇을 하려는지(선택, 기록에 남깁니다)", "aria-label": "실행 목적" });
+  const ok = await codeChoose("명령 실행 승인", h("div", { class: "code-approve" },
+    h("p", {}, "다음 명령을 실행합니다."),
+    h("pre", { class: "diff" }, h("div", {}, `${check.cwd}>\n${check.command}`)),
+    h("p", { class: "muted" }, `셸: ${check.shell} · 제한 시간 ${check.timeout}초${check.inputs.length ? " · 입력 파일: " + check.inputs.join(", ") : ""}`),
+    check.network ? h("p", { class: "code-warn" }, "이 명령은 인터넷(네트워크)을 쓸 수 있습니다.") : null,
+    check.dangers.length ? h("div", { class: "code-warn" }, h("strong", {}, "위험할 수 있는 동작"), h("ul", {}, ...check.dangers.map((d) => h("li", {}, d)))) : null,
+    h("p", { class: "muted" }, "작업 폴더는 명령이 시작하는 위치일 뿐 보안 격리가 아닙니다. 명령은 내 계정 권한으로 PC의 다른 파일에도 닿을 수 있습니다. API 키 같은 비밀 환경 변수는 넘기지 않고, 출력에 보이는 비밀은 가립니다."),
+    purpose),
+  [{ label: "취소", value: false }, { label: "실행", class: check.dangers.length ? "danger" : "primary", value: true }]);
+  if (!ok) return;
+  const res = await codeCall(api().code_run_start(command, check.token, purpose.value));
+  if (!res) return;
+  CODE.runs = [res.run, ...CODE.runs.filter((r) => r.id !== res.run.id)];
+  CODE.runShown = res.run.id;
+  CODE.runOut.set(res.run.id, CODE.runOut.get(res.run.id) || "");
+  CODE.cmdDraft = "";
+  if (!(CODE.state.history || []).includes(command)) CODE.state.history = [command, ...(CODE.state.history || [])].slice(0, 30);
+  if (CODE.bottom === "run") codeRunPanel($("#code-bottom-body"));
+}
+
+async function codeRunAsk(r) {
+  if (S.attach.length >= S.attachLimits.max_files) return toast(`파일은 한 번에 ${S.attachLimits.max_files}개까지 첨부할 수 있습니다`);
+  const res = await codeCall(api().code_run_ask(r.id));
+  if (!res) return;
+  for (const a of res.attachments) S.attach.push({ id: a.id, name: a.name, size: a.size, kind: a.kind, status: "ready", progress: 1 });
+  renderTray();
+  const input = $("#input");
+  if (!input.value.trim()) input.value = res.question;
+  autoresize();
+  updateSend();
+  if (isNarrow()) codeLeave();
+  input.focus();
+  toast("실행 출력을 첨부했습니다");
+}
+
+/* ---------- 백엔드 이벤트 ---------- */
+
+function codeEvent(ev) {
+  if (ev.kind === "proposal") {
+    if (!CODE.state) return;
+    const list = CODE.state.proposals;
+    const i = list.findIndex((p) => p.id === ev.proposal.id);
+    if (i >= 0) list[i] = ev.proposal; else list.unshift(ev.proposal);
+    codeRenderReviewBadge();
+    codeRenderReviewList();
+    const tab = CODE.tabs.find((t) => t.kind === "review" && t.proposalId === ev.proposal.id);
+    if (tab && tab.data && tab.data.status !== ev.proposal.status) codeOpenReview(ev.proposal.id);
+    if (ev.proposal.status === "pending" && ev.new !== false && CODE.open) {
+      codeBottom("review");
+      codeOpenReview(ev.proposal.id);
+      toast(`에이전트가 ${ev.proposal.path}을(를) 고치려고 합니다. 덩어리를 골라 적용하세요`);
+    }
+  } else if (ev.kind === "file_changed") {
+    const t = CODE.tabs.find((x) => x.kind === "file" && x.path === ev.path);
+    if (t && t.file.hash !== ev.hash && ev.by !== "editor") {
+      if (!t.editor.isDirty()) codeReload(t, true);
+      else { t.diskChanged = true; codeRenderNotice(); }
+    }
+    if (CODE.open) codeGitRefresh(true);
+  } else if (ev.kind === "run_start" || ev.kind === "run_exit") {
+    const r = ev.run;
+    const i = CODE.runs.findIndex((x) => x.id === r.id);
+    if (i >= 0) CODE.runs[i] = r; else CODE.runs.unshift(r);
+    if (ev.kind === "run_exit") {
+      if (CODE.open && CODE.bottom === "run" && (CODE.runShown === r.id || !CODE.runShown)) codeRunPanel($("#code-bottom-body"));
+      setTimeout(() => codeRunLocations(r), 0);
+      codeGitRefresh(true);
+      if (!CODE.open || CODE.bottom !== "run") toast(`명령이 끝났습니다: ${codeRunLabel(r)}`);
+    }
+  } else if (ev.kind === "run_output") {
+    let text = (CODE.runOut.get(ev.id) || "") + ev.text;
+    if (text.length > 2 * 1024 * 1024) text = text.slice(-1024 * 1024);
+    CODE.runOut.set(ev.id, text);
+    const out = $("#code-run-out");
+    if (out && out.closest(".code-run-view")?.dataset.run === ev.id) {
+      const atEnd = out.scrollHeight - out.scrollTop - out.clientHeight < 30;
+      out.textContent = text;
+      if (atEnd) out.scrollTop = out.scrollHeight;
+      const meta = $("#code-run-meta");
+      const r = CODE.runs.find((x) => x.id === ev.id);
+      if (meta && r) meta.textContent = codeRunMeta(r);
+    }
+  }
+}
+
+function codeInit() {
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  CODE.dark = media.matches;
+  const onTheme = () => { CODE.dark = media.matches; for (const t of CODE.tabs) if (t.editor) t.editor.setDark(CODE.dark); };
+  if (media.addEventListener) media.addEventListener("change", onTheme);
+  $("#btn-code")?.addEventListener("click", () => codeToggle());
+  window.addEventListener("focus", () => { if (CODE.open) codeCheckDisk(); });
+  let timer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { if (CODE.open) $("#code-resizer").hidden = isNarrow() || CODE.full; }, 200);
+  });
+}
+
+window.codeShow = codeShow;
+window.codeLeave = codeLeave;
+window.codeEvent = codeEvent;
+window.codeOpenFile = codeOpenFile;
+codeInit();

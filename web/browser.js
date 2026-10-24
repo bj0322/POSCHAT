@@ -71,6 +71,7 @@ async function browserToggle() {
   if (BR.open) return browserClose();
   leaveViews();
   if (window.paperLeave) paperLeave();  // 오른쪽 화면은 하나만(1.14 논문 화면)
+  if (window.codeLeave) codeLeave();  // 1.15 코드 화면(열린 탭은 그대로 남는다)
   if (!BR.available) return toast("이 실행 방식에서는 브라우저를 쓸 수 없습니다.");
   BR.open = true;
   renderBrowserBar();

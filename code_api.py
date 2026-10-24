@@ -525,6 +525,22 @@ class CodeApi:
     def code_run_get(self, run_id):
         return self._code_call(lambda: {"run": self._code_runner().get(str(run_id)).to_dict(tail=True)})
 
+    def code_run_ask(self, run_id):
+        """실행 결과(명령·종료 코드·출력 끝부분·소스 위치)를 채팅 첨부로. 출력은 외부 데이터로 감싼다."""
+        def go():
+            rec = self._code_runner().get(str(run_id))
+            tail = rec.output_tail[-(attachments.MAX_TEXT_CHARS - 1500):]
+            locs = "\n".join(f"- {x['path']}:{x['line']}" for x in rec.locations[:20])
+            body = (f"명령: {rec.command}\n작업 폴더: {rec.cwd}\n결과: {rec.status} (종료 코드 {rec.code}, {rec.seconds}초)\n"
+                    + (f"입력 파일: {', '.join(rec.inputs)}\n" if rec.inputs else "")
+                    + (f"출력에 나온 소스 위치:\n{locs}\n" if locs else "")
+                    + f"\n출력(끝부분):\n```\n{tail}\n```\n")
+            wrapped = connectors.wrap_untrusted(body, f"명령 출력 {rec.command[:60]}")
+            name = re.sub(r"[\\/:*?\"<>|]", "_", f"실행 출력 - {rec.command[:30]}.md")
+            return {"attachments": [self._code_attach(name, wrapped)],
+                    "question": "이 명령의 출력에서 오류 원인을 찾고 고치는 방법을 알려 줘. 관련 파일:줄을 짚어 줘."}
+        return self._code_call(go)
+
     def _code_shutdown(self):
         if self._code_runner_obj is not None:
             self._code_runner_obj.shutdown()
