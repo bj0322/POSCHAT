@@ -69,6 +69,11 @@ def wait_for(cond, timeout=30, step=0.2):
 
 
 def main():
+    for stream in (sys.stdout, sys.stderr):  # Windows 콘솔(cp1252)에서 한글 출력이 죽지 않게
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     import webview
 
     import browser
