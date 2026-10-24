@@ -221,6 +221,23 @@ class BridgeTests(unittest.TestCase):
         self.bridge.adaptive_save({"enabled": False})
         self.assertEqual(self.bridge.load_thread(t["id"])["model"], self.bridge._default_model())
 
+    def test_code_agent_runs_locally_under_local_only(self):
+        self.enable(policy="local_only")
+        ws = self.root / "ws"
+        ws.mkdir()
+        self.bridge._config["workspace"] = str(ws)
+        self.fake.replies.append(json.dumps({"action": "done", "answer": "할 일이 없습니다"}))
+        r = self.bridge.code_agent_start("README 확인해 줘")
+        self.assertTrue(r["ok"], r)
+        end = time.time() + 20
+        while self.bridge._ca_running and time.time() < end:
+            time.sleep(0.05)
+        task = self.bridge.code_agent_task(r["task"]["id"])["task"]
+        self.assertEqual(task["status"], "done", task)
+        self.assertEqual(self.cloud, [])
+        self.assertTrue(any(r["path"] == "/api/chat" for r in self.fake.requests))
+        self.bridge._code_shutdown()
+
     def test_pull_and_delete_from_the_window(self):
         self.enable()
         got = threading.Event()

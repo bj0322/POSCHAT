@@ -69,8 +69,8 @@ class MetricsTests(unittest.TestCase):
         self.run_mix()
         s = adaptive_engine.summary(30)
         self.assertEqual(s["requests"], 3)
-        self.assertEqual((s["local"], s["cloud"]), (2, 1))
-        self.assertEqual(s["local_ratio"], round(2 / 3, 3))
+        self.assertEqual((s["routed_local"], s["local"], s["cloud"]), (2, 1, 2))  # 승격된 하나는 Cloud가 끝냈다
+        self.assertEqual(s["local_ratio"], round(1 / 3, 3))
         self.assertEqual(s["escalations"], 1)
         self.assertEqual(s["escalation_ratio"], 0.5)
         self.assertEqual(s["success_local"]["checked"], 2)

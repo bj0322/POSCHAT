@@ -246,18 +246,18 @@ class AdaptiveEngine:
                          load_ms=res.load_ms, done_reason=res.done_reason)
         return res
 
-    def _cloud(self, prompt, on_delta, images, model=None):
+    def _cloud(self, prompt, on_delta, images, model=None, escalated=False):
         model = model or self.cloud_model
         start = time.monotonic()
         try:
             text = self.cloud_ask(prompt, model, on_delta, images)
         except Exception as e:
             telemetry.record("cloud_inference", model=model, ms=int((time.monotonic() - start) * 1000), ok=False,
-                             error=type(e).__name__, area=self.area_hint)
+                             error=type(e).__name__, area=self.area_hint, escalated=escalated)
             raise
         est = cloud_cost(model, router.estimate_tokens(prompt), self._rates())
         telemetry.record("cloud_inference", model=model, ms=int((time.monotonic() - start) * 1000), ok=True, error="",
-                         area=self.area_hint, credits_est=est)
+                         area=self.area_hint, credits_est=est, escalated=escalated)
         return text
 
     @staticmethod
@@ -274,6 +274,7 @@ class AdaptiveEngine:
         a = router.analyze(prompt, task_text, purpose, images=bool(images), attachments=attachments, side_effects=side_effects)
         manual_local = local_model_of(self.mode)
         record = {"purpose": purpose, "task": a.task, "difficulty": a.difficulty, "policy": self.s["policy"], "attempts": [],
+                  "task_label": router.TASK_LABELS.get(a.task, a.task), "difficulty_label": router.DIFF_LABELS.get(a.difficulty, ""),
                   "escalated": False, "api_call": False, "status": "", "est_cost": None}
         if manual_local:
             route = router.Route(provider="local", model=manual_local, policy=self.s["policy"], reason_code="manual",
@@ -385,7 +386,7 @@ class AdaptiveEngine:
             self._emit(kind="escalating", route=record, reason=reason, to=self.cloud_model)
             t0 = time.monotonic()
             try:
-                answer = self._cloud(prompt, on_delta, images, self.cloud_model)
+                answer = self._cloud(prompt, on_delta, images, self.cloud_model, escalated=True)
             except Exception as e:
                 record["attempts"].append({"provider": "cloud", "model": self.cloud_model, "ok": False, "error": type(e).__name__,
                                            "ms": int((time.monotonic() - t0) * 1000)})
@@ -428,7 +429,8 @@ class AdaptiveEngine:
                 counts["escalated"] += 1
             if r.get("provider") in counts:
                 counts[r["provider"]] += 1
-        keep = ("provider", "model", "label", "reason", "task", "difficulty", "policy", "status", "ms", "api_call", "est_cost",
+        keep = ("provider", "model", "label", "reason", "task", "difficulty", "task_label", "difficulty_label", "policy", "status", "ms",
+                "api_call", "est_cost",
                 "escalated", "escalation_reason", "provisional", "attempts", "gate", "stage", "constraints", "escalation_error")
         return {**{k: main.get(k) for k in keep}, "calls": len(self.routes), "counts": counts}
 
@@ -456,6 +458,10 @@ def summary(days=30, now=None, config=None):
             else:
                 saved_unknown += 1
     esc = [e for e in events if e.get("type") == "escalation"]
+    # 승격된 요청은 끝내 Cloud가 답했다: 처리 비율은 Cloud로 세고, 아낀 크레딧 추정에서도 그 Cloud 호출만큼 뺀다
+    esc_cloud = [e for e in events if e.get("type") == "cloud_inference" and e.get("escalated") and e.get("ok")]
+    saved -= sum(float(e.get("credits_est") or 0) for e in esc_cloud)
+    saved_unknown += sum(1 for e in esc_cloud if e.get("credits_est") is None)
     local_runs = [e for e in events if e.get("type") == "local_inference"]
     cloud_runs = [e for e in events if e.get("type") == "cloud_inference"]
     checks = [e for e in events if e.get("type") == "quality_check"]
@@ -484,12 +490,14 @@ def summary(days=30, now=None, config=None):
                 "rate": round(sum(1 for c in rows if c.get("ok")) / len(rows), 3) if rows else None}
 
     total = len(decisions)
+    local_done = max(0, by_provider.get("local", 0) - len(esc))
+    cloud_done = by_provider.get("cloud", 0) + len(esc)
     cloud_credit_rows = [e for e in cloud_runs if e.get("credits_est") is not None and e.get("ok")]
     return {
-        "days": days, "requests": total, "local": by_provider.get("local", 0), "cloud": by_provider.get("cloud", 0),
+        "days": days, "requests": total, "local": local_done, "cloud": cloud_done, "routed_local": by_provider.get("local", 0),
         "blocked": by_provider.get("none", 0),
-        "local_ratio": round(by_provider.get("local", 0) / total, 3) if total else None,
-        "cloud_ratio": round(by_provider.get("cloud", 0) / total, 3) if total else None,
+        "local_ratio": round(local_done / total, 3) if total else None,
+        "cloud_ratio": round(cloud_done / total, 3) if total else None,
         "escalations": len(esc), "escalation_ratio": round(len(esc) / by_provider["local"], 3) if by_provider.get("local") else None,
         "latency_local": lat(local_runs), "latency_cloud": lat(cloud_runs),
         "success_local": success("local"), "success_cloud": success("cloud"),
@@ -497,7 +505,7 @@ def summary(days=30, now=None, config=None):
         if cloud_credit_rows else None,
         "credits_spent_est": round(escalated_cost, 1) if cloud_credit_rows else None,
         # Cloud만 썼다면 로컬로 처리한 요청에 들었을 크레딧(근거 있는 모델만, 추정). 로컬 하드웨어·전력 비용은 넣지 않는다.
-        "saved_credits_est": round(saved, 1) if by_provider.get("local") and saved_unknown < by_provider.get("local", 0) else None,
+        "saved_credits_est": round(max(0.0, saved), 1) if local_done and saved_unknown < by_provider.get("local", 0) else None,
         "saved_unknown": saved_unknown,
         "failures": {k: sum(1 for f in failures if f.get("kind") == k) for k in sorted({f.get("kind") for f in failures})},
         "feedback": fb,

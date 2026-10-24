@@ -291,7 +291,7 @@ class CodeAgentApi:
             if getattr(self, "_busy", False):
                 raise TaskError("채팅 응답을 기다리는 중입니다. 끝난 뒤 다시 하세요.")
             api_key = self._api_key()
-            if not api_key:
+            if not api_key and self._api_needed(self._config, "auto"):  # 1.17: Local Only·로컬 모델이면 키 없이도 된다
                 raise TaskError(self._missing_key_error())
             store = self._ca()
             if task_id:
@@ -433,7 +433,9 @@ class CodeAgentApi:
             confirm=confirm, cancelled=lambda: not alive(), thread_id=None, share_threads=False,
             mcp=None, api_settings=self._thread_api_settings({}), on_delta=None,
             policy=None, browser=None, paper=None, review=self._ca_review(task_id, approval, alive),
-            runner=self._code_runner(), on_plan=on_plan, on_run=on_run)
+            runner=self._code_runner(), on_plan=on_plan, on_run=on_run,
+            # 1.17: 자동 선택을 켰으면 엔진을 거친다. 코드 수정 단계는 '중요·위험'이라 Cloud 먼저, Local Only면 로컬 모델로
+            engine=self._make_engine({"model": "auto"}, api_key, lambda: not alive(), area="code_agent"))
         status, answer = "done", ""
         try:
             answer = agent.run(history, msg)
