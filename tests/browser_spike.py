@@ -51,11 +51,11 @@ def message_probe(backend):
     IsWebMessageEnabled=False면 함수는 남아 있어도 메시지가 앱에 오지 않아야 한다. 다른 플랫폼은 None."""
     if getattr(backend, "view", None) is None or not hasattr(backend, "_invoke"):
         return None
+    from Microsoft.Web.WebView2.Core import CoreWebView2WebMessageReceivedEventArgs
+    from System import EventHandler
+
     got = []
-
-    def on_message(sender, args):
-        got.append(1)
-
+    on_message = EventHandler[CoreWebView2WebMessageReceivedEventArgs](lambda sender, args: got.append(1))
     backend._invoke(lambda: backend.view.CoreWebView2.add_WebMessageReceived(on_message))
     try:
         backend.read("(function(){try{window.chrome.webview.postMessage('poschat-probe');"
