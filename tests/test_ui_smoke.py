@@ -119,18 +119,29 @@ class UiSmokeTests(unittest.TestCase):
         with sync_playwright() as p:
             browser, page, errors = self.open(p)
             try:
-                page.evaluate("showHub('research')")
-                page.wait_for_selector(".hub-panel .feature-toggle")
-                page.locator(".hub-panel .feature-toggle input").first.check()
+                # 1.11: 연구 라이브러리는 PO노트처럼 사이드바에서 여는 본문 화면이다
+                page.click("#btn-research")
+                page.wait_for_selector("#tool-view .tool-start")
+                self.assertTrue(page.is_hidden("#composer-wrap"))
+                self.assertEqual(page.inner_text("#chat-title"), "연구 라이브러리")
+                page.click("button:has-text('연구 워크스페이스 켜기')")
                 page.wait_for_selector("text=에이전트 도구 켜기")
-                page.click("text=작업 폴더 인덱싱")
+                page.click("#tool-view .po-tab:has-text('문서 검색')")
+                page.click("button:has-text('작업 폴더 인덱싱')")
                 page.wait_for_selector("text=인덱싱 완료", timeout=20000)
                 box = page.locator("input[placeholder^='인덱스에서 찾기']")
                 box.fill("학습률 손실")
                 box.press("Enter")
                 page.wait_for_selector(".rag-hit")
                 self.assertIn("[1] 원문 · notes.md §실험 기록", page.locator(".rag-hit").first.inner_text())
-                self.shot(page, "hub-research")
+                self.shot(page, "page-research")
+                page.click("#tool-view .po-tab:has-text('논문')")
+                page.wait_for_selector("text=논문 더하기")
+                # 새 채팅을 누르면 채팅 화면으로 돌아온다
+                page.click("#btn-new")
+                page.wait_for_selector("#tool-view", state="hidden")
+                self.assertTrue(page.is_visible("#composer-wrap"))
+                self.assertFalse(page.locator("#btn-research").evaluate("b => b.classList.contains('active')"))
                 self.assertEqual(errors, [])
             finally:
                 browser.close()
@@ -177,13 +188,12 @@ class UiSmokeTests(unittest.TestCase):
         with sync_playwright() as p:
             browser, page, errors = self.open(p)
             try:
-                page.evaluate("showHub('automation')")
-                page.wait_for_selector(".hub-panel .feature-toggle")
-                page.locator(".feature-toggle", has_text="에이전트 자동화").locator("input").check()
-                page.wait_for_selector("text=Python · Jupyter")
+                page.click("#btn-auto")
+                page.click("button:has-text('에이전트 자동화 켜기')")
+                page.wait_for_selector("#tool-view .po-tab:has-text('Python · Jupyter')")
                 page.locator(".feature-toggle", has_text="Python·Jupyter 실행").locator("input").check()
-                page.wait_for_function("() => document.querySelector('.hub-panel').innerText.includes('Python')")
-                page.click("summary:has-text('호스트 등록')")
+                page.wait_for_selector("#tool-view .po-tab:has-text('Python · Jupyter') small")  # '켜짐'
+                page.click("#tool-view .po-tab:has-text('원격 서버')")
                 page.fill("input[placeholder^='별칭']", "gpu1")
                 page.fill("input[placeholder^='호스트']", "gpu.example.ac.kr")
                 page.fill("input[placeholder='사용자']", "kim")
@@ -194,7 +204,13 @@ class UiSmokeTests(unittest.TestCase):
                 self.assertEqual(hosts["gpu1"]["allowed_commands"], ["nvidia-smi", "python train.py"])
                 python = next(c for c in self.bridge.get_connectors()["connectors"] if c["id"] == "python")
                 self.assertTrue(python["enabled"])
-                self.shot(page, "hub-automation")
+                self.shot(page, "page-automation")
+                # 연결·도구 창에서는 더 이상 탭으로 보이지 않는다(예전 이름으로 부르면 화면을 연다)
+                page.click("#btn-mcp")
+                page.wait_for_selector(".hub-tab.active")
+                tabs = page.locator(".hub-tab").all_inner_texts()
+                self.assertNotIn("연구 라이브러리", tabs)
+                self.assertNotIn("에이전트 자동화", tabs)
                 self.assertEqual(errors, [])
             finally:
                 browser.close()
@@ -245,6 +261,61 @@ class UiSmokeTests(unittest.TestCase):
                 self.assertEqual(errors, [])
             finally:
                 browser.close()
+
+    def test_tool_pages_fit_a_phone_screen(self):
+        from playwright.sync_api import sync_playwright
+
+        self.bridge.set_feature("research", True)
+        self.bridge.set_feature("automation", True)
+        try:
+            with sync_playwright() as p:
+                browser, page, errors = self.open(p, 390, 844)
+                try:
+                    for button, name in (("#btn-research", "research"), ("#btn-auto", "automation")):
+                        page.evaluate("setCollapsed(false)")  # 휴대폰에서는 사이드바가 서랍이다
+                        page.click(button)
+                        page.wait_for_selector("#tool-view .po-tabs")
+                        self.assertTrue(page.evaluate("document.querySelector('#app').classList.contains('collapsed')"))
+                        overflow = page.evaluate("document.querySelector('#tool-view').scrollWidth - document.querySelector('#tool-view').clientWidth")
+                        self.assertLessEqual(overflow, 1)
+                        page.wait_for_timeout(300)  # 사이드바 서랍이 닫히는 움직임(0.2초)이 끝난 뒤 찍는다
+                        self.shot(page, f"page-{name}-phone")
+                    self.assertEqual(errors, [])
+                finally:
+                    browser.close()
+        finally:
+            self.bridge.set_feature("research", False)
+            self.bridge.set_feature("automation", False)
+
+    def test_settings_switch_to_the_personal_claude_api(self):
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser, page, errors = self.open(p)
+            try:
+                page.evaluate("showSettings()")
+                mode = page.locator(".modal select").nth(0)
+                self.assertEqual(mode.input_value(), "chat_completions")  # 기본은 POSTECH GenAI
+                self.assertFalse(page.is_visible("text=Claude API 키 (Anthropic)"))
+                mode.select_option("anthropic")
+                page.wait_for_selector("text=Claude API 키 (Anthropic)")
+                page.click(".modal-foot button.primary")
+                page.wait_for_selector("text=Claude API 키를 입력하세요")  # 키 없이는 저장하지 않는다
+                page.fill("input[placeholder='sk-ant-...']", "sk-ant-uitest-0123456789abcdef")
+                page.locator(".modal select:visible", has=page.locator("option[value='claude-sonnet-5-5']")).select_option("claude-sonnet-5-5")
+                self.shot(page, "settings-claude")
+                page.click(".modal-foot button.primary")
+                page.wait_for_selector(".modal", state="detached")
+                config = self.bridge._config
+                self.assertEqual((config["api_mode"], config["anthropic_model"]), ("anthropic", "claude-sonnet-5-5"))
+                self.assertEqual(config["anthropic_api_key"], "sk-ant-uitest-0123456789abcdef")
+                self.assertEqual(config["api_key"], "test-key")  # POSTECH 키는 그대로
+                self.assertNotIn("sk-ant-uitest", page.content())  # 저장한 키는 화면으로 돌아오지 않는다
+                page.wait_for_function("document.querySelector('#thread-model').value === 'claude-sonnet-5-5'")
+                self.assertEqual(errors, [])
+            finally:
+                browser.close()
+                self.bridge.save_settings({"api_mode": "chat_completions", "clear_anthropic_key": True})
 
     def test_settings_show_the_license_source_and_third_party_licenses(self):
         from playwright.sync_api import sync_playwright

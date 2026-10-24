@@ -45,6 +45,7 @@ const isRecordingNote = (id) => !!recording() && recording().note_id === id;
 
 /* ---------- 화면 전환 ---------- */
 async function poOpen() {
+  if (window.pageLeave) pageLeave();
   PO.open = true;
   for (const sel of ["#scroll", "#composer-wrap", "#thread-model-picker", "#agent-label"]) $(sel).hidden = true;
   $("#po-view").hidden = false;

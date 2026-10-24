@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 "use strict";
 
-/* ---------- 연결·도구 창: 커넥터 · MCP 서버 (이후 Phase의 탭도 여기에 더한다) ----------
-   app.js의 h(), modal(), api(), toast(), renderMarkdown(), copyText()를 쓴다. */
+/* ---------- 연결·도구 창(커넥터·MCP 서버·메모리·사용량)과 도구 화면(연구 라이브러리·에이전트 자동화) ----------
+   app.js의 h(), modal(), api(), toast(), renderMarkdown(), copyText()를 쓴다.
+   1.11: 연구 라이브러리와 에이전트 자동화는 창의 탭 대신 PO노트처럼 사이드바에서 여는 본문 화면(#tool-view)이다. */
 
 const HUB = { tab: "connectors", modal: null, panel: null, tabs: null, open: new Set() };
 const HUB_TABS = [];  // [{ id, label, render(panel) }] — 아래에서 차례로 더한다
@@ -26,6 +27,7 @@ function fill(node, ...children) {
 }
 
 function showHub(tab) {
+  if (PAGES[tab]) return pageOpen(tab);  // 1.10의 탭 이름으로 부르면 1.11의 도구 화면을 연다
   if (tab) HUB.tab = tab;
   HUB.tabs = h("div", { class: "hub-tabs", role: "tablist" });
   HUB.panel = h("div", { class: "hub-panel" });
@@ -34,13 +36,14 @@ function showHub(tab) {
     body: h("div", {}, HUB.tabs, HUB.panel),
     wide: true,
     buttons: [{ label: "닫기", class: "primary", value: null }],
-    onClose: () => { HUB.modal = null; HUB.rendered = null; },
+    onClose: () => { HUB.modal = null; HUB.rendered = null; if (PAGE.id) renderPage(); },
   });
   renderHub();
   return HUB.modal;
 }
 
 function renderHub() {
+  if (PAGE.id) renderPage();  // 열린 도구 화면도 같은 방식으로 다시 그린다(창에서 바꾼 설정이 바로 보이게)
   if (!HUB.modal) return;
   if (!HUB_TABS.some((t) => t.id === HUB.tab)) HUB.tab = HUB_TABS[0].id;
   HUB.tabs.replaceChildren(...HUB_TABS.map((t) => h("button", {
@@ -54,6 +57,88 @@ function renderHub() {
   Promise.resolve(tab.render(HUB.panel)).catch((e) => {
     fill(HUB.panel, h("p", { class: "mcp-error" }, `불러오지 못했습니다: ${e.message || e}`));
   });
+}
+
+// 이 화면(창의 탭 또는 본문의 도구 화면)이 지금 보이는지
+function hubShowing(id) {
+  return PAGE.id === id || (!!HUB.modal && HUB.tab === id);
+}
+
+/* ---------- 도구 화면: PO노트처럼 채팅 대신 본문에 연다 ---------- */
+
+const PAGE = { id: null, rendered: null };
+const PAGES = {
+  research: { title: "연구 라이브러리", button: "#btn-research", render: (panel) => renderResearch(panel) },
+  automation: { title: "에이전트 자동화", button: "#btn-auto", render: (panel) => renderAutomation(panel) },
+};
+
+function pageOpen(id) {
+  if (!PAGES[id]) return;
+  if (window.poLeave) poLeave();
+  if (PAGE.id && PAGE.id !== id) $(PAGES[PAGE.id].button)?.classList.remove("active");
+  PAGE.id = id;
+  for (const sel of ["#scroll", "#composer-wrap", "#thread-model-picker", "#agent-label", "#po-view"]) $(sel).hidden = true;
+  $("#tool-view").hidden = false;
+  $("#chat-title").textContent = PAGES[id].title;
+  $(PAGES[id].button)?.classList.add("active");
+  document.querySelectorAll(".thread.active").forEach((t) => t.classList.remove("active"));
+  if (isNarrow()) setCollapsed(true);
+  renderPage();
+}
+
+function pageLeave() {
+  if (!PAGE.id) return;
+  $(PAGES[PAGE.id].button)?.classList.remove("active");
+  PAGE.id = null;
+  PAGE.rendered = null;
+  $("#tool-view").hidden = true;
+  $("#scroll").hidden = false;
+  $("#composer-wrap").hidden = false;
+  $("#agent-label").hidden = false;
+  if (S.thread) $("#chat-title").textContent = S.thread.title;
+  renderThreadModel();
+}
+
+function renderPage() {
+  const view = $("#tool-view");
+  if (!PAGE.id || !view) return;
+  const id = PAGE.id;
+  let panel = view.firstChild;
+  if (PAGE.rendered !== id || !panel) {
+    panel = h("div", { class: "po-wrap hub-panel tool-page" }, h("small", { class: "muted" }, "불러오는 중..."));
+    view.replaceChildren(panel);
+    view.scrollTop = 0;
+  }
+  PAGE.rendered = id;
+  Promise.resolve(PAGES[id].render(panel)).catch((e) => {
+    fill(panel, h("p", { class: "mcp-error" }, `불러오지 못했습니다: ${e.message || e}`));
+  });
+}
+
+function pageIntro(title, text, ...actions) {
+  actions = actions.filter(Boolean);
+  return h("div", { class: "po-intro" }, h("div", {}, h("h1", {}, title), h("p", {}, text)),
+    actions.length ? h("div", { class: "row wrap" }, actions) : null);
+}
+
+// 기능이 꺼져 있을 때: 무엇을 하는 기능인지와 켜기 버튼
+function pageStart(title, text, label, enable) {
+  return h("div", { class: "po-card tool-start" }, h("b", {}, title), h("p", {}, text),
+    h("button", { class: "btn primary", onclick: async () => { if (await enable()) renderHub(); } }, label));
+}
+
+// tabs: [[키, 이름, 옆에 작게 붙일 값]]
+function pageTabs(state, tabs) {
+  if (!tabs.some(([key]) => key === state.tab)) state.tab = tabs[0][0];
+  return h("div", { class: "po-tabs", role: "tablist" }, tabs.map(([key, label, extra]) =>
+    h("button", { class: "po-tab" + (state.tab === key ? " active" : ""), role: "tab", "aria-selected": String(state.tab === key),
+      onclick: () => { state.tab = key; renderHub(); } }, label, extra != null ? h("small", {}, ` ${extra}`) : null)));
+}
+
+function pageFooter(...extra) {
+  return h("div", { class: "row wrap tool-footer" },
+    h("span", { style: "flex:1" }, "커넥터(GitHub·Google·Zotero)·MCP 서버·메모리·사용량은 '연결·도구'에서 관리합니다."),
+    h("button", { class: "link-btn", onclick: () => showHub() }, "연결·도구 열기"), ...extra);
 }
 
 // 이 탭이 다시 그려질 때 펼쳐 둔 항목을 유지한다
@@ -294,9 +379,9 @@ async function renderMcpPanel(panel, st) {
 HUB_TABS.push({ id: "connectors", label: "커넥터", render: renderConnectors },
   { id: "mcp", label: "MCP 서버", render: (panel) => renderMcpPanel(panel) });
 
-/* ---------- 연구 라이브러리 탭 (Phase 2) ---------- */
+/* ---------- 연구 라이브러리 화면 (Phase 2, 1.11부터 PO노트처럼 본문에 연다) ---------- */
 
-const RESEARCH = { query: "", tag: "", progress: null };
+const RESEARCH = { query: "", tag: "", progress: null, tab: "papers" };
 
 function paperItem(p) {
   const authors = (p.authors || []).slice(0, 4).join(", ") + ((p.authors || []).length > 4 ? ` 외 ${p.authors.length - 4}명` : "");
@@ -341,31 +426,102 @@ function showBibtex(res) {
 
 async function renderResearch(panel) {
   const st = await api().research_state(RESEARCH.query, RESEARCH.tag);
+  const docs = st.index.documents || [];
+  const v = st.vector || {};
+  const bibtexAll = h("button", { class: "btn", onclick: async () => {
+    const r = await hubCall(api().research_bibtex(null, RESEARCH.tag || null));
+    if (r) showBibtex(r);
+  } }, RESEARCH.tag ? `#${RESEARCH.tag} BibTeX` : "BibTeX 내보내기");
+  const zotero = st.zotero !== "disabled" ? h("button", { class: "btn", onclick: async () => {
+    toast("Zotero에서 가져오는 중...");
+    const r = await hubCall(api().zotero_import_now(false));
+    if (r) { toast(r.result); renderHub(); }
+  } }, "Zotero에서 가져오기") : null;
+  const intro = pageIntro("연구 라이브러리",
+    "논문을 모아 태그로 정리하고 BibTeX으로 내보내며, 작업 폴더의 PDF·문서를 인덱싱해 쪽·섹션이 붙은 원문으로 찾습니다. 모든 데이터는 이 기기에만 저장됩니다.",
+    st.feature ? zotero : null, st.feature ? bibtexAll : null);
+  if (!st.feature) {
+    return fill(panel, intro, pageStart("연구 워크스페이스가 꺼져 있습니다",
+      "켜면 논문 라이브러리와 문서 인덱스를 쓸 수 있고, 에이전트에게 연구 도구(논문 더하기·추천·인용 관계·문서 검색)를 줄 수 있습니다.",
+      "연구 워크스페이스 켜기", () => hubCall(api().set_feature("research", true), "연구 워크스페이스를 켰습니다")));
+  }
+  const pane = { papers: researchPapers, docs: researchDocs, vector: researchVector }[RESEARCH.tab] || researchPapers;
+  fill(panel, intro,
+    !st.enabled ? h("div", { class: "po-card po-warn row wrap" },
+      h("span", { style: "flex:1" }, "에이전트는 아직 연구 도구를 쓰지 않습니다. 켜면 대화 중에 논문을 찾아 더하고 인덱스의 원문을 인용합니다."),
+      h("button", { class: "btn", onclick: async () => { if (await hubCall(api().set_connector_enabled("research", true), "켰습니다")) renderHub(); } }, "에이전트 도구 켜기")) : null,
+    pageTabs(RESEARCH, [["papers", "논문", st.total], ["docs", "문서 검색", docs.length || null],
+      ["vector", "벡터 검색", v.enabled ? "켜짐" : null]]),
+    h("div", { class: "po-pane" }, pane(st)),
+    pageFooter(h("button", { class: "link-btn", onclick: async () => {
+      if (!confirm("연구 워크스페이스를 끌까요? 모은 논문과 인덱스는 지우지 않습니다.")) return;
+      await hubCall(api().set_feature("research", false), "연구 워크스페이스를 껐습니다");
+      renderHub();
+    } }, "연구 워크스페이스 끄기")));
+}
+
+function researchPapers(st) {
   const add = h("input", { type: "text", placeholder: "arXiv 번호(1706.03762)·DOI·논문 주소" });
   const addTags = h("input", { type: "text", placeholder: "태그(선택, 쉼표로 구분)" });
-  const addBtn = h("button", { class: "btn", onclick: async () => {
+  const addBtn = h("button", { class: "btn primary", onclick: async () => {
+    if (!add.value.trim()) return toast("arXiv 번호·DOI·주소를 입력하세요");
     addBtn.disabled = true;
     try {
       const tags = addTags.value.split(",").map((t) => t.trim()).filter(Boolean);
       if (await hubCall(api().research_add(add.value.trim(), tags), "라이브러리에 더했습니다")) renderHub();
     } finally { addBtn.disabled = false; }
   } }, "더하기");
-  const search = h("input", { type: "search", placeholder: "제목·저자·초록·메모 검색", value: RESEARCH.query });
-  search.addEventListener("keydown", (e) => { if (e.key === "Enter") { RESEARCH.query = search.value.trim(); renderHub(); } });
+  add.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) addBtn.click(); });
+  const search = h("input", { type: "search", placeholder: "제목·저자·초록·메모 검색 (Enter)", value: RESEARCH.query });
+  search.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { RESEARCH.query = search.value.trim(); renderHub(); } });
   const tags = Object.entries(st.tags || {});
+  return h("div", { class: "tool-stack" },
+    h("div", { class: "po-card" }, h("div", { class: "po-label" }, "논문 더하기", h("small", {}, "제목·저자·초록·인용 수를 자동으로 채웁니다")),
+      h("div", { class: "row wrap" }, add, addTags, addBtn)),
+    h("div", { class: "row wrap" }, search,
+      RESEARCH.query ? h("button", { class: "btn", onclick: () => { RESEARCH.query = ""; renderHub(); } }, "검색 지우기") : null),
+    tags.length ? h("p", { class: "tag-row" }, h("span", { class: "badge tag" + (RESEARCH.tag ? "" : " active"), onclick: () => { RESEARCH.tag = ""; renderHub(); } }, "전체"),
+      tags.map(([t, n]) => h("span", { class: "badge tag" + (RESEARCH.tag === t ? " active" : ""), onclick: () => { RESEARCH.tag = t; renderHub(); } }, `#${t} ${n}`))) : null,
+    st.papers.length ? h("div", { class: "po-list" }, st.papers.map(paperItem))
+      : h("p", { class: "po-empty" }, st.total ? "맞는 논문이 없습니다." : "아직 논문이 없습니다. 위에서 arXiv 번호나 DOI로 더해 보세요."));
+}
+
+function researchDocs(st) {
   const docs = st.index.documents || [];
+  const v = st.vector || {};
   const progress = h("small", { class: "muted block" }, RESEARCH.progress || (st.indexing ? "인덱싱 중..." : ""));
   RESEARCH.progressNode = progress;
   const ragQuery = h("input", { type: "search", placeholder: "인덱스에서 찾기(출처가 붙은 원문 조각)" });
   const ragOut = h("div", {});
   ragQuery.addEventListener("keydown", async (e) => {
-    if (e.key !== "Enter" || !ragQuery.value.trim()) return;
+    if (e.key !== "Enter" || e.isComposing || !ragQuery.value.trim()) return;
     const res = await hubCall(api().research_search(ragQuery.value.trim()));
     if (!res) return;
     fill(ragOut, res.results.length ? res.results.map((r) => h("div", { class: "rag-hit" },
       h("small", { class: "mono" }, r.cite), h("p", {}, r.text.length > 400 ? r.text.slice(0, 400) + "…" : r.text)))
       : [h("small", { class: "muted" }, "맞는 내용이 없습니다.")]);
   });
+  return h("div", { class: "tool-stack" },
+    h("div", { class: "po-card" },
+      h("div", { class: "po-label" }, "작업 폴더 인덱싱",
+        h("small", {}, `문서 ${docs.length}개 · 청크 ${st.index.chunks}개 · 검색 방식 ${st.index.fts}${v.enabled ? " + 벡터" : ""}`)),
+      h("div", { class: "row wrap" },
+        h("small", { class: "muted", style: "flex:1;word-break:break-all" }, st.workspace ? `작업 폴더: ${st.workspace}` : "왼쪽 아래 '작업 폴더'를 고르면 그 폴더의 PDF·문서를 인덱싱합니다."),
+        h("button", { class: "btn", disabled: !st.workspace || st.indexing, onclick: async () => {
+          RESEARCH.progress = "인덱싱을 시작합니다...";
+          if (await hubCall(api().research_index())) renderHub();
+        } }, "작업 폴더 인덱싱")),
+      progress,
+      st.index.error ? h("p", { class: "mcp-error" }, st.index.error) : null),
+    h("div", { class: "po-card" }, h("div", { class: "po-label" }, "원문 찾기", h("small", {}, "찾은 조각마다 문서·쪽·섹션 출처가 붙습니다")),
+      h("div", { class: "row" }, ragQuery), ragOut),
+    docs.length ? hubDetails("rag-docs", `인덱싱한 문서 ${docs.length}개`, h("div", { class: "table-scroll" }, h("table", { class: "help-table log-table" }, docs.map((d) => h("tr", {},
+      h("td", { class: "mono" }, d.path.split(/[\\/]/).pop()), h("td", {}, d.collection === "library" ? "라이브러리" : "작업 폴더"),
+      h("td", {}, `${d.pages || "-"}쪽 · 청크 ${d.chunks}`),
+      h("td", {}, h("button", { class: "link-btn danger", onclick: async () => { if (await hubCall(api().research_remove_document(d.doc_id))) renderHub(); } }, "빼기"))))))) : null);
+}
+
+function researchVector(st) {
   const v = st.vector || {};
   const vEnabled = checkbox(v.enabled, () => {});
   const vUrl = h("input", { type: "url", value: v.qdrant_url || "", placeholder: "http://127.0.0.1:6333" });
@@ -374,54 +530,20 @@ async function renderResearch(panel) {
   const vModel = h("input", { type: "text", value: v.embedding_model || "", placeholder: "임베딩 모델 ID" });
   const vQKey = h("input", { type: "password", placeholder: v.has_qdrant_key ? "저장됨" : "Qdrant API 키(선택)" });
   const vEKey = h("input", { type: "password", placeholder: v.has_embedding_key ? "저장됨" : "임베딩 API 키" });
-  fill(panel,
-    h("p", { class: "hub-intro" }, "논문을 모아 태그로 분류하고 BibTeX으로 내보내며, 작업 폴더의 PDF·문서를 인덱싱해 쪽·섹션이 붙은 원문으로 찾습니다. ",
-      "에이전트는 커넥터 '연구 라이브러리'를 켜면 research 도구(더하기·추천·인용 관계·문서 검색)를 씁니다. 모든 데이터는 이 기기에만 저장됩니다."),
-    featureToggle({ research: { label: "연구 워크스페이스", enabled: st.feature } }, "research"),
-    st.feature && !st.enabled ? h("div", { class: "row wrap" }, h("small", { class: "muted" }, "에이전트 도구(research 서버)가 꺼져 있습니다."),
-      h("button", { class: "btn", onclick: async () => { if (await hubCall(api().set_connector_enabled("research", true), "켰습니다")) renderHub(); } }, "에이전트 도구 켜기")) : null,
-    h("section", { class: "hub-group" }, h("h3", {}, `논문 라이브러리 (${st.total}편)`),
-      h("div", { class: "row wrap" }, add, addTags, addBtn),
-      h("div", { class: "row wrap", style: "margin-top:8px" }, search,
-        h("button", { class: "btn", onclick: async () => { const r = await hubCall(api().research_bibtex(null, RESEARCH.tag || null)); if (r) showBibtex(r); } },
-          RESEARCH.tag ? `#${RESEARCH.tag} BibTeX` : "전체 BibTeX"),
-        st.zotero !== "disabled" ? h("button", { class: "btn", onclick: async () => {
-          toast("Zotero에서 가져오는 중...");
-          const r = await hubCall(api().zotero_import_now(false));
-          if (r) { toast(r.result); renderHub(); }
-        } }, "Zotero에서 가져오기") : null),
-      tags.length ? h("p", { class: "tag-row" }, h("span", { class: "badge tag" + (RESEARCH.tag ? "" : " active"), onclick: () => { RESEARCH.tag = ""; renderHub(); } }, "전체"),
-        tags.map(([t, n]) => h("span", { class: "badge tag" + (RESEARCH.tag === t ? " active" : ""), onclick: () => { RESEARCH.tag = t; renderHub(); } }, `#${t} ${n}`))) : null,
-      st.papers.length ? st.papers.map(paperItem) : h("small", { class: "muted block" }, st.total ? "맞는 논문이 없습니다." : "아직 논문이 없습니다. 위에서 arXiv 번호나 DOI로 더해 보세요.")),
-    h("section", { class: "hub-group" }, h("h3", {}, `문서 인덱스 (문서 ${docs.length}개, 청크 ${st.index.chunks}개, 검색 방식 ${st.index.fts}${v.enabled ? " + 벡터" : ""})`),
-      h("div", { class: "row wrap" },
-        h("small", { class: "muted", style: "flex:1" }, st.workspace ? `작업 폴더: ${st.workspace}` : "작업 폴더를 고르면 그 폴더의 문서를 인덱싱합니다."),
-        h("button", { class: "btn", disabled: !st.workspace || st.indexing, onclick: async () => {
-          RESEARCH.progress = "인덱싱을 시작합니다...";
-          if (await hubCall(api().research_index())) renderHub();
-        } }, "작업 폴더 인덱싱")),
-      progress,
-      st.index.error ? h("p", { class: "mcp-error" }, st.index.error) : null,
-      docs.length ? hubDetails("rag-docs", `인덱싱한 문서 ${docs.length}개`, h("table", { class: "help-table log-table" }, docs.map((d) => h("tr", {},
-        h("td", { class: "mono" }, d.path.split(/[\\/]/).pop()), h("td", {}, d.collection === "library" ? "라이브러리" : "작업 폴더"),
-        h("td", {}, `${d.pages || "-"}쪽 · 청크 ${d.chunks}`),
-        h("td", {}, h("button", { class: "link-btn danger", onclick: async () => { if (await hubCall(api().research_remove_document(d.doc_id))) renderHub(); } }, "빼기")))))) : null,
-      h("div", { class: "row" }, ragQuery), ragOut,
-      hubDetails("vector", "벡터 검색(선택: Qdrant + 임베딩 API)",
-        h("small", { class: "muted block" }, "켜면 인덱싱할 때 문서 조각을 임베딩 API로 보내 벡터를 만들고 Qdrant에 저장해, 키워드 검색과 섞어(RRF) 찾습니다. ",
-          "문서 내용이 그 서버로 전송되므로 직접 운영하거나 신뢰하는 서버만 쓰세요. 끄면 키워드 검색만 씁니다."),
-        h("label", { class: "feature-toggle" }, vEnabled, h("span", {}, "벡터 검색 켜기")),
-        h("div", { class: "field" }, h("label", {}, "Qdrant 주소 · 컬렉션"), h("div", { class: "row wrap" }, vUrl, vColl)),
-        h("div", { class: "field" }, h("label", {}, "임베딩 API(OpenAI 호환 /embeddings) 주소 · 모델"), h("div", { class: "row wrap" }, vEmbUrl, vModel)),
-        h("div", { class: "field" }, h("label", {}, "키"), h("div", { class: "row wrap" }, vQKey, vEKey)),
-        h("button", { class: "btn", onclick: async () => {
-          const r = await hubCall(api().set_vector_config({ enabled: vEnabled.checked, qdrant_url: vUrl.value.trim(), collection: vColl.value.trim(),
-            embedding_url: vEmbUrl.value.trim(), embedding_model: vModel.value.trim(), qdrant_key: vQKey.value.trim(), embedding_key: vEKey.value.trim() }), "저장했습니다");
-          if (r) renderHub();
-        } }, "저장"))));
+  return h("div", { class: "po-card" },
+    h("div", { class: "po-label" }, "벡터 검색 (선택)", h("small", {}, "Qdrant + OpenAI 호환 임베딩 API")),
+    h("small", { class: "muted block" }, "켜면 인덱싱할 때 문서 조각을 임베딩 API로 보내 벡터를 만들고 Qdrant에 저장해, 키워드 검색과 섞어(RRF) 찾습니다. ",
+      "문서 내용이 그 서버로 전송되므로 직접 운영하거나 신뢰하는 서버만 쓰세요. 끄면 키워드 검색만 씁니다."),
+    h("label", { class: "feature-toggle" }, vEnabled, h("span", {}, "벡터 검색 켜기")),
+    h("div", { class: "field" }, h("label", {}, "Qdrant 주소 · 컬렉션"), h("div", { class: "row wrap" }, vUrl, vColl)),
+    h("div", { class: "field" }, h("label", {}, "임베딩 API(OpenAI 호환 /embeddings) 주소 · 모델"), h("div", { class: "row wrap" }, vEmbUrl, vModel)),
+    h("div", { class: "field" }, h("label", {}, "키"), h("div", { class: "row wrap" }, vQKey, vEKey)),
+    h("div", { class: "row po-actions" }, h("button", { class: "btn primary", onclick: async () => {
+      const r = await hubCall(api().set_vector_config({ enabled: vEnabled.checked, qdrant_url: vUrl.value.trim(), collection: vColl.value.trim(),
+        embedding_url: vEmbUrl.value.trim(), embedding_model: vModel.value.trim(), qdrant_key: vQKey.value.trim(), embedding_key: vEKey.value.trim() }), "저장했습니다");
+      if (r) renderHub();
+    } }, "저장")));
 }
-
-HUB_TABS.push({ id: "research", label: "연구 라이브러리", render: renderResearch });
 
 /* ---------- 메모리·동기화 탭 (Phase 3) ---------- */
 
@@ -597,19 +719,43 @@ window.hubExtraEvent = (ev) => {
   }
 };
 
-/* ---------- 에이전트 자동화 탭 (Phase 4) ---------- */
+/* ---------- 에이전트 자동화 화면 (Phase 4, 1.11부터 PO노트처럼 본문에 연다) ---------- */
+
+const AUTO = { tab: "python" };
 
 async function renderAutomation(panel) {
   const st = await api().automation_state();
+  const intro = pageIntro("에이전트 자동화",
+    "에이전트가 Python 코드·Jupyter 노트북을 실행하거나 등록한 원격 서버(SSH)에서 명령을 실행하게 합니다. 실행할 때마다 대상과 내용을 보여 주고 승인을 받습니다.");
   if (st.android) {
-    return fill(panel, h("p", { class: "hub-intro" }, "Python·SSH 실행은 하위 프로세스를 띄울 수 없는 안드로이드에서는 쓸 수 없습니다. ",
-      "PC 앱에서 켜세요. 휴대폰에서 원격 실행을 하려면 별도의 원격 실행 게이트웨이(향후 작업)가 필요합니다."),
-      h("small", { class: "muted block" }, "에이전트 인계(작업 상태·변경 파일·다음 단계)는 '메모리·동기화' 탭에서 볼 수 있고, 동기화를 켜면 PC와 공유됩니다."));
+    return fill(panel, intro, h("div", { class: "po-card po-warn" }, "Python·SSH 실행은 하위 프로세스를 띄울 수 없는 안드로이드에서는 쓸 수 없습니다. PC 앱에서 켜세요. ",
+      "에이전트 인계(작업 상태·변경 파일·다음 단계)는 '연결·도구 → 메모리·동기화'에서 볼 수 있고, 동기화를 켜면 PC와 공유됩니다."));
   }
-  const py = st.python;
-  const toggle = (cid, on, label) => h("label", { class: "feature-toggle" },
+  if (!st.feature) {
+    return fill(panel, intro, pageStart("에이전트 자동화가 꺼져 있습니다",
+      "켜면 Python·Jupyter 실행과 원격 서버 실행을 설정할 수 있습니다. 각 실행 도구는 따로 켜며, 자동 허용 설정과 관계없이 실행마다 승인을 받습니다.",
+      "에이전트 자동화 켜기", () => hubCall(api().set_feature("automation", true), "에이전트 자동화를 켰습니다")));
+  }
+  const pane = { python: automationPython, ssh: automationSsh, log: automationLog }[AUTO.tab] || automationPython;
+  fill(panel, intro,
+    pageTabs(AUTO, [["python", "Python · Jupyter", st.python.enabled ? "켜짐" : null],
+      ["ssh", "원격 서버(SSH)", Object.keys(st.ssh.hosts || {}).length || null], ["log", "실행 기록", st.log.length || null]]),
+    h("div", { class: "po-pane" }, pane(st)),
+    pageFooter(h("button", { class: "link-btn", onclick: async () => {
+      if (!confirm("에이전트 자동화를 끌까요? 등록한 호스트와 설정은 남겨 둡니다.")) return;
+      await hubCall(api().set_feature("automation", false), "에이전트 자동화를 껐습니다");
+      renderHub();
+    } }, "에이전트 자동화 끄기")));
+}
+
+function automationToggle(cid, on, label) {
+  return h("label", { class: "feature-toggle" },
     checkbox(on, async (v) => { if (await hubCall(api().set_connector_enabled(cid, v), v ? `${label}을(를) 켰습니다` : `${label}을(를) 껐습니다`)) renderHub(); }),
-    h("span", {}, h("b", {}, label), h("small", {}, "켜면 에이전트가 실행 도구를 씁니다. 실행할 때마다 대상과 내용을 보여 주고 승인을 받습니다(자동 허용 설정과 관계없음).")));
+    h("span", {}, h("b", {}, label), h("small", {}, "켜면 에이전트가 이 실행 도구를 씁니다. 실행할 때마다 대상과 내용을 보여 주고 승인을 받습니다(자동 허용 설정과 관계없음).")));
+}
+
+function automationPython(st) {
+  const py = st.python;
   const interp = h("input", { type: "text", value: py.interpreter, placeholder: py.detected ? `자동: ${py.detected}` : "python 실행 파일 경로" });
   const iso = h("select", { class: "policy-select" }, h("option", { value: "none" }, "격리 없음(이 PC의 사용자 권한)"),
     h("option", { value: "docker", disabled: !py.docker }, `Docker 격리${py.docker ? "" : " (Docker 없음)"}`));
@@ -618,6 +764,24 @@ async function renderAutomation(panel) {
   const timeout = h("input", { type: "number", min: 5, max: 3600, value: py.timeout });
   const memory = h("input", { type: "number", min: 128, max: 65536, value: py.memory_mb });
   const info = h("pre", { class: "diff bib", hidden: true }, h("div", {}));
+  return h("div", { class: "po-card" },
+    automationToggle("python", py.enabled, "Python·Jupyter 실행"),
+    py.error ? h("p", { class: "mcp-error" }, py.error) : null,
+    h("div", { class: "field" }, h("label", {}, "Python · 격리"), h("div", { class: "row wrap" }, interp, iso)),
+    h("div", { class: "field" }, h("label", {}, "Docker 이미지 · 시간 제한(초) · 메모리(MB, Docker·macOS/Linux)"), h("div", { class: "row wrap" }, image, timeout, memory)),
+    h("div", { class: "row po-actions" },
+      h("button", { class: "btn", onclick: async () => {
+        const r = await hubCall(api().python_check());
+        if (r) { info.hidden = false; info.firstChild.textContent = r.info; }
+      } }, "확인"),
+      h("button", { class: "btn primary", onclick: async () => {
+        if (await hubCall(api().set_python_settings({ interpreter: interp.value.trim(), isolation: iso.value, docker_image: image.value.trim(),
+          timeout: timeout.value, memory_mb: memory.value }), "저장했습니다")) renderHub();
+      } }, "저장")),
+    info);
+}
+
+function automationSsh(st) {
   const hosts = Object.entries(st.ssh.hosts || {});
   const f = {};
   for (const [k, ph] of [["alias", "별칭(예: gpu1)"], ["host", "호스트(예: gpu.example.ac.kr)"], ["user", "사용자"], ["port", "포트(22)"],
@@ -625,53 +789,34 @@ async function renderAutomation(panel) {
     f[k] = h("input", { type: "text", placeholder: ph });
   }
   const allowShell = checkbox(false, () => {});
-  fill(panel,
-    h("p", { class: "hub-intro" }, "에이전트가 Python 코드·Jupyter 노트북을 실행하거나 등록한 원격 서버에서 명령을 실행하게 합니다. 기본으로 꺼져 있고 PC 앱에서만 됩니다. ",
-      "실행한 코드·명령과 결과 앞부분은 아래 기록에 남습니다."),
-    featureToggle({ automation: { label: "에이전트 자동화", enabled: st.feature } }, "automation"),
-    st.feature ? h("div", {},
-      h("section", { class: "hub-group" }, h("h3", {}, "Python · Jupyter"),
-        toggle("python", py.enabled, "Python·Jupyter 실행"),
-        py.error ? h("p", { class: "mcp-error" }, py.error) : null,
-        h("div", { class: "field" }, h("label", {}, "Python"), h("div", { class: "row wrap" }, interp, iso)),
-        h("div", { class: "field" }, h("label", {}, "Docker 이미지 · 시간 제한(초) · 메모리(MB, Docker·macOS/Linux)"), h("div", { class: "row wrap" }, image, timeout, memory)),
-        h("div", { class: "row wrap" },
-          h("button", { class: "btn", onclick: async () => {
-            if (await hubCall(api().set_python_settings({ interpreter: interp.value.trim(), isolation: iso.value, docker_image: image.value.trim(),
-              timeout: timeout.value, memory_mb: memory.value }), "저장했습니다")) renderHub();
-          } }, "저장"),
-          h("button", { class: "btn", onclick: async () => {
-            const r = await hubCall(api().python_check());
-            if (r) { info.hidden = false; info.firstChild.textContent = r.info; }
-          } }, "확인")),
-        info),
-      h("section", { class: "hub-group" }, h("h3", {}, "원격 서버(SSH)"),
-        toggle("ssh", st.ssh.enabled, "원격 서버 실행"),
-        st.ssh.client ? null : h("p", { class: "mcp-error" }, "이 PC에서 ssh 명령을 찾지 못했습니다(Windows는 설정 → 선택적 기능 → OpenSSH 클라이언트)."),
-        hosts.length ? h("table", { class: "help-table log-table" }, hosts.map(([alias, hst]) => h("tr", {},
-          h("td", { class: "mono" }, alias), h("td", {}, `${hst.user ? hst.user + "@" : ""}${hst.host}:${hst.port || 22}`),
-          h("td", { class: "small" }, (hst.allowed_commands || []).join(", ") || "제한 없음"),
-          h("td", {}, h("button", { class: "link-btn danger", onclick: async () => { if (await hubCall(api().remove_ssh_host(alias))) renderHub(); } }, "지우기")))))
-          : h("small", { class: "muted block" }, "등록한 호스트가 없습니다."),
-        hubDetails("ssh-add", "호스트 등록",
-          h("div", { class: "row wrap" }, f.alias, f.host, f.user, f.port),
-          h("div", { class: "row wrap", style: "margin-top:6px" }, f.identity_file, f.cwd),
-          h("div", { class: "row wrap", style: "margin-top:6px" }, f.allowed_commands),
-          h("label", { class: "inline-label" }, allowShell, "셸 연결 문자(; && | > 등) 허용 — 권장하지 않음"),
-          h("div", { class: "row" }, h("button", { class: "btn", style: "margin-top:6px", onclick: async () => {
-            const spec = Object.fromEntries(Object.entries(f).map(([k, el]) => [k, el.value.trim()]));
-            spec.allow_shell = allowShell.checked;
-            if (await hubCall(api().set_ssh_host(spec.alias, spec), "등록했습니다")) renderHub();
-          } }, "등록")),
-          h("small", { class: "muted block" }, "비밀번호는 쓰지 않습니다. 이 PC의 ssh 키·ssh-agent로 접속하고, 처음 보는 호스트 키는 자동으로 믿지 않습니다."))),
-      h("section", { class: "hub-group" }, h("h3", {}, "실행 기록 (최근 30개)"),
-        st.log.length ? h("table", { class: "help-table log-table" }, st.log.map((r) => h("tr", {},
-          h("td", {}, fmtTime(r.ts)), h("td", {}, r.kind), h("td", { class: "mono small" }, r.target),
-          h("td", {}, r.timed_out ? "시간 초과" : `코드 ${r.code}`), h("td", { class: "mono small" }, (r.input || "").slice(0, 120)))))
-          : h("small", { class: "muted block" }, "아직 실행 기록이 없습니다."))) : null);
+  return h("div", { class: "tool-stack" },
+    h("div", { class: "po-card" },
+      automationToggle("ssh", st.ssh.enabled, "원격 서버 실행"),
+      st.ssh.client ? null : h("p", { class: "mcp-error" }, "이 PC에서 ssh 명령을 찾지 못했습니다(Windows는 설정 → 선택적 기능 → OpenSSH 클라이언트)."),
+      hosts.length ? h("div", { class: "table-scroll" }, h("table", { class: "help-table log-table" }, hosts.map(([alias, hst]) => h("tr", {},
+        h("td", { class: "mono" }, alias), h("td", {}, `${hst.user ? hst.user + "@" : ""}${hst.host}:${hst.port || 22}`),
+        h("td", { class: "small" }, (hst.allowed_commands || []).join(", ") || "제한 없음"),
+        h("td", {}, h("button", { class: "link-btn danger", onclick: async () => { if (await hubCall(api().remove_ssh_host(alias))) renderHub(); } }, "지우기"))))))
+        : h("small", { class: "muted block" }, "등록한 호스트가 없습니다.")),
+    h("div", { class: "po-card" }, h("div", { class: "po-label" }, "호스트 등록",
+      h("small", {}, "비밀번호는 쓰지 않습니다. 이 PC의 ssh 키·ssh-agent로 접속하고, 처음 보는 호스트 키는 자동으로 믿지 않습니다.")),
+      h("div", { class: "row wrap" }, f.alias, f.host, f.user, f.port),
+      h("div", { class: "row wrap", style: "margin-top:6px" }, f.identity_file, f.cwd),
+      h("div", { class: "row wrap", style: "margin-top:6px" }, f.allowed_commands),
+      h("label", { class: "inline-label" }, allowShell, "셸 연결 문자(; && | > 등) 허용 — 권장하지 않음"),
+      h("div", { class: "row po-actions" }, h("button", { class: "btn primary", onclick: async () => {
+        const spec = Object.fromEntries(Object.entries(f).map(([k, el]) => [k, el.value.trim()]));
+        spec.allow_shell = allowShell.checked;
+        if (await hubCall(api().set_ssh_host(spec.alias, spec), "등록했습니다")) renderHub();
+      } }, "등록"))));
 }
 
-HUB_TABS.push({ id: "automation", label: "에이전트 자동화", render: renderAutomation });
+function automationLog(st) {
+  return st.log.length ? h("div", { class: "po-card table-scroll" }, h("table", { class: "help-table log-table" }, st.log.map((r) => h("tr", {},
+    h("td", {}, fmtTime(r.ts)), h("td", {}, r.kind), h("td", { class: "mono small" }, r.target),
+    h("td", {}, r.timed_out ? "시간 초과" : `코드 ${r.code}`), h("td", { class: "mono small" }, (r.input || "").slice(0, 120))))))
+    : h("p", { class: "po-empty" }, "아직 실행 기록이 없습니다. 실행한 코드·명령과 결과 앞부분이 최근 30개까지 여기에 남습니다.");
+}
 
 /* ---------- 사용량·진단 탭 (Phase 5) ---------- */
 
@@ -785,6 +930,9 @@ window.hubExtraEvent = (ev) => {
   }
 };
 
+$("#btn-research").addEventListener("click", () => pageOpen("research"));
+$("#btn-auto").addEventListener("click", () => pageOpen("automation"));
+
 /* ---------- 백엔드 이벤트 ---------- */
 
 function hubEvent(ev) {
@@ -820,10 +968,10 @@ function hubPanelEvent(ev) {
     const s = ev.summary;
     RESEARCH.progress = `인덱싱 완료: 새로 ${s.indexed}개, 그대로 ${s.unchanged}개, 지움 ${s.removed}개, 청크 ${s.chunks}개` +
       (s.failed.length ? ` · 실패 ${s.failed.length}개 (${s.failed.slice(0, 3).join("; ")})` : "");
-    if (HUB.tab === "research") renderHub();
+    if (hubShowing("research")) renderHub();
   } else if (ev.kind === "index_error") {
     RESEARCH.progress = `인덱싱 실패: ${ev.error}`;
-    if (HUB.tab === "research") renderHub();
+    if (hubShowing("research")) renderHub();
   } else if (window.hubExtraEvent) {
     hubExtraEvent(ev);
   }
