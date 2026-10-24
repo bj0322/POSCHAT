@@ -769,6 +769,9 @@ window.onBackendEvent = (ev) => {
     if (window.browserEvent) browserEvent(ev);
   } else if (ev.type === "code") {
     if (window.codeEvent) codeEvent(ev);
+    if (window.labCodeEvent) labCodeEvent(ev);
+  } else if (ev.type === "lab") {
+    if (window.labEvent) labEvent(ev);
   } else if (ev.type === "connector" || ev.type === "hub") {
     if (window.hubEvent) hubEvent(ev);
   } else if (ev.type === "done") {
