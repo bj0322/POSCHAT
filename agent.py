@@ -25,7 +25,7 @@ import connectors
 import documents
 import plugins
 import storage
-from api import ApiSettings, ask
+from api import ApiError, ApiSettings, ask
 from code_workspace import atomic_write
 from documents import DocumentError
 from mcp_client import MCPError
@@ -298,7 +298,7 @@ class Agent:
     def __init__(self, api_key, workspace, agent_mode, max_steps, history_messages,
                  on_status, on_tool, confirm, cancelled, thread_id=None, share_threads=True, mcp=None,
                  api_settings=None, on_delta=None, ai_memory_state=None, on_ai_memory_state=None, policy=None,
-                 browser=None, paper=None, review=None, browser_progress=None, browser_paused=None):
+                 browser=None, paper=None, review=None, browser_progress=None, browser_paused=None, engine=None):
         self.api_key = api_key
         self.workspace = Path(workspace).resolve() if workspace else None
         self.agent_mode = agent_mode
@@ -338,10 +338,25 @@ class Agent:
         self.browser_progress = browser_progress  # 1.16 브라우저 에이전트 진행 표시 (dict) -> None
         self.browser_paused = browser_paused      # threading.Event: set이면 다음 브라우저 동작 전에 기다린다
         self._browser_agent = None
+        # 1.17 Adaptive AI: adaptive_engine.AdaptiveEngine — 대화의 모델이 "auto"·"local:…"일 때. None이면 예전처럼 api.ask.
+        # 엔진은 글만 돌려주는 순수한 호출이라(다시 하기·Cloud 승격도 그 안에서 끝난다) 단계 실행은 한 번뿐이다.
+        self.engine = engine
+        self._task_text = ""          # 라우팅 분류에 쓰는 사용자 요청(앱의 지시문은 빼고)
 
-    def _ask(self, prompt, on_delta=None, images=None):
-        reply = ask(self.api_key, prompt, settings=self.api_settings, on_delta=on_delta, cancelled=self.cancelled,
-                    images=images)
+    step_purpose = "agent_step"       # CodeAgent는 code_agent_step
+
+    def _ask(self, prompt, on_delta=None, images=None, purpose="chat"):
+        if self.engine is not None:
+            import adaptive_engine
+
+            try:
+                reply = self.engine.ask(prompt, purpose=purpose, task_text=self._task_text, on_delta=on_delta, images=images,
+                                        attachments=bool(self.attachment_blocks or self.images))
+            except adaptive_engine.AdaptiveError as e:
+                raise ApiError(str(e)) from e
+        else:
+            reply = ask(self.api_key, prompt, settings=self.api_settings, on_delta=on_delta, cancelled=self.cancelled,
+                        images=images)
         reply = SERVER_COMMENT_RE.sub("", reply)
         return JUNK_CODE_RE.sub("", reply).strip()
 
@@ -376,7 +391,7 @@ class Agent:
             '기억해 달라는 요청이 아니라 "기억해?"처럼 묻는 말이면 {"memory": null} 로 답하세요.',
             "[사용자 메시지]\n" + task,
         ])
-        reply = self._ask(prompt)
+        reply = self._ask(prompt, purpose="memory_extract")
         start = reply.find("{")
         try:
             data, _ = json.JSONDecoder().raw_decode(reply[start:]) if start != -1 else ({}, 0)
@@ -477,6 +492,7 @@ class Agent:
 
     def update_profile(self, request="", current=()):
         """지금까지의 대화·메모리·첨부 파일을 바탕으로 USER.md를 작성하거나 고친다."""
+        self._task_text = str(request or "")[:4000]
         old = storage.read_profile() if storage.profile_exists() else ""
         self.on_status("대화를 살펴보는 중...")
         lines = []
@@ -499,7 +515,7 @@ class Agent:
         if request:
             parts.append("[추가 요청]\n" + request)
         self.on_status("사용자 정보를 정리하는 중...")
-        reply = self._ask("\n\n".join(parts))
+        reply = self._ask("\n\n".join(parts), purpose="profile")
         new = re.sub(r"^```[a-zA-Z]*\s*\n|\n?```\s*$", "", reply.strip()).strip()
         if not re.search(r"^\s*(#|[-*+]\s)", new, re.MULTILINE):
             return "USER.md를 만들지 못했습니다. 모델의 답변:\n\n" + reply
@@ -527,11 +543,12 @@ class Agent:
         parts += self.attachment_blocks
         parts.append("[현재 요청]\n" + task)
         self.on_status("답변을 작성하는 중...")
-        return self._ask("\n\n".join(parts), on_delta=self.on_delta, images=self.images)
+        return self._ask("\n\n".join(parts), on_delta=self.on_delta, images=self.images, purpose="chat")
 
     # ---- 에이전트 루프 ----
 
     def run(self, history, task, forced_skill=None, attached=()):
+        self._task_text = str(task or "")[:4000]
         self._prepare_context(task)
         self._prepare_attachments(history, list(attached))
         if not (self.agent_mode and self.workspace):
@@ -631,7 +648,7 @@ class Agent:
             self.on_status(f"생각하는 중... ({step + 1}단계)")
             self.steps = step + 1
             prompt = static + self._format_log(log) + "\n\n다음 단계 JSON:"
-            reply = self._ask(prompt, images=self.images)
+            reply = self._ask(prompt, images=self.images, purpose=self.step_purpose)
             action = parse_action(reply)
             if action is None:
                 # 모델이 형식을 거부하고 "사용자가 할 일" 안내문을 쓰는 경우가 있다.
@@ -664,7 +681,7 @@ class Agent:
         self.on_status("결과를 정리하는 중...")
         prompt = (static + self._format_log(log)
                   + "\n\n단계 한도에 도달했습니다. done으로 지금까지의 결과와 남은 일을 정리하세요.\n다음 단계 JSON:")
-        reply = self._ask(prompt, images=self.images)
+        reply = self._ask(prompt, images=self.images, purpose="agent_final")
         action = parse_action(reply)
         if action and action.get("action") == "done":
             return str(action.get("answer") or "")
@@ -692,7 +709,7 @@ class Agent:
             "[목표]\n" + task,
             "[안내문]\n" + guidance,
         ])
-        return parse_action(self._ask(prompt))
+        return parse_action(self._ask(prompt, purpose="agent_convert"))
 
     def _static_prompt(self, history, task, forced_skill):
         parts = [

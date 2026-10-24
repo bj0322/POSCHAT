@@ -120,6 +120,14 @@ on_usage = None
 # 성공·실패와 관계없이 호출마다 on_trace(info, prompt, reply)를 부른다(관측: telemetry.on_llm_call).
 # info: {"mode", "model", "ms", "ok", "error", "input_tokens", "output_tokens", "stream", "retries"}
 on_trace = None
+# 1.17: Cloud 모델 호출 직전에 부른다(kind: "chat" | "stt"). Local Only 정책이면 ApiError를 내서 막는다(main.py가 설정한다).
+# 라우터를 거치지 않는 호출(PO노트·대화 요약·자동 평가·직접 고른 Cloud 모델)까지 여기서 한 번 더 막는다.
+cloud_guard = None
+
+
+def _guard(kind):
+    if cloud_guard:
+        cloud_guard(kind)
 
 
 @dataclass
@@ -235,6 +243,7 @@ def transcribe(api_key, chat_completions_url, wav_b64, language=None, context=""
 
     POSTECH 게이트웨이에는 /audio/transcriptions가 없지만 Gemini는 Chat Completions로 음성을 받는다.
     """
+    _guard("stt")
     lang = {"ko": "한국어", "en": "영어"}.get(language, "들리는 언어")
     instruction = (f"이 강의 음성을 {lang} 그대로 받아 적으세요. 받아 적은 글만 출력하고, 요약·설명·따옴표를 붙이지 마세요. "
                    "말이 없거나 알아들을 수 없으면 아무것도 출력하지 마세요.")
@@ -273,6 +282,7 @@ def refine_transcript(api_key, chat_completions_url, wav_b64, drafts, language=N
     음성은 drafts의 구간을 차례로 이어 붙인 것이다. 고친 글 목록(drafts와 같은 길이)을 돌려주고,
     모델이 번호를 맞춰 답하지 않으면 번호 없이 이어 쓴 글(str)을 돌려준다.
     """
+    _guard("stt")
     lang = {"ko": "한국어", "en": "영어"}.get(language, "들리는 언어")
     lines = "\n".join(f"{i}| {t}" for i, t in enumerate(drafts, 1))
     instruction = (f"이 강의 음성은 아래 {len(drafts)}개 구간을 차례로 이어 붙인 것입니다. 각 줄은 로컬 음성 인식기가 받아 적은 초안이라 "
@@ -362,6 +372,7 @@ def ask(api_key, message, timeout=180, settings=None, on_delta=None, cancelled=N
 
     images는 [(MIME 형식, base64)]이며 Responses/호환 API에서 보낸다(a1은 글자만 받는다).
     """
+    _guard("chat")
     settings = settings or ApiSettings()
     stream = bool(on_delta) and settings.stream
     started, retries = time.monotonic(), [0]

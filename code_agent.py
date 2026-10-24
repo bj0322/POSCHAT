@@ -146,6 +146,8 @@ def step_kind(summary):
 class CodeAgent(Agent):
     """agent.Agent + plan 단계 + 스트리밍 명령 실행(RunManager). 파일 수정 정책은 review 콜백(CodeAgentApi)이 정한다."""
 
+    step_purpose = "code_agent_step"  # 1.17 라우팅: 코드 수정·명령으로 이어지는 단계(중요·위험)
+
     def __init__(self, *args, runner=None, on_plan=None, on_run=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.runner = runner      # code_runner.RunManager
