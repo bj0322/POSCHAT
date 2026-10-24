@@ -13,13 +13,16 @@
 | 1.14 | 논문 읽기(POSCHAT Paper) | 릴리스 |
 | 1.15 | B1 수정(ui_events 큐) + POSCHAT Code(편집기·변경 검토·Git·실행) | 릴리스 |
 | 1.16 | Code 에이전트(작업 탭), POSCHAT Lab, AI 브라우저 에이전트, 사이드바 정리, 보안 검토 반영(사이트 승인 kind `site`, `.git` 수정 금지) | 릴리스 |
-| 1.17 | Adaptive Hybrid AI Engine: 로컬 AI(Ollama)·자동 모델 선택·품질 검증·Cloud 승격·비용 기록 | 개발 중 |
+| 1.17 | Adaptive Hybrid AI Engine: 로컬 AI(Ollama)·자동 모델 선택(4정책)·3단계(경량 Cloud·프런티어 상담)·품질 검증·승격·비용 통계·벤치마크 | 구현·자동 시험 완료, 실제 모델 측정·릴리스 대기 |
 
 ## 지금 할 일
 
-### 1. v1.17 Adaptive Hybrid AI Engine (개발 중)
-- 로컬 AI(Ollama, 기본 꺼짐) 연결·모델 목록·기능 확인, 요청 분석 → 정책(Economy·Balanced·Quality·Local Only) → 모델 선택, 작업별 품질 검증과 Cloud 승격,
-  라우팅 이유 표시, 비용·지연 기록과 통계, 벤치마크 데이터셋. 기본값은 기존 동작(자동 선택 꺼짐). 구조·진행은 [architecture/adaptive-ai.md](architecture/adaptive-ai.md).
+### 1. v1.17 마무리: 실제 모델 측정 → (사용자 승인 뒤) 릴리스
+v1.17(Adaptive Hybrid AI Engine)은 구현과 자동 시험을 마쳤다. 구조 [architecture/adaptive-ai.md](architecture/adaptive-ai.md), 결과 [adaptive-ai-benchmark-results.md](adaptive-ai-benchmark-results.md).
+- 사용자 PC에서 `tools/local_ai_check.py`와 `tools/adaptive_benchmark.py --run`(A·B·E·F·G, Cloud 호출 상한)으로 실제 품질·비용을 재고 결과 문서에 적는다.
+  성공률 하락이 2%p를 넘는 작업 유형은 `LOCAL_ELIGIBLE`·`LIGHT_DIRECT`에서 뺀다.
+- 실제 Windows·macOS 앱에서 Ollama 연결·모델 받기·정책 창·라우팅 표시·상담을 손으로 확인한다.
+- 사용자 지시(2026-10): **릴리스(태그·배포)는 하지 않는다. 가장 멀리 가도 머지까지.**
 - 1.16 실제 앱 손 확인(아래 '알려진 한계')은 계속 남아 있다.
 
 ### 2. 다음 후보(v1.18 이후)
@@ -39,3 +42,4 @@
 - 1.15 Code 화면은 Chromium 화면 시험과 CI 빌드만 통과했다. WebView2·WKWebView·안드로이드 WebView에서의 편집기 입력·IME·키보드는 손으로 확인해야 한다.
 - macOS WKWebView 백엔드는 제목·주소가 바뀌어도(SPA의 pushState 등) 페이지가 다 열릴 때만 알린다(KVO 없음).
 - 1.16 브라우저 에이전트·Lab·Code 에이전트 화면은 Chromium 화면 시험과 CI로 확인했다. 실제 앱에서 손으로 확인하는 일이 남았다.
+- 1.17 로컬 AI는 가짜 Ollama(시험)로만 확인했다. 개발 환경에서 실제 Ollama 실행 파일을 돌릴 수 없었고 Cloud 키도 없었다. 라우터의 test 세트 오류(paper-15 등)는 일부러 고치지 않았다.
