@@ -278,8 +278,10 @@ async function openThread(id) {
 // 지금 API 방식에서 고를 수 있는 모델과 새 대화의 기본 모델(PO노트 노트 만들기도 같은 목록을 쓴다)
 function modeModels() {
   const mode = S.config.api_mode || "chat_completions";
-  return mode === "responses" ? (S.responsesModels || [])
+  const base = mode === "responses" ? (S.responsesModels || [])
     : mode === "anthropic" ? (S.anthropicModels || []) : (S.models || []);
+  // 1.17: 자동 선택을 켰으면 '자동'과 로컬 모델을 앞에 더한다(adaptive.js)
+  return window.adaptiveModelOptions ? adaptiveModelOptions(base) : base;
 }
 
 function modeDefaultModel() {
@@ -346,10 +348,13 @@ function messageNode(msg) {
       msg.content ? h("div", { class: "bubble" }, msg.content) : null);
   }
   if (msg.role === "assistant") {
+    // 1.17: 자동·로컬 모델로 답했으면 고른 모델과 이유(펼치기)
+    const route = msg.routing && window.routeBadge && (S.config.adaptive || {}).show_badge !== false ? routeBadge(msg.routing) : null;
     return h("div", { class: "msg assistant" },
       h("div", { class: "avatar" }, "P"),
       h("div", { class: "body" },
         renderMarkdown(msg.content),
+        route,
         h("div", { class: "msg-actions" },
           h("button", { title: "복사", html: ICONS.copy, onclick: () => copyText(msg.content) }),
           feedbackButton(msg, 1), feedbackButton(msg, -1),
@@ -580,7 +585,8 @@ function showStreaming(text) {
         $("#messages").append(node);
       }
     }
-    node.querySelector(".body").replaceChildren(renderMarkdown(streaming.text));
+    const live = window.streamingRouteNode ? streamingRouteNode() : null;  // 1.17: 로컬 '검증 전'·Cloud로 다시 답하는 중
+    node.querySelector(".body").replaceChildren(...(live ? [live] : []), renderMarkdown(streaming.text));
     scrollToBottom();
   });
 }
@@ -776,7 +782,12 @@ window.onBackendEvent = (ev) => {
     if (window.labEvent) labEvent(ev);
   } else if (ev.type === "connector" || ev.type === "hub") {
     if (window.hubEvent) hubEvent(ev);
+  } else if (ev.type === "route") {
+    if (window.routeEvent) routeEvent(ev);
+  } else if (ev.type === "adaptive") {
+    if (window.adaptiveEvent) adaptiveEvent(ev);
   } else if (ev.type === "done") {
+    if (window.adaptiveDone) adaptiveDone();
     S.busy = false;
     S.busyThread = null;
     endStreaming();
@@ -1023,6 +1034,8 @@ function showSettings() {
   stream.checked = c.stream !== false;
   const autoUpdate = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
   autoUpdate.checked = c.update_check !== false;
+  const devMode = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
+  devMode.checked = !!c.developer_mode;
   const responsesBox = h("div", {},
     h("div", { class: "field" }, h("label", {}, "Responses API 주소 (필수)"), url,
       h("small", {}, "필수 입력. POSTECH GenAI 콘솔에서 openai/responses로 끝나는 전체 HTTPS 주소를 복사하세요.")),
@@ -1062,6 +1075,7 @@ function showSettings() {
     responsesBox,
     compatibleBox,
     anthropicBox,
+    window.adaptiveSettingsField ? adaptiveSettingsField() : null,
     h("div", { class: "field" },
       h("label", { style: "display:flex;align-items:center;font-weight:600;cursor:pointer" }, stream, "답변을 받는 대로 표시 (스트리밍)"),
       h("small", {}, "일반 대화의 답변을 글자가 오는 대로 보여 줍니다. 에이전트 모드의 단계 진행은 그대로입니다.")),
@@ -1104,6 +1118,10 @@ function showSettings() {
     h("div", { class: "field" }, h("label", {}, "모델 API 사용량 (이 앱에서 보낸 요청)"),
       usageBox,
       h("small", {}, "토큰 수는 서버가 응답에 사용량을 담아 준 요청만 셉니다.")),
+    h("div", { class: "field" }, h("label", {}, "개발자 모드"),
+      h("label", { style: "display:flex;align-items:center;font-weight:400;cursor:pointer" }, devMode, "라우팅·토큰·손익분기 원자료 보기"),
+      h("small", {}, "답변 아래 모델 표시를 펼치면 호출마다 서버가 알려 준 실제 토큰(캐시 포함)·손익분기 계산·원본 JSON이 보이고, ",
+        "연결·도구 → 사용량·진단에 Adaptive AI 개발자 데이터(최근 기록·토큰 합계·손익분기 표)가 생깁니다. 질문·답 내용은 기록하지 않습니다.")),
     h("div", { class: "field" }, h("label", {}, "데이터 폴더"),
       h("div", { class: "row" }, h("small", { style: "flex:1;margin:0;word-break:break-all" }, S.dataDir),
         h("button", { class: "btn", onclick: () => api().open_folder("data") }, "열기"))),
@@ -1139,7 +1157,7 @@ function showSettings() {
             stream: stream.checked,
             anthropic_api_key: anthropicKey.value.trim(), anthropic_server_models: anthropicModels,
             clear_anthropic_key: clearAnthropic.checked && !anthropicKey.value.trim(),
-            update_check: autoUpdate.checked,
+            update_check: autoUpdate.checked, developer_mode: devMode.checked,
             notion_token: notion.value.trim(), clear_notion: clearNotion.checked && !notion.value.trim(),
             firecrawl_key: firecrawl.value.trim(), clear_firecrawl: clearFirecrawl.checked && !firecrawl.value.trim(),
           });
@@ -1394,6 +1412,19 @@ Claude Sonnet 5.5 기준으로 1크레딧은 입력 약 250토큰, 출력 약 75
 - **결과 가져오기**: 밖에서 만든 CSV·JSON·로그·그림을 옮기지 않고 가리킵니다. **미리 보기·지표 뽑기**에서 고른 열만 지표가 되고 단위·출처가 남습니다(NaN·빈 칸은 빼고 경고).
 - **그래프**(선·점·막대, 여러 Run 겹치기, 통계는 전체 데이터)와 **비교**(다른 조건 강조, 단위·커밋·환경 차이 경고).
 - **AI 분석**: 고른 Run 기록만 채팅에 첨부해 요약·비교·이상 찾기·다음 실험 제안을 묻습니다. AI는 실험을 실행하지 않습니다. 고른 요약은 **프로젝트 기억에 남기기**.`],
+  ["AI 실행 정책 · 로컬 AI (1.17)", `
+**설정 → AI 실행 정책 → 열기**에서 켜면, 요청의 종류·난이도·개인정보·이 PC의 로컬 모델·비용을 보고 **로컬 AI(Ollama)**와 **Cloud 모델** 중 하나를 자동으로 고릅니다. 기본은 꺼짐입니다.
+
+- **로컬 AI**: [ollama.com](https://ollama.com/download)에서 Ollama를 설치·실행하면 **연결됨**으로 보입니다. 모델은 창의 **모델 받기**에서 크기·라이선스를 확인한 뒤 받거나, 터미널의 \`ollama pull\`로 받습니다. 앱은 모델을 함께 설치하지 않습니다.
+- **정책**: **Economy**(가벼운 일은 로컬), **Balanced**(권장, 연구·코드·에이전트는 Cloud), **Quality**(Cloud 먼저), **Local Only**(Cloud를 전혀 부르지 않음).
+- 대화 위 모델 목록에서 **자동**을 고르면 정책대로, **로컬 · 모델 이름**을 고르면 그 로컬 모델만, Cloud 모델을 고르면 그 모델만 씁니다(자동으로 바꾸지 않음).
+- 답변 아래 **Local · 요약**, **Cloud · 연구 추론**, **Local → Cloud · 근거 검증 실패** 같은 표시를 누르면 고른 모델·이유·응답 시간·Cloud 호출 여부·비용 추정·검증 결과가 보입니다.
+- 로컬 답은 규칙으로 검증합니다(빈 답·언어·형식·원문에 없는 주소·인용·쪽 번호·수치·코드 문법). 통과하지 못하면 허용한 경우에만 Cloud로 다시 답하고, 먼저 받은 로컬 답은 접어서 함께 보여 줍니다.
+- 주간 Cloud 호출·크레딧 한도, 요청당 비용 한도, 민감 정보·첨부는 로컬에서만 같은 설정이 있습니다. 통계는 **연결·도구 → 사용량·진단**에 있습니다(로컬은 Cloud API 비용만 0이고 전기·하드웨어 비용은 따로입니다).
+- **경량 Cloud 모델(3단계, 실험)**: 정책 창에서 **3단계 켜기**를 켜고 Haiku·GPT-5 mini 같은 모델을 고르면 사용자 → 경량 모델 → 프런티어가 됩니다. 보통 일은 경량 모델이 답하고, 어려운 일은 경량 모델이 이끌며 필요한 부분만 프런티어에 짧게 묻습니다(**Light ⇄ Frontier** 표시). 프런티어에는 대화 전체 대신 질문과 발췌만 갑니다.
+- **단가·손익분기**: 경량·프런티어 단가를 넣으면 요청마다 손익분기(경량 단가 ÷ 프런티어 단가가 이 값보다 작아야 경량이 쌈)를 계산해, 프런티어 직접이 더 싼 요청은 프런티어로 보냅니다. **프롬프트 캐싱**을 켜면 같은 앞부분의 입력 비용을 줄입니다.
+- **개발자 모드**(설정): 답변 아래 표시에 호출마다의 실제 토큰·캐시·손익분기·원본 JSON이, 사용량·진단에 개발자 데이터가 보입니다.
+- 안드로이드에서는 로컬 AI를 쓸 수 없습니다(자동 선택을 켜도 Cloud 모델만 고릅니다).`],
   ["브라우저 에이전트 (1.16)", `
 **브라우저**를 열어 둔 채 에이전트 모드에서 "이 사이트에서 ○○를 찾아 줘"처럼 맡기면, 에이전트가 페이지를 살펴보고(요소 목록) 누르기·입력·고르기·스크롤·기다리기·읽기·캡처를 직접 합니다.
 
@@ -1624,6 +1655,7 @@ function applyState(state) {
   S.poAvailable = !!state.po_available;
   if (state.attach_limits) S.attachLimits = state.attach_limits;
   $("#agent-toggle").checked = !!state.config.agent_mode;
+  if (window.adaptiveRefreshModels) adaptiveRefreshModels();  // 1.17: 로컬 모델 목록(자동 선택을 켰을 때만, 기다리지 않는다)
   renderThreadModel();
   renderSidebar();
   renderWorkspaceChip();

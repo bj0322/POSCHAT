@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 
 import webview
 
+import adaptive_engine
 import api
 import attachments
 import connectors
@@ -27,6 +28,7 @@ import stt
 import telemetry
 import ui_events
 import updates
+from adaptive_api import AdaptiveApi
 from browser_api import BrowserApi
 from code_agent import CodeAgentApi
 from code_api import CodeApi
@@ -95,10 +97,10 @@ def _installed_package_licenses():
     return sorted(items, key=lambda x: x["name"].lower())
 
 
-class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
+class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, AdaptiveApi):
     """JS에서 호출하는 API. 밑줄로 시작하는 이름은 JS에 노출되지 않는다. '연결·도구' 창의 API는 WorkspaceApi,
     브라우저는 BrowserApi(1.13), 논문은 PaperApi(1.14), 코드 편집기는 CodeApi(1.15),
-    Code 에이전트는 CodeAgentApi(1.16), 실험 기록은 LabApi(1.16)에 있다."""
+    Code 에이전트는 CodeAgentApi(1.16), 실험 기록은 LabApi(1.16), AI 실행 정책·로컬 AI는 AdaptiveApi(1.17)에 있다."""
 
     def __init__(self):
         storage.ensure_dirs()
@@ -130,6 +132,8 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
         # 관측(사용량·진단 탭): 내용 없이 메타데이터만 이 기기에 기록한다. Langfuse 내보내기는 켰을 때만.
         telemetry.config_getter = lambda: self._config
         api.on_trace = telemetry.on_llm_call
+        api.cloud_guard = self._cloud_guard  # 1.17: Local Only 정책이면 Cloud 모델 호출을 막는다
+        self._local_rt = adaptive_engine.LocalRuntime(lambda: self._config)
         connectors.on_event = telemetry.on_tool_call
         telemetry.prune()
         storage.cleanup_staged()
@@ -256,6 +260,8 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
                 "anthropic_model": self._config.get("anthropic_model", api.DEFAULT_ANTHROPIC_MODEL),
                 "stream": self._config.get("stream", True),
                 "update_check": self._config.get("update_check", True),
+                "developer_mode": bool(self._config.get("developer_mode")),
+                "adaptive": self._adaptive_public(),
                 "notion_source": "settings" if self._config.get("notion_token") else (
                     "env" if os.environ.get("NOTION_TOKEN") or os.environ.get("NOTION_API_KEY") else None),
                 "firecrawl_source": "settings" if self._config.get("firecrawl_key") else (
@@ -286,7 +292,8 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
             if thread is not None and api.normalize_model(thread.get("model")) != thread.get("model"):
                 thread["model"] = api.normalize_model(thread.get("model"))
                 storage.save_thread(thread, update_timestamp=False)
-            if thread is not None and thread.get("model") not in self._model_ids(self._mode()):
+            if thread is not None and thread.get("model") not in self._model_ids(self._mode()) \
+                    and not self._routed_model_ok(thread.get("model")):
                 thread["model"] = self._default_model()
                 storage.save_thread(thread, update_timestamp=False)
             return thread
@@ -294,7 +301,8 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
     def new_thread(self):
         with self._lock:
             thread = storage.new_thread()
-            thread["model"] = self._default_model()
+            # 1.17: 자동 선택을 켰으면 새 대화는 '자동'으로 시작한다(대화 위에서 직접 고른 모델로 언제든 바꿀 수 있다)
+            thread["model"] = "auto" if adaptive_engine.active(self._config) else self._default_model()
             storage.save_thread(thread)
             return thread
 
@@ -333,7 +341,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
         return storage.list_threads()
 
     def set_thread_model(self, thread_id, model):
-        if model not in self._model_ids(self._mode()):
+        if model not in self._model_ids(self._mode()) and not self._routed_model_ok(model):
             return {"ok": False, "error": "지원하지 않는 모델입니다."}
         with self._lock:
             thread = storage.load_thread(thread_id)
@@ -405,6 +413,8 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
                 self._config["stream"] = bool(settings["stream"])
             if "update_check" in settings:
                 self._config["update_check"] = bool(settings["update_check"])
+            if "developer_mode" in settings:  # 1.17: 라우팅·토큰·손익분기의 원자료를 화면에 보인다
+                self._config["developer_mode"] = bool(settings["developer_mode"])
             self._stamp_settings(before)
             storage.save_config(self._config)
         return self.get_state()
@@ -1004,10 +1014,14 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
         self._po_cancel_download.set()
 
     def po_generate(self, note_id, model=None):
-        """강의 자료·전사·메모로 필기 노트(note.md)를 만든다. 진행은 po 이벤트로 알린다."""
+        """강의 자료·전사·메모로 필기 노트(note.md)를 만든다. 진행은 po 이벤트로 알린다.
+        1.17: model이 'auto'·'local:…'이고 자동 선택이 켜져 있으면 Adaptive 엔진으로(받아 적기는 그대로 PO노트 설정을 따른다)."""
         key = self._api_key()
-        if not key:
+        routed = self._routed_model_ok(model)
+        if not key and (not routed or self._api_needed(self._config, model)):
             return {"ok": False, "error": self._missing_key_error()}
+        if adaptive_engine.local_only(self._config) and not routed:
+            return {"ok": False, "error": "Local Only 정책이라 Cloud 모델로 노트를 만들지 않습니다. 모델을 '자동' 또는 로컬 모델로 고르세요."}
         if self._po_generating:
             return {"ok": False, "error": "다른 노트를 만들고 있습니다. 끝난 뒤 다시 시도하세요."}
         try:
@@ -1021,10 +1035,11 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
         elif settings.model not in allowed:
             settings.model = self._default_model()
         self._po_generating = note_id
-        threading.Thread(target=self._po_generate_work, args=(note_id, key, settings), daemon=True).start()
-        return {"ok": True, "model": settings.model}
+        routed_model = model if routed else None
+        threading.Thread(target=self._po_generate_work, args=(note_id, key, settings, routed_model), daemon=True).start()
+        return {"ok": True, "model": routed_model or settings.model}
 
-    def _po_generate_work(self, note_id, key, settings):
+    def _po_generate_work(self, note_id, key, settings, routed_model=None):
         last = [0.0]
 
         def on_delta(text):
@@ -1035,6 +1050,10 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
         def ask(prompt, delta):
             return api.ask(key, prompt, timeout=600, settings=settings, on_delta=delta)
 
+        if routed_model:
+            routed, _ = self._routed_ask(routed_model, key, "po_note", area="po_note")
+            if routed is not None:
+                ask = routed  # noqa: F811  자동·로컬 모델: 요약·노트 만들기만 엔진으로(전사는 PO노트 설정 그대로)
         try:
             text = po_note.generate(note_id, ask,
                                     on_status=lambda label: self._po_push("note_status", note_id=note_id, text=label),
@@ -1075,8 +1094,11 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
                 task = rest or f"'{forced.name}' 스킬을 실행해 주세요."
 
         api_key = self._api_key()
-        if not api_key:
+        thread_model = (storage.load_thread(thread_id) or {}).get("model")
+        if not api_key and self._api_needed(self._config, thread_model):
             return {"ok": False, "need_key": True, "error": self._missing_key_error()}
+        if adaptive_engine.local_only(self._config) and not self._thread_routed(thread_model):
+            return {"ok": False, "error": "Local Only 정책이라 이 대화의 Cloud 모델을 부르지 않습니다. 대화 위의 모델을 '자동' 또는 로컬 모델로 바꾸세요."}
 
         with self._lock:
             thread = storage.load_thread(thread_id)
@@ -1132,6 +1154,12 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
                     storage.save_thread(thread)
 
         thread = storage.load_thread(thread_id) or {}
+        # 1.17: 대화의 모델이 '자동'·로컬이면 Adaptive 엔진이 단계마다 고른다(라우팅 표시는 route 이벤트로 화면에)
+        engine = self._make_engine(thread, api_key, lambda: not alive(),
+                                   on_event=lambda ev: alive() and self._push({"type": "route", "thread_id": thread_id, **ev}),
+                                   area="agent" if agent_mode and workspace else "chat")
+        block_tools = engine is not None and adaptive_engine.local_only(self._config) and \
+            adaptive_engine.settings(self._config)["local_only_tools"] == "block"
         agent = Agent(
             api_key=api_key,
             workspace=workspace,
@@ -1144,7 +1172,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
             cancelled=lambda: not alive(),
             thread_id=thread_id,
             share_threads=bool(self._config.get("share_threads", True)),
-            mcp=(lambda: self._mcp.ensure(self._config, workspace, on_status)) if agent_mode and workspace else None,
+            mcp=(lambda: self._mcp.ensure(self._config, workspace, on_status)) if agent_mode and workspace and not block_tools else None,
             api_settings=self._thread_api_settings(thread),
             on_delta=on_delta,
             ai_memory_state=thread.get("ai_memory"),
@@ -1157,6 +1185,8 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
             # 1.16 브라우저 에이전트: 진행 상황은 브라우저 막대와 채팅에, 일시정지는 브라우저 막대의 버튼
             browser_progress=lambda info: self._push({"type": "browser", "kind": "agent", "thread_id": thread_id, **info}),
             browser_paused=self._browser_pause_event(),
+            engine=engine,
+            prompt_cache=adaptive_engine.settings(self._config)["prompt_cache"],
         )
         started, outcome = time.monotonic(), "done"
         try:
@@ -1164,8 +1194,18 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
                 answer = agent.update_profile(task, attached)
             else:
                 answer = agent.run(history, task, forced, attached)
+            self._save_frontier_session(thread_id, engine)
             if alive():
-                self._add(thread_id, "assistant", answer, model=agent.api_settings.model)
+                extra = {}
+                if engine is not None and engine.summary():
+                    route = engine.summary()
+                    extra["routing"] = route
+                    model = ("local:" + route["model"]) if route.get("provider") == "local" else route.get("model")
+                    if route.get("consulted") and engine.cloud_model:
+                        extra["routing"]["frontier_model"] = engine.cloud_model
+                else:
+                    model = agent.api_settings.model
+                self._add(thread_id, "assistant", answer, model=model or agent.api_settings.model, **extra)
             else:
                 outcome = "cancelled"
         except ApiError as e:
@@ -1191,8 +1231,9 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi):
                 except (attachments.AttachmentError, ValueError):
                     pass
             telemetry.record("agent_run", mode="agent" if agent_mode and workspace else "chat",
-                             model=agent.api_settings.model, ms=int((time.monotonic() - started) * 1000),
-                             outcome=outcome, steps=agent.steps, tools=len(agent.tools_run))
+                             model=thread.get("model") if engine is not None else agent.api_settings.model,
+                             ms=int((time.monotonic() - started) * 1000),
+                             outcome=outcome, steps=agent.steps, tools=len(agent.tools_run), routed=engine is not None)
             if run_id == self._run_id:
                 self._busy = False
                 self._push({"type": "done", "thread_id": thread_id, "workspace": self._workspace_info()})
@@ -1282,6 +1323,15 @@ def selftest():
     ok = lab_results.to_number("1.5") == (1.5, "ok") and "data-poschat-id" in browser_agent.SNAPSHOT_SCRIPT \
         and lab_store.SCHEMA_VERSION >= 1 and code_agent.APPROVALS
     lines.append(f"lab-agents: {'OK' if ok else 'FAIL'}")
+    # 1.17: Adaptive AI 모듈이 함께 묶였는지(로컬 AI가 없어도 라우터·검증기는 돈다)
+    import adaptive_router
+    import local_ai
+    import quality_gate
+
+    a = adaptive_router.analyze("이 글을 세 줄로 요약해 줘", "이 글을 세 줄로 요약해 줘")
+    ok = a.task == "summarization" and quality_gate.check("general", "").failures == ["empty"] and \
+        local_ai.check_endpoint("http://localhost:11434")[1]
+    lines.append(f"adaptive: {'OK' if ok else 'FAIL'} (local {'지원' if local_ai.SUPPORTED else '없음'})")
     sdk = api._anthropic_sdk()  # 1.11 개인 Claude API: 데스크톱 배포본에는 공식 SDK가 함께 묶여야 한다
     lines.append(f"anthropic: OK {sdk.__version__}" if sdk else "anthropic: FAIL SDK 없음")
     import secret_store
@@ -1432,6 +1482,7 @@ def run_app():
         bridge._events.stop()  # 창이 닫혔다: 더 보내지 않는다(보내는 중인 evaluate_js를 오래 기다리지 않는다)
         bridge._po_shutdown()
         bridge._ca_shutdown()  # Code 에이전트 작업을 멈춘다
+        bridge.adaptive_pull_cancel()  # 1.17: 받던 로컬 모델이 있으면 멈춘다(Ollama가 다음에 이어 받는다)
         bridge._code_shutdown()  # 실행 패널에서 돌던 명령을 끝낸다(프로세스가 남지 않게)
         bridge._mcp.shutdown()
         if bridge._browser_obj is not None:

@@ -874,6 +874,8 @@ async function renderDiagnostics(panel) {
         : h("small", { class: "muted block" }, "아직 기록이 없습니다."),
       h("small", { class: "muted block" }, `크레딧은 앱 안내에 근거가 있는 모델(${st.documented_credit_models.join(", ")})만 추정합니다. 토큰 수는 서버가 알려 준 호출만 셉니다. `,
         "답변 아래 👍·👎로 남긴 평가가 모델별로 모입니다.")),
+    adaptiveDiagnostics(st.adaptive),
+    (S.config || {}).developer_mode ? adaptiveDevSection() : null,
     h("section", { class: "hub-group" }, h("h3", {}, "MCP 도구"),
       sm.tools.length ? diagTable(["도구", "종류", "호출", "성공률", "거부·차단", "재시도", "평균"],
         sm.tools.map((t) => [t.tool, KIND_LABEL[t.kind] || t.kind || "-", num(t.calls), pct(t.success_rate), num(t.denied), num(t.retries), ms(t.avg_ms)]))
@@ -913,6 +915,68 @@ async function renderDiagnostics(panel) {
     h("section", { class: "hub-group" }, h("h3", {}, "이 앱의 API 사용량(1.9부터)"),
       diagTable(["기간", "호출", "토큰 입력", "토큰 출력"], [["오늘", st.usage.today], [`이번 달 (${st.usage.month_name})`, st.usage.month], ["최근 30일", st.usage.last30]]
         .map(([label, u]) => [label, num(u.calls), num(u.input_tokens), num(u.output_tokens)]))));
+}
+
+// 1.17 Adaptive AI 통계. 측정하지 않은 값은 '-'·'추정 불가'로 두고, 로컬의 Cloud 비용 0은 'Cloud API 비용만 0'임을 밝힌다.
+function adaptiveDiagnostics(ad) {
+  if (!ad || ad.error) return null;
+  const a = ad.summary || {};
+  const lat = (x) => (x ? `${ms(x.avg)} / p95 ${ms(x.p95)}` : "-");
+  const succ = (x) => (x && x.checked ? `${pct(x.rate)} (${x.ok}/${x.checked})` : "-");
+  return h("section", { class: "hub-group" }, h("h3", {}, "Adaptive AI (자동 모델 선택, 1.17)"),
+    h("small", { class: "muted block" }, ad.enabled ? `켜짐 · 정책 ${ad.policy}` : "꺼짐 — 설정 → AI 실행 정책에서 켤 수 있습니다. 아래는 켰던 동안의 기록입니다."),
+    a.requests ? h("div", { class: "stat-grid" },
+      h("div", { class: "stat" }, h("b", {}, num(a.requests)), h("span", {}, "자동으로 고른 요청")),
+      h("div", { class: "stat" }, h("b", {}, pct(a.local_ratio)), h("span", {}, `로컬로 끝냄 (${num(a.local)})`)),
+      h("div", { class: "stat" }, h("b", {}, pct(a.cloud_ratio)), h("span", {}, `Cloud가 답함 (${num(a.cloud)}, 승격 포함)`)),
+      a.light ? h("div", { class: "stat" }, h("b", {}, pct(a.light_ratio)), h("span", {}, `경량 Cloud 모델로 보냄 (${num(a.light)}, 상담 ${num(a.consults)})`)) : null,
+      a.frontier_token_saving_est != null ? h("div", { class: "stat" }, h("b", {}, pct(a.frontier_token_saving_est)),
+        h("span", {}, `프런티어 입력 토큰 줄임(추정): ${num(a.frontier_tokens_est)} / 모두 프런티어였다면 ${num(a.baseline_tokens_est)}`)) : null,
+      h("div", { class: "stat" }, h("b", {}, pct(a.escalation_ratio)), h("span", {}, `로컬 → Cloud 승격 (${num(a.escalations)})`)),
+      h("div", { class: "stat" }, h("b", {}, a.saved_credits_est == null ? "추정 불가" : `약 ${num(a.saved_credits_est)}`),
+        h("span", {}, "로컬로 처리해 쓰지 않은 Cloud 크레딧(추정)"))) : h("small", { class: "muted block" }, "아직 자동으로 고른 요청이 없습니다."),
+    a.requests ? diagTable(["", "로컬", "Cloud"], [
+      ["평균 / p95 지연", lat(a.latency_local), lat(a.latency_cloud)],
+      ["검증 통과율(검증할 수 있었던 답)", succ(a.success_local), succ(a.success_cloud)],
+      ["답변 평가 👍/👎", `${num(a.feedback?.local?.up)} / ${num(a.feedback?.local?.down)}`, `${num(a.feedback?.cloud?.up)} / ${num(a.feedback?.cloud?.down)}`],
+      ["Cloud 요청당 크레딧(추정)", "Cloud API 비용 없음", a.credits_per_cloud_request == null ? "추정 불가" : num(a.credits_per_cloud_request)],
+    ]) : null,
+    Object.keys(a.measured_tokens || {}).length ? diagTable(["서버가 알려 준 실제 토큰", "호출", "입력", "출력", "캐시 읽기", "캐시 쓰기"],
+      Object.entries(a.measured_tokens).map(([tier, m]) => [{ light: "경량", frontier: "프런티어" }[tier] || tier, num(m.calls), num(m.input_tokens),
+        num(m.output_tokens), num(m.cache_read_input_tokens), num(m.cache_creation_input_tokens)])) : null,
+    (a.models || []).length ? diagTable(["모델", "호출", "오류율", "평균", "p95"], a.models.map((m) => [m.model, num(m.calls), pct(m.error_rate), ms(m.avg_ms), ms(m.p95_ms)])) : null,
+    Object.keys(a.failures || {}).length ? h("small", { class: "muted block" }, "보낼 곳이 없거나 막힌 요청: " + Object.entries(a.failures).map(([k, v]) => `${k} ${v}번`).join(", ")) : null,
+    h("small", { class: "muted block" }, "로컬의 비용 0은 Cloud API 청구 비용만 0이라는 뜻입니다(이 PC의 전기·하드웨어 비용은 따로이며 재지 않습니다). ",
+      "크레딧은 앱 안내에 근거가 있는 Cloud 모델만 추정하고, 근거가 없는 모델은 '추정 불가'로 둡니다(" + (a.saved_unknown ? `${a.saved_unknown}건 추정 불가` : "모두 추정함") + "). ",
+      "POSTECH 크레딧과 Claude API 요금(USD)은 바꾸거나 더하지 않습니다. 검증 통과율은 규칙으로 확인할 수 있었던 답만 셉니다. ",
+      "프런티어 토큰은 글자 수로 어림한 입력 토큰이며, 경량 모델이 쓴 토큰(" + (a.light_tokens_est == null ? "-" : num(a.light_tokens_est)) + ")은 따로입니다."));
+}
+
+/* 개발자 모드: Adaptive AI 원자료(내용 없는 기록·실측 토큰·손익분기 표). 누를 때만 불러온다. */
+function adaptiveDevSection() {
+  const out = h("div", {});
+  const load = async () => {
+    const r = await api().adaptive_dev_data(DIAG.days);
+    if (!r.ok) return fill(out, h("small", { class: "muted block" }, r.error));
+    const tierName = { local: "로컬", light: "경량", frontier: "프런티어" };
+    const json = JSON.stringify(r, null, 2);
+    fill(out,
+      diagTable(["단계", "호출", "실측한 호출", "입력(추정)", "입력(실측)", "출력", "캐시 읽기", "캐시 쓰기", "캐시 적중"],
+        Object.entries(r.tokens).map(([t, m]) => [tierName[t] || t, num(m.calls), num(m.measured_calls), num(m.est_input), num(m.input_tokens),
+          num(m.output_tokens), num(m.cache_read_input_tokens), num(m.cache_creation_input_tokens), pct(m.cache_hit_ratio)])),
+      diagTable(["요청 길이(토큰)", "손익분기 (지금 단가·실측 분포)"],
+        Object.entries(r.economics).map(([t, e]) => [t, window.econText ? window.econText(e) : JSON.stringify(e)])),
+      h("div", { class: "dev-events" }, diagTable(["시각", "종류", "단계·모델", "ms", "결과", "토큰"],
+        r.events.slice(-60).reverse().map((e) => [new Date(e.ts * 1000).toLocaleTimeString(), e.type,
+          [e.tier, e.provider, e.model || e.to_model || e.frontier_model].filter(Boolean).join(" · "), e.ms ?? "-",
+          e.ok === false ? "실패 " + (e.error || "") : e.ok ? "성공" : (e.reason || e.kind || "-"),
+          e.input_tokens != null ? (window.devTokens ? window.devTokens(e) : "") : (e.est_tokens != null ? `추정 ${e.est_tokens}` : "-")]))),
+      h("small", { class: "muted block" }, `최근 ${r.days}일 기록 ${r.event_count}개 중 마지막 60개. 질문·답·첨부 내용은 기록하지 않습니다.`),
+      h("div", { class: "row" }, h("button", { class: "btn", type: "button", onclick: () => copyText(json) }, "JSON 복사")),
+      h("details", {}, h("summary", {}, "원본 JSON"), h("pre", { class: "dev-events" }, json)));
+  };
+  fill(out, h("button", { class: "btn", type: "button", onclick: load }, "개발자 데이터 불러오기"));
+  return h("section", { class: "hub-group" }, h("h3", {}, "Adaptive AI 개발자 데이터 (개발자 모드)"), out);
 }
 
 HUB_TABS.push({ id: "diagnostics", label: "사용량·진단", render: renderDiagnostics });

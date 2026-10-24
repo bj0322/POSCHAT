@@ -376,6 +376,8 @@ class UiSmokeTests(unittest.TestCase):
                 page.fill("#browser-address", "arxiv.org/abs/1706.03762")
                 page.press("#browser-address", "Enter")
                 page.wait_for_function("document.querySelector('#browser-status').textContent.includes('Attention')")
+                # 주소 칸은 browser_open의 응답을 받은 뒤 채운다. 페이지 제목 이벤트가 응답보다 먼저 올 수 있어 값이 바뀌기를 기다린다
+                page.wait_for_function("document.querySelector('#browser-address').value.startsWith('https://')", timeout=10000)
                 self.assertEqual(page.input_value("#browser-address"), "https://arxiv.org/abs/1706.03762")
                 self.assertIn(("open", "https://arxiv.org/abs/1706.03762"), backends[0].calls)
                 self.assertFalse(page.is_disabled("#browser-back"))

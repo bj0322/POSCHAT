@@ -494,7 +494,7 @@ class WorkspaceApi:
         """대화를 요약해 대화 메모리(conversation)에 남긴다. 모델을 한 번 부른다(크레딧 사용)."""
         key = self._api_key()
         thread = storage.load_thread(thread_id)
-        if not key:
+        if not key and self._api_needed(self._config, (thread or {}).get("model")):
             return {"ok": False, "error": self._missing_key_error()}
         if not thread or not thread.get("messages"):
             return {"ok": False, "error": "요약할 대화가 없습니다."}
@@ -511,7 +511,8 @@ class WorkspaceApi:
                   "한국어로 5줄 이내의 불릿으로 요약하세요. 비밀번호·키 같은 민감한 정보는 쓰지 마세요.\n\n[대화]\n" + "\n".join(lines))
         try:
             settings = self._thread_api_settings(thread)
-            text = api.ask(key, prompt, settings=settings)
+            routed, _ = self._routed_ask(thread.get("model"), key, "thread_summary", area="summary")  # 1.17 자동·로컬 모델
+            text = routed(prompt) if routed is not None else api.ask(key, prompt, settings=settings)
             entry, _ = memory_store.write(text.strip(), layer="conversation", kind="summary",
                                           title=f"대화 '{thread.get('title', '')}' 요약", tags=[f"thread:{thread['id']}"])
             self._push({"type": "hub", "kind": "summary_done", "entry": entry})
@@ -803,7 +804,13 @@ class WorkspaceApi:
                 msg.pop("feedback", None)
             storage.save_thread(thread, update_timestamp=False)
         if rating and rating != previous:
-            telemetry.record("feedback", model=msg.get("model") or thread.get("model") or "?", rating=rating)
+            routing = msg.get("routing") or {}
+            telemetry.record("feedback", model=msg.get("model") or thread.get("model") or "?", rating=rating,
+                             routed=bool(routing), provider=routing.get("provider") or "")
+            if routing.get("provider") == "local" and routing.get("task") and str(msg.get("model", "")).startswith("local:"):
+                import adaptive_router  # 1.17: 로컬 답의 👍👎도 그 모델·작업의 측정 기록에 더한다
+
+                adaptive_router.record_outcome(msg["model"], routing["task"], rating > 0, source="feedback")
         return {"ok": True, "feedback": rating}
 
     def diagnostics_state(self, days=30):
@@ -822,7 +829,18 @@ class WorkspaceApi:
             "eval_results": evals.recent(5), "evaluating": bool(getattr(self, "_evaluating", False)),
             "models": [{"id": m, "label": label} for m, label in self._models(self._mode())],
             "documented_credit_models": sorted(telemetry.DOCUMENTED_RATES),
+            "adaptive": self._adaptive_diagnostics(days),
         }
+
+    def _adaptive_diagnostics(self, days):
+        import adaptive_engine
+
+        try:
+            return {"enabled": adaptive_engine.active(self._config), "policy": adaptive_engine.settings(self._config)["policy"],
+                    "summary": adaptive_engine.summary(days, config=self._config),
+                    "budget": adaptive_engine.budget_state(self._config)}
+        except Exception as e:  # 통계 문제로 진단 탭을 막지 않는다
+            return {"enabled": False, "error": f"{type(e).__name__}: {e}"}
 
     def set_telemetry_settings(self, settings):
         settings = settings or {}

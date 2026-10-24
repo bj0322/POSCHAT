@@ -120,6 +120,14 @@ on_usage = None
 # 성공·실패와 관계없이 호출마다 on_trace(info, prompt, reply)를 부른다(관측: telemetry.on_llm_call).
 # info: {"mode", "model", "ms", "ok", "error", "input_tokens", "output_tokens", "stream", "retries"}
 on_trace = None
+# 1.17: Cloud 모델 호출 직전에 부른다(kind: "chat" | "stt"). Local Only 정책이면 ApiError를 내서 막는다(main.py가 설정한다).
+# 라우터를 거치지 않는 호출(PO노트·대화 요약·자동 평가·직접 고른 Cloud 모델)까지 여기서 한 번 더 막는다.
+cloud_guard = None
+
+
+def _guard(kind):
+    if cloud_guard:
+        cloud_guard(kind)
 
 
 @dataclass
@@ -235,6 +243,7 @@ def transcribe(api_key, chat_completions_url, wav_b64, language=None, context=""
 
     POSTECH 게이트웨이에는 /audio/transcriptions가 없지만 Gemini는 Chat Completions로 음성을 받는다.
     """
+    _guard("stt")
     lang = {"ko": "한국어", "en": "영어"}.get(language, "들리는 언어")
     instruction = (f"이 강의 음성을 {lang} 그대로 받아 적으세요. 받아 적은 글만 출력하고, 요약·설명·따옴표를 붙이지 마세요. "
                    "말이 없거나 알아들을 수 없으면 아무것도 출력하지 마세요.")
@@ -273,6 +282,7 @@ def refine_transcript(api_key, chat_completions_url, wav_b64, drafts, language=N
     음성은 drafts의 구간을 차례로 이어 붙인 것이다. 고친 글 목록(drafts와 같은 길이)을 돌려주고,
     모델이 번호를 맞춰 답하지 않으면 번호 없이 이어 쓴 글(str)을 돌려준다.
     """
+    _guard("stt")
     lang = {"ko": "한국어", "en": "영어"}.get(language, "들리는 언어")
     lines = "\n".join(f"{i}| {t}" for i, t in enumerate(drafts, 1))
     instruction = (f"이 강의 음성은 아래 {len(drafts)}개 구간을 차례로 이어 붙인 것입니다. 각 줄은 로컬 음성 인식기가 받아 적은 초안이라 "
@@ -357,20 +367,28 @@ def _notify_credit(info):
             pass
 
 
-def ask(api_key, message, timeout=180, settings=None, on_delta=None, cancelled=None, images=None):
+def ask(api_key, message, timeout=180, settings=None, on_delta=None, cancelled=None, images=None, cache_prefix=0,
+        usage_out=None):
     """모델 답변 전체를 돌려준다. on_delta가 있고 스트리밍이 켜져 있으면 받는 동안 중간 텍스트를 넘긴다.
 
     images는 [(MIME 형식, base64)]이며 Responses/호환 API에서 보낸다(a1은 글자만 받는다).
+    1.17: cache_prefix(글자 수)를 주면 message의 앞부분 그만큼을 프롬프트 캐시 대상으로 표시한다(Claude API의 cache_control).
+    OpenAI 호환 서버는 표시 방법이 없어 그대로 보낸다(앞부분이 같으면 서버가 스스로 캐시할 수 있다).
+    usage_out(dict)을 주면 서버가 알려 준 토큰 사용량(input_tokens, output_tokens, cache_read_input_tokens,
+    cache_creation_input_tokens)을 채운다. 알려 주지 않으면 비워 둔다.
     """
+    _guard("chat")
     settings = settings or ApiSettings()
     stream = bool(on_delta) and settings.stream
     started, retries = time.monotonic(), [0]
     try:
-        text, usage = _ask_any(api_key, message, timeout, settings, on_delta, cancelled, images, stream, retries)
+        text, usage = _ask_any(api_key, message, timeout, settings, on_delta, cancelled, images, stream, retries, cache_prefix)
     except ApiError as e:
         _trace(settings, started, stream, retries[0], None, error=_error_class(e), prompt=message)
         raise
     _trace(settings, started, stream, retries[0], usage, prompt=message, reply=text)
+    if usage_out is not None and usage:
+        usage_out.update(usage)
     if on_usage:
         try:
             on_usage(settings.mode, settings.model if settings.mode != "a1" else "a1", usage)
@@ -405,13 +423,13 @@ def _trace(settings, started, stream, retries, usage, error="", prompt=None, rep
         pass  # 관측 기록 실패로 답변을 잃지 않는다
 
 
-def _ask_any(api_key, message, timeout, settings, on_delta, cancelled, images, stream, retries):
+def _ask_any(api_key, message, timeout, settings, on_delta, cancelled, images, stream, retries, cache_prefix=0):
     if settings.mode == "responses":
         text, usage = _ask_responses(api_key, message, timeout, settings, on_delta if stream else None, cancelled,
                                      images)
     elif settings.mode == ANTHROPIC_MODE:
         text, usage = _ask_anthropic(api_key, message, timeout, settings, on_delta if stream else None, cancelled,
-                                     images)
+                                     images, cache_prefix)
     elif settings.mode == "chat_completions":
         text, usage = _ask_chat_completions(api_key, message, timeout, settings,
                                             on_delta if stream else None, cancelled, images)
@@ -471,7 +489,13 @@ def _usage(data):
             inp = obj.get("input_tokens", obj.get("prompt_tokens"))
             out = obj.get("output_tokens", obj.get("completion_tokens"))
             if isinstance(inp, int) or isinstance(out, int):
-                return {"input_tokens": int(inp or 0), "output_tokens": int(out or 0)}
+                usage = {"input_tokens": int(inp or 0), "output_tokens": int(out or 0)}
+                # 1.17: 서버가 알려 준 캐시 적중 토큰(OpenAI: prompt_tokens_details.cached_tokens, Responses: input_tokens_details)
+                details = obj.get("prompt_tokens_details") or obj.get("input_tokens_details") or {}
+                cached = details.get("cached_tokens") if isinstance(details, dict) else None
+                if isinstance(cached, int) and cached:
+                    usage["cache_read_input_tokens"] = cached
+                return usage
     return None
 
 
@@ -526,12 +550,20 @@ def _anthropic_effort_ok(model):
     return bool(re.match(r"claude-(opus|sonnet|haiku|fable|mythos)-5", model or ""))
 
 
-def _anthropic_params(settings, message, images, stream):
-    """(Messages API 요청 본문, beta 이름 목록)."""
+def _anthropic_params(settings, message, images, stream, cache_prefix=0):
+    """(Messages API 요청 본문, beta 이름 목록). cache_prefix>0이면 앞부분을 따로 나눈 글 블록에 cache_control을 단다(1.17)."""
     content = message
-    if images:
+    cut = int(cache_prefix or 0)
+    if 0 < cut < len(message):
+        text_blocks = [{"type": "text", "text": message[:cut], "cache_control": {"type": "ephemeral"}},
+                       {"type": "text", "text": message[cut:]}]
+    elif cut >= len(message) > 0:
+        text_blocks = [{"type": "text", "text": message, "cache_control": {"type": "ephemeral"}}]
+    else:
+        text_blocks = None
+    if images or text_blocks:
         content = [{"type": "image", "source": {"type": "base64", "media_type": mime, "data": data}}
-                   for mime, data in images] + [{"type": "text", "text": message}]
+                   for mime, data in images or []] + (text_blocks or [{"type": "text", "text": message}])
     params = {"model": settings.model, "max_tokens": ANTHROPIC_MAX_TOKENS if stream else ANTHROPIC_MAX_TOKENS_ONCE,
               "messages": [{"role": "user", "content": content}]}
     if _anthropic_effort_ok(settings.model):
@@ -574,15 +606,20 @@ def _anthropic_answer(blocks, stop_reason, stop_details=None):
 
 
 def _anthropic_usage(usage):
+    """input_tokens는 예전처럼 캐시 쓰기·읽기를 더한 전체 입력이다. 1.17부터 캐시 몫을 따로도 남긴다(비용 계산용)."""
     if usage is None:
         return None
     get = usage.get if isinstance(usage, dict) else (lambda name: getattr(usage, name, None))
     inp = sum(int(get(name) or 0) for name in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
-    return {"input_tokens": inp, "output_tokens": int(get("output_tokens") or 0)}
+    out = {"input_tokens": inp, "output_tokens": int(get("output_tokens") or 0)}
+    for name in ("cache_read_input_tokens", "cache_creation_input_tokens"):
+        if int(get(name) or 0):
+            out[name] = int(get(name) or 0)
+    return out
 
 
-def _ask_anthropic(api_key, message, timeout, settings, on_delta, cancelled, images=None):
-    params, betas = _anthropic_params(settings, message, images, bool(on_delta))
+def _ask_anthropic(api_key, message, timeout, settings, on_delta, cancelled, images=None, cache_prefix=0):
+    params, betas = _anthropic_params(settings, message, images, bool(on_delta), cache_prefix)
     sdk = _anthropic_sdk()
     if sdk is not None:
         return _ask_anthropic_sdk(sdk, api_key, params, betas, timeout, on_delta, cancelled)

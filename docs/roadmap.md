@@ -1,6 +1,6 @@
 # POSCHAT 로드맵과 다음 작업 (v1.16부터)
 
-마지막 갱신: 2026-10-24, v1.16.0(Code 에이전트·Lab·브라우저 에이전트·사이드바) 개발 완료 시점(PR 검토·릴리스 전). 작업 지침은 저장소 최상위 [CLAUDE.md](../CLAUDE.md).
+마지막 갱신: 2026-10-24, v1.17.0 릴리스 시점. 작업 지침은 저장소 최상위 [CLAUDE.md](../CLAUDE.md).
 
 **플랫폼 정책(2026-10, 사용자 지시)**: 안드로이드 앱은 따로 요청하지 않으면 기능을 맞추지 않는다. 데스크톱(Windows·macOS)만 손본다.
 공유 Python·화면 코드는 안드로이드 빌드에도 들어가므로 새 모듈은 계속 공유 목록에 넣고, 안드로이드에서 안 되는 기능은 '쓸 수 없음'으로 막는다. CI의 android 작업과 APK 자산은 그대로 둔다.
@@ -12,16 +12,20 @@
 | 1.13 | 브라우저: 채팅 옆 네이티브 웹 뷰, 격리, 페이지 읽기·첨부, 에이전트 browser_read/open | 릴리스(B1은 1.15에서 수정) |
 | 1.14 | 논문 읽기(POSCHAT Paper) | 릴리스 |
 | 1.15 | B1 수정(ui_events 큐) + POSCHAT Code(편집기·변경 검토·Git·실행) | 릴리스 |
-| 1.16 | Code 에이전트(작업 탭), POSCHAT Lab, AI 브라우저 에이전트, 사이드바 정리 | 구현·자동 시험 완료, PR 검토·릴리스 대기 |
+| 1.16 | Code 에이전트(작업 탭), POSCHAT Lab, AI 브라우저 에이전트, 사이드바 정리, 보안 검토 반영(사이트 승인 kind `site`, `.git` 수정 금지) | 릴리스 |
+| 1.17 | Adaptive Hybrid AI Engine: 로컬 AI(Ollama)·자동 모델 선택(4정책)·3단계(경량 Cloud·프런티어 상담)·품질 검증·승격·비용 통계·벤치마크 | 릴리스(3단계·캐싱은 기본 꺼짐, 실제 모델 측정은 남음) |
 
 ## 지금 할 일
 
-### 1. v1.16 마무리 → 릴리스(사용자 승인 뒤)
-- PR의 CI(license·tests·ui·windows·macos·android·browser-spike)를 모두 통과시킨다. browser-spike에 브라우저 에이전트의 네이티브 단계(스냅샷·입력·제출·캡처)가 있다.
-- 실제 Windows·macOS 앱에서 손으로 확인: Code 작업 탭(긴 작업, 멈춤, 되돌리기, 한글 입력), Lab(Python·노트북 실행, 가져오기, 그래프), 브라우저 에이전트(실제 사이트에서 승인 창 흐름).
-- 확인되면 CLAUDE.md의 릴리스 절차. 머지·태그는 사용자 승인 없이 하지 않는다.
+### 1. v1.17 뒤: 실제 모델 측정
+v1.17(Adaptive Hybrid AI Engine)은 릴리스했다(사용자 승인, 2026-10-24). 3단계·프롬프트 캐싱은 기본 꺼짐, 단가를 넣으면 손익분기(`adaptive_cost`)로 경로를 고른다. 구조 [architecture/adaptive-ai.md](architecture/adaptive-ai.md), 결과 [adaptive-ai-benchmark-results.md](adaptive-ai-benchmark-results.md).
+- 사용자 PC에서 `tools/local_ai_check.py`와 `tools/adaptive_benchmark.py --run`(A·B·E·F·G, Cloud 호출 상한)으로 실제 품질·비용을 재고 결과 문서에 적는다.
+  성공률 하락이 2%p를 넘는 작업 유형은 `LOCAL_ELIGIBLE`·`LIGHT_DIRECT`에서 뺀다.
+- 실제 Windows·macOS 앱에서 Ollama 연결·모델 받기·정책 창·라우팅 표시·상담을 손으로 확인한다.
+- 개발자 모드(설정)의 실측 토큰·캐시 적중률로 상담·캐싱의 실제 이득을 확인하고, 손익분기 프로필의 기본값(O·C·A·승격 확률)을 실측으로 고친다.
+- 1.16 실제 앱 손 확인(아래 '알려진 한계')은 계속 남아 있다.
 
-### 2. 다음 후보(v1.17)
+### 2. 다음 후보(v1.18 이후)
 - Code 에이전트: 작업마다 git worktree/브랜치로 격리, 하위 작업(서브에이전트), 테스트 명령 자동 찾기, 긴 출력 요약, 이미지(스크린숏) 입력.
 - 대화형 터미널(ConPTY/PTY, SSH 세션), SystemVerilog 문법 트리.
 - Lab: papermill식 노트북 파라미터, 원격(SSH) 실행 기록, 실험 보고서 내보내기(Markdown·PDF), 지표 단위 변환 규칙.
@@ -38,3 +42,4 @@
 - 1.15 Code 화면은 Chromium 화면 시험과 CI 빌드만 통과했다. WebView2·WKWebView·안드로이드 WebView에서의 편집기 입력·IME·키보드는 손으로 확인해야 한다.
 - macOS WKWebView 백엔드는 제목·주소가 바뀌어도(SPA의 pushState 등) 페이지가 다 열릴 때만 알린다(KVO 없음).
 - 1.16 브라우저 에이전트·Lab·Code 에이전트 화면은 Chromium 화면 시험과 CI로 확인했다. 실제 앱에서 손으로 확인하는 일이 남았다.
+- 1.17 로컬 AI는 가짜 Ollama(시험)로만 확인했다. 개발 환경에서 실제 Ollama 실행 파일을 돌릴 수 없었고 Cloud 키도 없었다. 라우터의 test 세트 오류(paper-15 등)는 일부러 고치지 않았다.

@@ -7,7 +7,11 @@
   안드로이드는 Chaquopy(Python 3.11) + Kotlin `MainActivity.kt`. 화면은 `web/`(바닐라 JS, 빌드 도구 없음).
 - 진입점 `main.py`의 `Bridge`가 화면 API(js_api)다. 기능별 화면 API는 믹스인으로 나눈다:
   `workspace_api.WorkspaceApi`, `browser_api.BrowserApi`(1.13), `paper_api.PaperApi`(1.14), `code_api.CodeApi`(1.15),
-  `code_agent.CodeAgentApi`(1.16 Code 에이전트), `lab_api.LabApi`(1.16 Lab). 브라우저 에이전트는 `browser_agent.py` + agent의 `browser_*` 단계.
+  `code_agent.CodeAgentApi`(1.16 Code 에이전트), `lab_api.LabApi`(1.16 Lab), `adaptive_api.AdaptiveApi`(1.17 AI 실행 정책·로컬 AI).
+  브라우저 에이전트는 `browser_agent.py` + agent의 `browser_*` 단계.
+- 1.17 Adaptive AI: 모델 호출은 `Agent._ask(prompt, purpose=…)` → `adaptive_engine.AdaptiveEngine`(대화 모델이 `auto`·`local:…`일 때) 또는 `api.ask`.
+  라우터 `adaptive_router.py`, 검증 `quality_gate.py`, 로컬 실행기 `local_ai.py`(Ollama). Local Only는 `api.cloud_guard`가 마지막으로 막는다.
+  구조 [docs/architecture/adaptive-ai.md](docs/architecture/adaptive-ai.md). 벤치마크 `tools/adaptive_benchmark.py`(데이터는 `tools/adaptive_benchmark_data.py`로 다시 만든다).
 - Python → 화면 이벤트는 `Bridge._push` → `ui_events.EventPump`(전용 스레드). UI 스레드(네이티브 처리기)에서 `evaluate_js`를 직접 부르지 않는다(B1).
 - 에이전트(`agent.py`)는 JSON 단계(`{"action": ...}`)를 `_tool_<이름>` 메서드로 실행한다. 외부에서 온 글(웹페이지·논문·MCP 결과)은
   `connectors.wrap_untrusted`로 감싼다.
@@ -35,6 +39,7 @@ python tools/license_check.py repo               # SPDX·고지 점검
 ```
 - `tests/support.py`의 `isolated_app_dir()`로 데이터 폴더를 격리한다. `tests/ui_harness.py`는 실제 Bridge에 붙은 화면을 HTTP로 띄운다.
 - `tests/browser_spike.py`는 CI의 `browser-spike` 작업(windows·macos 실제 창)에서만 돈다.
+- 로컬 AI 시험은 `tests/fake_ollama.py`(Ollama API 흉내)를 쓴다. 실제 Ollama 점검은 사용자 PC에서 `python tools/local_ai_check.py --model <모델>`.
 
 ## 릴리스 절차(사용자가 요청할 때만)
 1. 작업 브랜치에서 `version.py`, `docs/release-notes/vX.Y.Z.md`, README 첫 줄·기능 표, `web/app.js` 사용법 가이드를 고친다.

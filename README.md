@@ -1,43 +1,6 @@
 # POSCHAT
 
-버전 1.16.0 — **Code 에이전트**: 코드 화면의 **작업** 탭에서 할 일을 맡기면 Codex·Claude Code처럼 에이전트가 계획을 세우고, 코드를 읽고·고치고·테스트를 실행해 확인합니다(수정은 바로 적용하고 되돌리기 가능, 명령은 매번 승인). **POSCHAT Lab**: 실험 조건·코드 버전(Git)·실행 환경·결과를 Run마다 기록하고, 결과 파일에서 고른 지표를 뽑아 그래프·비교표로 보고, 고른 Run만 AI에게 해석을 묻습니다. **AI 브라우저 에이전트**: 에이전트가 옆 브라우저를 직접 조작합니다(제출·삭제·로그인·결제·다운로드 등은 언제나 승인). 사이드바의 채팅 목록이 더 길어졌습니다. [릴리스 노트](docs/release-notes/v1.16.0.md) · [Lab 사용법](docs/lab-guide.md) · [브라우저 에이전트 보안](docs/browser-agent-security.md)
-
-1.15.0 — **POSCHAT Code**: 왼쪽 사이드바의 코드를 누르면 채팅 옆에 작업 폴더의 파일 트리와 편집기(CodeMirror 6, Python·C/C++·JS/TS·Verilog/SystemVerilog 강조)가 열립니다. 안전하게 저장하고(원자적 저장·줄 끝·인코딩 유지·외부 변경 감지), 선택한 코드를 경로·줄 번호와 함께 AI에게 묻고, 에이전트가 고친 내용을 덩어리(hunk)마다 받아들이거나 거부하고, Git 변경을 보고 고른 파일만 스테이지·커밋하고, 승인한 명령(Verilator·iverilog 등)을 실행해 출력을 봅니다. **브라우저를 열면 앱이 멈추던 문제(B1) 수정**. [릴리스 노트](docs/release-notes/v1.15.0.md) · [사용법](docs/code-editor-guide.md) · [보안](docs/code-security.md)
-
-1.14.0 — **논문 읽기(POSCHAT Paper)**: 왼쪽 사이드바의 논문을 누르면 채팅 옆에 PDF가 열립니다(이 기기의 PDF, arXiv 번호·PDF 주소, 연구 라이브러리 논문). 드래그한 문장·보고 있는 쪽·잘라 낸 그림·표·수식을 바로 묻고, 쪽 번호가 붙은 요약과 여러 논문의 실험 조건·결과 비교표를 만듭니다. 에이전트는 열린 논문을 필요한 쪽만 읽습니다(`paper_read`). [릴리스 노트](docs/release-notes/v1.14.0.md)
-
-1.13.0 — **브라우저**: 왼쪽 사이드바의 브라우저를 누르면 채팅 옆에 웹페이지가 열리고, 보고 있는 페이지(또는 선택한 부분)를 AI에게 묻거나 논문 페이지를 연구 라이브러리에 저장합니다. 에이전트도 열린 페이지를 읽습니다. 웹페이지 쪽에는 POSCHAT의 파일·실행·MCP·API 키에 닿는 통로가 없습니다. [릴리스 노트](docs/release-notes/v1.13.0.md)
-
-1.12.0 — **플러그인**: 왼쪽 사이드바에서 Anthropic의 Knowledge Work Plugins(직무별 스킬 묶음: Productivity·Bio Research·Data·Engineering·Legal 등)를 둘러보고 설치하면, 에이전트가 그 분야의 절차대로 일하고 `/플러그인:스킬`로 직접 부를 수 있습니다. 대화상자·초점·스위치 등 접근성 개선. 설치 프로그램 안정화(설치 전 필수 파일·손상 확인, 설치 후 실행 확인, 되돌리기 실패 감지와 백업 보존). [릴리스 노트](docs/release-notes/v1.12.0.md)
-
-1.11.1 — 업데이트 뒤 앱이 열리지 않던 문제(python312.dll·VCRUNTIME140.dll 오류) 수정: 새 파일을 먼저 풀고 이전 파일과 바꾸며, 실패하면 이전 버전을 되돌립니다. 1.11.0에서 앱이 열리지 않으면 Releases의 `POSCHAT-Setup.exe`를 받아 설치하세요. [릴리스 노트](docs/release-notes/v1.11.1.md)
-
-1.11.0 — **이름을 POSCHAT으로 정식 변경**, **일반 AI 모델(Claude)**: 설정 → API 방식에서 고르면 본인 Claude API 키로 대화·에이전트·노트 만들기 등 모든 모델 호출을 합니다(기본은 그대로 POSTECH GenAI). **연구 라이브러리·에이전트 자동화를 PO노트처럼 사이드바에서 여는 화면으로** 옮겼고, 업데이트할 때 설치 프로그램에서 '설치'를 두 번 눌러야 하던 문제를 고쳤습니다. 자세히: [릴리스 노트](docs/release-notes/v1.11.0.md)
-
-
-1.10.0 — **POSCHAT 2.0: 연결·도구**. 왼쪽 아래 **연결·도구**에서(모두 기본 꺼짐) GitHub·Google Workspace(Drive·Docs·Sheets·Slides·Gmail·Calendar)·Zotero 커넥터, 통합 논문 검색·라이브러리·BibTeX·출처가 붙은 문서 검색(RAG), 프로젝트·연구 메모리와 에이전트 인계, 기기 사이 종단간 암호화 동기화, Python·Jupyter·SSH 실행(PC, 매번 승인), 사용량·진단과 모델 평가. 메일 전송·리뷰 제출·삭제·코드 실행은 자동 허용 설정이어도 매번 묻습니다. 1.6부터 에이전트의 MCP 도구 호출이 실패하던 버그 수정. 자세히: [릴리스 노트](docs/release-notes/v1.10.0.md) · [설치·설정](docs/setup.md) · [마이그레이션](docs/migration-1.10.md) · [보안](docs/security.md) · [API](docs/api/reference.md) · [아키텍처](docs/architecture/) **안드로이드 앱에서도 PO노트 녹음**: 휴대폰의 로컬 AI(sherpa-onnx)가 받아 적고 불확실한 구간만 POSTECH GenAI가 보정하는 하이브리드를 데스크톱과 같이 씁니다(화면을 꺼도 녹음 유지, 알림에서 중지). 로컬 AI가 작은 소리를 받아 적지 못하던 문제 수정. 데스크톱의 sherpa-onnx를 1.13.8로 고정
-
-1.9.2 — 자동 업데이트 시험용 릴리스(기능 변경 없음). 1.9.1에서 업데이트 알림부터 설치까지 확인하는 데 씁니다
-
-1.9.1 — **자동 업데이트**(시작할 때 GitHub Releases에서 새 버전을 확인하고, 받은 설치 파일의 크기·SHA-256을 확인한 뒤 설치 시작), 설정 창의 버전 정보 아래에 서비스 대표자(김범준)와 문의 안내, README에 문의 메일
-
-1.9.0 — **PO노트**: 강의를 녹음해 실시간으로 받아 적고(이 PC의 로컬 AI가 바로 받아 적고 불확실한 구간만 POSTECH GenAI가 보정하는 하이브리드, 크레딧 예산 보호), 강의 자료(PPT·PDF·Word·한글)와 함께 Markdown 필기 노트를 만들어 앱 안에서 보고 고칩니다. **POSTECH GenAI 크레딧 확인**(이번 주 사용량·한도·남은 양). OpenAI 호환 API를 기본 방식으로 바꾸고 POSTECH 주소를 내장(a1/gpt는 현재 서버 오류만 돌려줌), 게이트웨이 인증(`x-api-key`)과 Claude 모델 ID(`claude-opus-5-5`) 수정, 주소의 `?쿼리` 유지, 설정 창에서 취소하면 불러온 모델 목록을 버림, 사용법 가이드의 표 깨짐 수정. 설치 파일 코드 서명 준비(인증서를 넣으면 빌드가 서명)
-
-1.8.2 — OpenAI 호환 API의 모델 목록을 서버에서 불러오기, 기본 주소(Base URL)만 넣어도 동작, 필수 API 주소 검증, 대화별 모델 선택. 앱 안의 자동 업데이트(CDN)는 빼고 새 버전은 Releases에서 받습니다
-
-1.7.0 — 다른 AI 코딩 에이전트(Claude Code·Codex 등)와 기억 이어 쓰기(ai-memory 연동: 인계 받기·남기기, 기억 범위 자동 지정), 설정 창의 사용법 가이드
-
-1.6.0 — 채팅창 파일 첨부(이미지·문서·텍스트), 메모리를 Markdown 파일(memory.md)로 관리, 사용자 정보 파일(USER.md)과 `/user`, 웹페이지 읽기·웹 검색 내장 MCP 서버(firecrawl), 브라우저 자동화 추천 서버(Playwright, MCP 창에서 켜기), 설정 창에서 모델 API 사용량 보기. 잘 동작하지 않던 HTML 영상 서버(hyperframes) 제거
-
-1.5.0 — 내장 MCP 서버 추가: 논문 찾기·섹션별 읽기(paper), Notion 페이지·데이터베이스(notion), HTML로 영상 만들기(hyperframes). 논문을 쉽게 풀어 주는 `paper-reading` 스킬
-
-1.4.0 — 안드로이드 앱(같은 화면·에이전트·문서 읽기·MCP를 휴대폰에서)
-
-1.3.1 — 설치 프로그램과 Windows 앱 목록에 표시되는 버전을 앱 버전과 맞춤
-
-1.3.0 — 답변 스트리밍 표시, GPT 모델 선택(OpenAI Responses API, 기본 권장 GPT-5.1)
-
-1.2.0 — PDF·Word·PowerPoint·Excel·한글 문서 읽기, MCP 지원과 내장 오피스 MCP 서버(Word·PowerPoint·Excel 만들기·고치기), 답변의 LaTeX 수식 표시
+버전 1.17.0 — **AI 실행 정책(Adaptive Hybrid AI)**: 켜면 요청의 종류·난이도·개인정보·비용을 보고 **로컬 AI(Ollama)**, **경량 Cloud 모델**(Haiku·GPT-5 mini 등), **프런티어 모델** 중 하나를 자동으로 고르고, 로컬·경량 답을 규칙으로 검증해 필요하면 위 단계로 다시 답합니다. 경량 모델이 대화를 이끌며 필요한 부분만 프런티어에 짧게 상담하는 3단계(실험, 켜야 씀), 단가 비율로 요청마다 계산하는 손익분기·프롬프트 캐싱, Economy·Balanced·Quality·Local Only 정책, 답변 아래 '왜 이 모델인지' 표시, 비용·통계, 개발자 모드(실측 토큰·손익분기 원자료). 기본은 꺼짐. [릴리스 노트](docs/release-notes/v1.17.0.md) · [설정](docs/adaptive-ai-setup.md) · [보안](docs/adaptive-ai-security.md) · [벤치마크](docs/adaptive-ai-benchmark-results.md) · [이전 버전 기록](#버전-기록)
 
 POSTECH GenAI API(기본) 또는 본인의 Claude API 키를 쓰는 Windows·macOS 데스크톱·안드로이드 챗봇 POSCHAT입니다(1.10까지의 이름은 POSTECH GenAI Chat). PIDS Tech. 팀이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 소프트웨어 라이선스(AGPL-3.0-only, 과거 버전은 MIT)는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
 
@@ -104,6 +67,7 @@ Releases의 `POSCHAT.apk`를 휴대폰에서 받아 설치합니다(Android 7.0 
 | 내 정보(USER.md) | 왼쪽 아래 **내 정보**, `/user` |
 | 메모리(memory.md) | 왼쪽 아래 **메모리**, `/remember 내용`, `/memory` |
 | MCP 서버 켜기·끄기, 외부 서버 추가 | 왼쪽 아래 **연결·도구** → MCP 서버 |
+| AI 실행 정책·로컬 AI | **설정 → AI 실행 정책**. 자동 모델 선택(Economy·Balanced·Quality·Local Only), Ollama 연결·모델 받기, 3단계(경량 Cloud 모델과 프런티어 상담)·단가·손익분기·프롬프트 캐싱, 대화 위 모델 목록의 **자동**·**로컬**, **설정 → 개발자 모드** ([설정](docs/adaptive-ai-setup.md), 1.17) |
 | Code 에이전트(작업 맡기기) | **코드** → 맨 앞 **작업** 탭. 할 일을 적고 Ctrl+Enter. 계획·diff·실행 출력, 이어서 지시, 바뀐 파일 되돌리기 ([사용법](docs/code-editor-guide.md#code-에이전트-작업-맡기기-116), 1.16) |
 | Lab(실험 기록·비교·AI 분석) | 왼쪽 위 **Lab**. 실험·Run, 승인 실행, 재현성 기록, 결과 가져오기, 지표·그래프·비교, AI 분석 ([사용법](docs/lab-guide.md), 1.16) |
 | 브라우저 에이전트 | 브라우저를 연 채 에이전트에게 웹 작업을 맡기면 페이지를 직접 조작합니다. 브라우저 막대에서 일시정지·멈춤 ([보안](docs/browser-agent-security.md), 1.16) |
@@ -453,6 +417,48 @@ py -3 -m venv .venv
 - 사용자 대화, 메모리, 설정, 로그, 개인 API 키는 소스 저장소에 포함하지 않습니다. `.gitignore`는 이 파일들과 가상환경·캐시·빌드 결과·실행 파일을 제외합니다.
 - 앱 소스, 설치 프로그램 소스, 실행·빌드 스크립트, 기본 스킬 3종, 아이콘, 정적 UI와 번들 JavaScript 라이브러리를 포함합니다. `web/vendor/` 파일은 UI 실행에 필요한 배포 의존성이므로 포함하며, 원본 저작권·라이선스 주석을 유지합니다.
 - 이 저장소는 v1.1.0 소스 스냅샷을 시작점으로 합니다. 이전 버전의 코드·변경 이력은 가져오지 않습니다.
+
+## 버전 기록
+
+각 버전의 자세한 내용은 [docs/release-notes](docs/release-notes)에 있습니다.
+
+- 1.16.0 — **Code 에이전트**: 코드 화면의 **작업** 탭에서 할 일을 맡기면 Codex·Claude Code처럼 에이전트가 계획을 세우고, 코드를 읽고·고치고·테스트를 실행해 확인합니다(수정은 바로 적용하고 되돌리기 가능, 명령은 매번 승인). **POSCHAT Lab**: 실험 조건·코드 버전(Git)·실행 환경·결과를 Run마다 기록하고, 결과 파일에서 고른 지표를 뽑아 그래프·비교표로 보고, 고른 Run만 AI에게 해석을 묻습니다. **AI 브라우저 에이전트**: 에이전트가 옆 브라우저를 직접 조작합니다(제출·삭제·로그인·결제·다운로드 등은 언제나 승인). 사이드바의 채팅 목록이 더 길어졌습니다. [릴리스 노트](docs/release-notes/v1.16.0.md) · [Lab 사용법](docs/lab-guide.md) · [브라우저 에이전트 보안](docs/browser-agent-security.md)
+
+- 1.15.0 — **POSCHAT Code**: 왼쪽 사이드바의 코드를 누르면 채팅 옆에 작업 폴더의 파일 트리와 편집기(CodeMirror 6, Python·C/C++·JS/TS·Verilog/SystemVerilog 강조)가 열립니다. 안전하게 저장하고(원자적 저장·줄 끝·인코딩 유지·외부 변경 감지), 선택한 코드를 경로·줄 번호와 함께 AI에게 묻고, 에이전트가 고친 내용을 덩어리(hunk)마다 받아들이거나 거부하고, Git 변경을 보고 고른 파일만 스테이지·커밋하고, 승인한 명령(Verilator·iverilog 등)을 실행해 출력을 봅니다. **브라우저를 열면 앱이 멈추던 문제(B1) 수정**. [릴리스 노트](docs/release-notes/v1.15.0.md) · [사용법](docs/code-editor-guide.md) · [보안](docs/code-security.md)
+
+- 1.14.0 — **논문 읽기(POSCHAT Paper)**: 왼쪽 사이드바의 논문을 누르면 채팅 옆에 PDF가 열립니다(이 기기의 PDF, arXiv 번호·PDF 주소, 연구 라이브러리 논문). 드래그한 문장·보고 있는 쪽·잘라 낸 그림·표·수식을 바로 묻고, 쪽 번호가 붙은 요약과 여러 논문의 실험 조건·결과 비교표를 만듭니다. 에이전트는 열린 논문을 필요한 쪽만 읽습니다(`paper_read`). [릴리스 노트](docs/release-notes/v1.14.0.md)
+
+- 1.13.0 — **브라우저**: 왼쪽 사이드바의 브라우저를 누르면 채팅 옆에 웹페이지가 열리고, 보고 있는 페이지(또는 선택한 부분)를 AI에게 묻거나 논문 페이지를 연구 라이브러리에 저장합니다. 에이전트도 열린 페이지를 읽습니다. 웹페이지 쪽에는 POSCHAT의 파일·실행·MCP·API 키에 닿는 통로가 없습니다. [릴리스 노트](docs/release-notes/v1.13.0.md)
+
+- 1.12.0 — **플러그인**: 왼쪽 사이드바에서 Anthropic의 Knowledge Work Plugins(직무별 스킬 묶음: Productivity·Bio Research·Data·Engineering·Legal 등)를 둘러보고 설치하면, 에이전트가 그 분야의 절차대로 일하고 `/플러그인:스킬`로 직접 부를 수 있습니다. 대화상자·초점·스위치 등 접근성 개선. 설치 프로그램 안정화(설치 전 필수 파일·손상 확인, 설치 후 실행 확인, 되돌리기 실패 감지와 백업 보존). [릴리스 노트](docs/release-notes/v1.12.0.md)
+
+- 1.11.1 — 업데이트 뒤 앱이 열리지 않던 문제(python312.dll·VCRUNTIME140.dll 오류) 수정: 새 파일을 먼저 풀고 이전 파일과 바꾸며, 실패하면 이전 버전을 되돌립니다. 1.11.0에서 앱이 열리지 않으면 Releases의 `POSCHAT-Setup.exe`를 받아 설치하세요. [릴리스 노트](docs/release-notes/v1.11.1.md)
+
+- 1.11.0 — **이름을 POSCHAT으로 정식 변경**, **일반 AI 모델(Claude)**: 설정 → API 방식에서 고르면 본인 Claude API 키로 대화·에이전트·노트 만들기 등 모든 모델 호출을 합니다(기본은 그대로 POSTECH GenAI). **연구 라이브러리·에이전트 자동화를 PO노트처럼 사이드바에서 여는 화면으로** 옮겼고, 업데이트할 때 설치 프로그램에서 '설치'를 두 번 눌러야 하던 문제를 고쳤습니다. 자세히: [릴리스 노트](docs/release-notes/v1.11.0.md)
+
+- 1.10.0 — **POSCHAT 2.0: 연결·도구**. 왼쪽 아래 **연결·도구**에서(모두 기본 꺼짐) GitHub·Google Workspace(Drive·Docs·Sheets·Slides·Gmail·Calendar)·Zotero 커넥터, 통합 논문 검색·라이브러리·BibTeX·출처가 붙은 문서 검색(RAG), 프로젝트·연구 메모리와 에이전트 인계, 기기 사이 종단간 암호화 동기화, Python·Jupyter·SSH 실행(PC, 매번 승인), 사용량·진단과 모델 평가. 메일 전송·리뷰 제출·삭제·코드 실행은 자동 허용 설정이어도 매번 묻습니다. 1.6부터 에이전트의 MCP 도구 호출이 실패하던 버그 수정. 자세히: [릴리스 노트](docs/release-notes/v1.10.0.md) · [설치·설정](docs/setup.md) · [마이그레이션](docs/migration-1.10.md) · [보안](docs/security.md) · [API](docs/api/reference.md) · [아키텍처](docs/architecture/) **안드로이드 앱에서도 PO노트 녹음**: 휴대폰의 로컬 AI(sherpa-onnx)가 받아 적고 불확실한 구간만 POSTECH GenAI가 보정하는 하이브리드를 데스크톱과 같이 씁니다(화면을 꺼도 녹음 유지, 알림에서 중지). 로컬 AI가 작은 소리를 받아 적지 못하던 문제 수정. 데스크톱의 sherpa-onnx를 1.13.8로 고정
+
+- 1.9.2 — 자동 업데이트 시험용 릴리스(기능 변경 없음). 1.9.1에서 업데이트 알림부터 설치까지 확인하는 데 씁니다
+
+- 1.9.1 — **자동 업데이트**(시작할 때 GitHub Releases에서 새 버전을 확인하고, 받은 설치 파일의 크기·SHA-256을 확인한 뒤 설치 시작), 설정 창의 버전 정보 아래에 서비스 대표자(김범준)와 문의 안내, README에 문의 메일
+
+- 1.9.0 — **PO노트**: 강의를 녹음해 실시간으로 받아 적고(이 PC의 로컬 AI가 바로 받아 적고 불확실한 구간만 POSTECH GenAI가 보정하는 하이브리드, 크레딧 예산 보호), 강의 자료(PPT·PDF·Word·한글)와 함께 Markdown 필기 노트를 만들어 앱 안에서 보고 고칩니다. **POSTECH GenAI 크레딧 확인**(이번 주 사용량·한도·남은 양). OpenAI 호환 API를 기본 방식으로 바꾸고 POSTECH 주소를 내장(a1/gpt는 현재 서버 오류만 돌려줌), 게이트웨이 인증(`x-api-key`)과 Claude 모델 ID(`claude-opus-5-5`) 수정, 주소의 `?쿼리` 유지, 설정 창에서 취소하면 불러온 모델 목록을 버림, 사용법 가이드의 표 깨짐 수정. 설치 파일 코드 서명 준비(인증서를 넣으면 빌드가 서명)
+
+- 1.8.2 — OpenAI 호환 API의 모델 목록을 서버에서 불러오기, 기본 주소(Base URL)만 넣어도 동작, 필수 API 주소 검증, 대화별 모델 선택. 앱 안의 자동 업데이트(CDN)는 빼고 새 버전은 Releases에서 받습니다
+
+- 1.7.0 — 다른 AI 코딩 에이전트(Claude Code·Codex 등)와 기억 이어 쓰기(ai-memory 연동: 인계 받기·남기기, 기억 범위 자동 지정), 설정 창의 사용법 가이드
+
+- 1.6.0 — 채팅창 파일 첨부(이미지·문서·텍스트), 메모리를 Markdown 파일(memory.md)로 관리, 사용자 정보 파일(USER.md)과 `/user`, 웹페이지 읽기·웹 검색 내장 MCP 서버(firecrawl), 브라우저 자동화 추천 서버(Playwright, MCP 창에서 켜기), 설정 창에서 모델 API 사용량 보기. 잘 동작하지 않던 HTML 영상 서버(hyperframes) 제거
+
+- 1.5.0 — 내장 MCP 서버 추가: 논문 찾기·섹션별 읽기(paper), Notion 페이지·데이터베이스(notion), HTML로 영상 만들기(hyperframes). 논문을 쉽게 풀어 주는 `paper-reading` 스킬
+
+- 1.4.0 — 안드로이드 앱(같은 화면·에이전트·문서 읽기·MCP를 휴대폰에서)
+
+- 1.3.1 — 설치 프로그램과 Windows 앱 목록에 표시되는 버전을 앱 버전과 맞춤
+
+- 1.3.0 — 답변 스트리밍 표시, GPT 모델 선택(OpenAI Responses API, 기본 권장 GPT-5.1)
+
+- 1.2.0 — PDF·Word·PowerPoint·Excel·한글 문서 읽기, MCP 지원과 내장 오피스 MCP 서버(Word·PowerPoint·Excel 만들기·고치기), 답변의 LaTeX 수식 표시
 
 ## 라이선스 (License)
 
