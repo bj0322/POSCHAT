@@ -84,7 +84,7 @@ def http(method, url, timeout=30, **kwargs):
         from version import APP_VERSION
 
         _SESSION = requests.Session()
-        _SESSION.headers["User-Agent"] = f"PostechChat/{APP_VERSION} (+https://github.com/bj0322/POSCHAT)"
+        _SESSION.headers["User-Agent"] = f"POSCHAT/{APP_VERSION} (+https://github.com/bj0322/POSCHAT)"
     try:
         return _SESSION.request(method, url, timeout=timeout, **kwargs)
     except requests.RequestException as e:

@@ -163,7 +163,7 @@ CONNECTORS = {c.id: c for c in [
         "memory", "통합 메모리", "메모리·인계", "프로젝트 결정·진행 상태·TODO·연구 기록을 계층별로 남기고 찾기, 에이전트 작업 인계",
         server="memory", auth="none", feature="memory_hub",
         setup=("기억은 이 기기의 데이터 폴더(memory/memory.sqlite)에 저장됩니다. memory.md·USER.md는 그대로 쓰입니다. "
-               "이 기억은 POSTECH GenAI Chat 안에서만 씁니다."),
+               "이 기억은 POSCHAT 안에서만 씁니다."),
         rate_per_min=240),
     Connector(
         "gsync", "Google Drive 동기화 저장소", "메모리·인계", "기기 사이 동기화 데이터를 Drive의 앱 전용 숨김 폴더에 둡니다(암호화, drive.appdata 권한만)",

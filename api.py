@@ -1,13 +1,16 @@
 # SPDX-FileCopyrightText: 2026 Beomjoon Kim
 # SPDX-License-Identifier: AGPL-3.0-only
-"""POSTECH GenAI API 호출.
+"""모델 API 호출: POSTECH GenAI와 개인 Claude API(Anthropic).
 
-세 가지 방식을 지원한다.
+네 가지 방식을 지원한다.
 - chat_completions(기본): POSTECH GenAI의 OpenAI 호환 Chat Completions(`.../agent/openai_compatible/a1/v1`).
   GPT·Claude·Gemini를 모델 ID로 고른다. 인증은 x-api-key 헤더(다른 OpenAI 호환 서버를 위해 Bearer도 함께 보낸다).
 - responses: 게이트웨이의 OpenAI Responses API(`.../a<번호>/openai/responses`). 모델을 고를 수 있다.
   주소의 a<번호>는 POSTECH GenAI 콘솔에서 확인해 설정에 넣는다.
 - a1: `agent/api/a1/gpt` 단일 호출 API. 모델은 서버가 정한다.
+- anthropic(1.11): 사용자가 직접 발급한 Anthropic API 키로 Claude Messages API(api.anthropic.com)를 부른다.
+  데스크톱은 공식 Anthropic Python SDK를 쓰고, SDK를 설치할 수 없는 안드로이드(Chaquopy에 pydantic-core·jiter가
+  없다)는 같은 요청을 HTTP로 보낸다.
 
 stream을 켜면 받은 글자를 on_delta(지금까지의 전체 텍스트)로 넘긴다. OpenAI 방식은 표준 SSE를,
 a1은 문서에 형식이 없어서 SSE·JSON Lines·일반 텍스트를 모두 받아 주고, 실패하면 한 번에 받는 방식으로 다시 요청한다.
@@ -84,6 +87,25 @@ MODEL_ALIASES = {"claude-opus-5.5": "claude-opus-5-5", "claude-sonnet-5.5": "cla
 # 콘솔(에이전트 API)에 안내된 POSTECH GenAI의 OpenAI 호환 주소. 설정에 주소가 없으면 이 주소를 쓴다.
 DEFAULT_CHAT_COMPLETIONS_URL = "https://genai.postech.ac.kr/agent/openai_compatible/a1/v1/chat/completions"
 DEFAULT_MODE = "chat_completions"  # 1.9부터. a1/gpt는 2026년 10월 현재 서버 오류만 돌려준다
+# 개인 Claude API(Anthropic Messages API). 키는 POSTECH 키와 따로 저장한다(config의 anthropic_api_key).
+ANTHROPIC_MODE = "anthropic"
+MODES = ("a1", "responses", "chat_completions", ANTHROPIC_MODE)
+ANTHROPIC_BASE_URL = "https://api.anthropic.com"
+ANTHROPIC_VERSION = "2026-10-21"  # SDK 2.x의 기본 API 버전과 같게 둔다
+ANTHROPIC_MODELS = [
+    ("claude-opus-5-5", "Claude Opus 5.5 — 권장"),
+    ("claude-sonnet-5-5", "Claude Sonnet 5.5 — 빠르고 저렴"),
+    ("claude-haiku-5-5", "Claude Haiku 5.5 — 가장 빠르고 저렴"),
+    ("claude-fable-5-1", "Claude Fable 5.1 — 가장 높은 성능, 비용 높음"),
+]
+DEFAULT_ANTHROPIC_MODEL = ANTHROPIC_MODELS[0][0]
+ANTHROPIC_LABELS = dict(ANTHROPIC_MODELS)
+# 안전 정책으로 답하지 않으면 서버가 Anthropic이 권하는 다른 모델로 다시 답하게 한다(fallbacks: "default").
+ANTHROPIC_FALLBACK_BETA = "server-side-fallback-2026-07-01"
+ANTHROPIC_FALLBACK_MODELS = {"claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1"}
+ANTHROPIC_EFFORT = "medium"  # 5 세대 모델에만 보낸다(이전 모델 일부는 effort를 받지 않는다)
+ANTHROPIC_MAX_TOKENS = 64000  # 스트리밍
+ANTHROPIC_MAX_TOKENS_ONCE = 16000  # 한 번에 받기(HTTP 시간 제한 안에 끝나도록)
 STT_MODEL = "gemini-3.8-flash"  # OpenAI 호환 API에서 음성(input_audio)을 받아 적을 수 있는 모델
 REASONING_EFFORT = "low"  # 에이전트는 단계마다 호출하므로 추론 토큰을 아낀다
 
@@ -102,7 +124,7 @@ on_trace = None
 
 @dataclass
 class ApiSettings:
-    mode: str = "a1"               # "a1" | "responses" | "chat_completions"(설정의 기본값은 DEFAULT_MODE)
+    mode: str = "a1"               # "a1" | "responses" | "chat_completions" | "anthropic"(설정의 기본값은 DEFAULT_MODE)
     responses_url: str = ""
     chat_completions_url: str = ""
     model: str = DEFAULT_MODEL
@@ -111,14 +133,21 @@ class ApiSettings:
     @classmethod
     def from_config(cls, config):
         mode = config.get("api_mode", DEFAULT_MODE)
+        mode = mode if mode in MODES else DEFAULT_MODE
         return cls(
-            mode=mode if mode in ("a1", "responses", "chat_completions") else DEFAULT_MODE,
+            mode=mode,
             responses_url=endpoint_url(config.get("responses_url"), RESPONSES_PATH),
             chat_completions_url=endpoint_url(config.get("chat_completions_url"), CHAT_COMPLETIONS_PATH)
             or DEFAULT_CHAT_COMPLETIONS_URL,
-            model=normalize_model(config.get("model") or DEFAULT_MODEL),
+            model=(config.get("anthropic_model") or DEFAULT_ANTHROPIC_MODEL) if mode == ANTHROPIC_MODE
+            else normalize_model(config.get("model") or DEFAULT_MODEL),
             stream=bool(config.get("stream", True)),
         )
+
+
+def model_config_key(mode):
+    """mode의 기본 모델을 저장하는 설정 이름. POSTECH 방식과 개인 Claude API는 모델 목록이 달라 따로 둔다."""
+    return "anthropic_model" if mode == ANTHROPIC_MODE else "model"
 
 
 RESPONSES_PATH = "/responses"
@@ -198,7 +227,7 @@ def list_models(api_key, chat_completions_url, timeout=20):
 
 
 def model_label(model_id):
-    return MODEL_LABELS.get(model_id, model_id)
+    return MODEL_LABELS.get(model_id) or ANTHROPIC_LABELS.get(model_id, model_id)
 
 
 def transcribe(api_key, chat_completions_url, wav_b64, language=None, context="", model=STT_MODEL, timeout=120):
@@ -380,6 +409,9 @@ def _ask_any(api_key, message, timeout, settings, on_delta, cancelled, images, s
     if settings.mode == "responses":
         text, usage = _ask_responses(api_key, message, timeout, settings, on_delta if stream else None, cancelled,
                                      images)
+    elif settings.mode == ANTHROPIC_MODE:
+        text, usage = _ask_anthropic(api_key, message, timeout, settings, on_delta if stream else None, cancelled,
+                                     images)
     elif settings.mode == "chat_completions":
         text, usage = _ask_chat_completions(api_key, message, timeout, settings,
                                             on_delta if stream else None, cancelled, images)
@@ -470,6 +502,209 @@ def _check_a1_error(text):
     if match:
         raise ApiError(f"기본(a1/gpt) 서버가 답변 대신 오류 {match.group(1)}을(를) 돌려줬습니다. "
                        "설정 → API 방식에서 'OpenAI 호환 API'를 고르세요(주소는 비워 두면 POSTECH 주소를 씁니다).")
+
+
+# ---- 개인 Claude API(Anthropic Messages API) ----
+
+_SDK_MISSING = object()
+_sdk_module = None
+
+
+def _anthropic_sdk():
+    """공식 Anthropic SDK. 설치되어 있지 않으면(안드로이드) None. 시작이 느려지지 않게 처음 쓸 때 불러온다."""
+    global _sdk_module
+    if _sdk_module is None:
+        try:
+            import anthropic
+            _sdk_module = anthropic
+        except ImportError:
+            _sdk_module = _SDK_MISSING
+    return None if _sdk_module is _SDK_MISSING else _sdk_module
+
+
+def _anthropic_effort_ok(model):
+    return bool(re.match(r"claude-(opus|sonnet|haiku|fable|mythos)-5", model or ""))
+
+
+def _anthropic_params(settings, message, images, stream):
+    """(Messages API 요청 본문, beta 이름 목록)."""
+    content = message
+    if images:
+        content = [{"type": "image", "source": {"type": "base64", "media_type": mime, "data": data}}
+                   for mime, data in images] + [{"type": "text", "text": message}]
+    params = {"model": settings.model, "max_tokens": ANTHROPIC_MAX_TOKENS if stream else ANTHROPIC_MAX_TOKENS_ONCE,
+              "messages": [{"role": "user", "content": content}]}
+    if _anthropic_effort_ok(settings.model):
+        params["output_config"] = {"effort": ANTHROPIC_EFFORT}
+    if settings.model in ANTHROPIC_FALLBACK_MODELS:
+        params["fallbacks"] = "default"
+        return params, [ANTHROPIC_FALLBACK_BETA]
+    return params, []
+
+
+def _anthropic_headers(api_key, betas=(), **extra):
+    headers = {"x-api-key": api_key, "anthropic-version": ANTHROPIC_VERSION, **extra}
+    if betas:
+        headers["anthropic-beta"] = ",".join(betas)
+    return headers
+
+
+def _anthropic_status_error(status, detail=""):
+    if status == 401:
+        return ApiError("Anthropic API 키를 확인하세요 (HTTP 401).")
+    if status == 403:
+        return ApiError(f"이 Anthropic API 키로는 이 요청을 할 수 없습니다 (HTTP 403). {detail}".strip())
+    if status == 429:
+        return ApiError("Anthropic API 요청 한도를 넘었습니다. 잠시 뒤 다시 시도하세요 (HTTP 429).")
+    return ApiError(f"API 오류 {status}: {detail}"[:400])
+
+
+def _anthropic_answer(blocks, stop_reason, stop_details=None):
+    """응답 블록에서 답변 글을 꺼낸다. 안전 정책으로 답하지 않았으면(대체 모델도 거절) 오류로 알린다.
+
+    서버가 대체 모델로 다시 답하면 앞 모델이 쓴 부분과 이어 쓴 부분이 모두 text 블록이므로 그대로 잇는다.
+    """
+    if stop_reason == "refusal":
+        category = (stop_details or {}).get("category") if isinstance(stop_details, dict) else getattr(
+            stop_details, "category", None)
+        raise ApiError("Claude가 안전 정책에 따라 이 요청에 답하지 않았습니다"
+                       + (f"(분류: {category})" if category else "") + ". 질문을 바꿔 다시 시도하세요.")
+    return "".join(b.get("text", "") if isinstance(b, dict) else getattr(b, "text", "")
+                   for b in blocks or () if (b.get("type") if isinstance(b, dict) else getattr(b, "type", "")) == "text")
+
+
+def _anthropic_usage(usage):
+    if usage is None:
+        return None
+    get = usage.get if isinstance(usage, dict) else (lambda name: getattr(usage, name, None))
+    inp = sum(int(get(name) or 0) for name in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+    return {"input_tokens": inp, "output_tokens": int(get("output_tokens") or 0)}
+
+
+def _ask_anthropic(api_key, message, timeout, settings, on_delta, cancelled, images=None):
+    params, betas = _anthropic_params(settings, message, images, bool(on_delta))
+    sdk = _anthropic_sdk()
+    if sdk is not None:
+        return _ask_anthropic_sdk(sdk, api_key, params, betas, timeout, on_delta, cancelled)
+    return _ask_anthropic_http(api_key, params, betas, timeout, on_delta, cancelled)
+
+
+def _ask_anthropic_sdk(sdk, api_key, params, betas, timeout, on_delta, cancelled):
+    client = sdk.Anthropic(api_key=api_key, base_url=ANTHROPIC_BASE_URL, timeout=sdk.Timeout(timeout, connect=15.0),
+                           max_retries=2)
+    messages, extra = (client.beta.messages, {"betas": betas}) if betas else (client.messages, {})
+    try:
+        if on_delta:
+            text = ""
+            with messages.stream(**params, **extra) as stream:
+                for piece in stream.text_stream:
+                    if cancelled and cancelled():
+                        return text, None
+                    text += piece
+                    on_delta(text)
+                final = stream.get_final_message()
+        else:
+            final = messages.create(**params, **extra)
+    except sdk.APIStatusError as e:
+        raise _anthropic_status_error(e.status_code, getattr(e, "message", "") or str(e)) from e
+    except sdk.APITimeoutError as e:
+        raise ApiError("Anthropic API 응답 시간이 초과되었습니다(timeout). 다시 시도하세요.") from e
+    except sdk.APIConnectionError as e:
+        raise ApiError(f"네트워크 오류(Anthropic API 연결): {e}") from e
+    except sdk.AnthropicError as e:  # 스트림 도중 서버가 보낸 오류 이벤트 등
+        raise ApiError(f"Anthropic API 오류: {e}"[:400]) from e
+    return _anthropic_answer(final.content, final.stop_reason, getattr(final, "stop_details", None)), \
+        _anthropic_usage(final.usage)
+
+
+def _ask_anthropic_http(api_key, params, betas, timeout, on_delta, cancelled):
+    """SDK가 없는 곳(안드로이드)에서 같은 요청을 보낸다."""
+    body = dict(params, stream=bool(on_delta))
+    headers = _anthropic_headers(api_key, betas, **{"Content-Type": "application/json"})
+    response = _send("POST", f"{ANTHROPIC_BASE_URL}/v1/messages", headers, body, timeout, stream=bool(on_delta))
+    if response.status_code != 200:
+        try:
+            detail = (response.json().get("error") or {}).get("message", "")
+        except (ValueError, AttributeError):
+            detail = response.text[:300]
+        response.close()
+        raise _anthropic_status_error(response.status_code, detail)
+    if not on_delta:
+        try:
+            data = response.json()
+        except ValueError as e:
+            raise ApiError(f"응답 형식 오류: {response.text[:300]}") from e
+        return _anthropic_answer(data.get("content"), data.get("stop_reason"), data.get("stop_details")), \
+            _anthropic_usage(data.get("usage"))
+    return _read_anthropic_stream(response, on_delta, cancelled)
+
+
+def _read_anthropic_stream(response, on_delta, cancelled):
+    text, usage, stop_reason, stop_details = "", {}, None, None
+    try:
+        for event, data in _events(response):
+            if cancelled and cancelled():
+                return text, None
+            try:
+                obj = json.loads(data)
+            except (TypeError, ValueError):
+                continue
+            kind = obj.get("type") or event
+            if kind == "message_start":
+                usage.update((obj.get("message") or {}).get("usage") or {})
+            elif kind == "content_block_delta":
+                delta = obj.get("delta") or {}
+                if delta.get("type") == "text_delta":
+                    text += delta.get("text", "")
+                    on_delta(text)
+            elif kind == "message_delta":
+                stop_reason = (obj.get("delta") or {}).get("stop_reason") or stop_reason
+                stop_details = (obj.get("delta") or {}).get("stop_details") or stop_details
+                usage.update({k: v for k, v in (obj.get("usage") or {}).items() if v is not None})
+            elif kind == "error":
+                err = obj.get("error") or {}
+                raise ApiError(f"Anthropic API 오류: {err.get('type', '')} {err.get('message', '')}".strip()[:400])
+            elif kind == "message_stop":
+                break
+    except requests.RequestException as e:
+        raise ApiError(f"네트워크 오류(스트리밍 중): {e}") from e
+    finally:
+        response.close()
+    _anthropic_answer([], stop_reason, stop_details)  # 거절이면 오류로 알린다(받은 일부는 버린다)
+    return text, _anthropic_usage(usage) if usage else None
+
+
+def list_anthropic_models(api_key, timeout=20):
+    """이 Anthropic API 키로 쓸 수 있는 모델 ID 목록(서버가 정한 순서, 최신 모델이 먼저)."""
+    sdk = _anthropic_sdk()
+    ids = []
+    if sdk is not None:
+        client = sdk.Anthropic(api_key=api_key, base_url=ANTHROPIC_BASE_URL,
+                               timeout=sdk.Timeout(timeout, connect=15.0), max_retries=1)
+        try:
+            ids = [m.id for m in client.models.list(limit=100)]
+        except sdk.APIStatusError as e:
+            raise _anthropic_status_error(e.status_code, getattr(e, "message", "")) from e
+        except sdk.APIConnectionError as e:
+            raise ApiError(f"네트워크 오류(Anthropic API 연결): {e}") from e
+    else:
+        models_url_ = f"{ANTHROPIC_BASE_URL}/v1/models"
+        url = models_url_ + "?limit=100"
+        while url:
+            response = _send("GET", url, _anthropic_headers(api_key, Accept="application/json"), timeout=timeout)
+            if response.status_code != 200:
+                raise _anthropic_status_error(response.status_code, response.text[:300])
+            try:
+                data = response.json()
+            except ValueError as e:
+                raise ApiError(f"모델 목록 형식 오류: {response.text[:300]}") from e
+            ids += [m.get("id") for m in data.get("data") or [] if isinstance(m, dict)]
+            url = f"{models_url_}?limit=100&after_id={data['last_id']}" if data.get("has_more") and \
+                data.get("last_id") else ""
+    ids = [m for i, m in enumerate(ids) if isinstance(m, str) and m and m not in ids[:i]]
+    if not ids:
+        raise ApiError("Anthropic API가 사용할 수 있는 모델을 알려 주지 않았습니다.")
+    return ids
 
 
 # ---- OpenAI Responses ----

@@ -148,7 +148,7 @@ class MemoryServerTests(unittest.TestCase):
             with patch.object(office_mcp, "ROOT", ws), patch.object(office_mcp, "CLIENT_INFO", {"name": "claude-code"}):
                 for call in (lambda: memory_mcp.memory_search("배포"), lambda: memory_mcp.memory_write("x"),
                              lambda: memory_mcp.project_context(), lambda: memory_mcp.handoff_list()):
-                    with self.assertRaisesRegex(office_mcp.ToolFailure, "POSTECH GenAI Chat 안에서만"):
+                    with self.assertRaisesRegex(office_mcp.ToolFailure, "POSCHAT 안에서만"):
                         call()
 
 

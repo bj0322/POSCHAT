@@ -247,7 +247,7 @@ class MainActivity : ComponentActivity() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) wanted += Manifest.permission.POST_NOTIFICATIONS
                 runOnUiThread { micPermission.launch(wanted.toTypedArray()) }
                 latch.await(2, TimeUnit.MINUTES)  // 답 없이 화면이 닫히면 녹음 시작만 실패한다
-                if (!hasMic()) return "마이크 권한이 없어 녹음할 수 없습니다. 설정 > 앱 > POSTECH GenAI Chat > 권한에서 마이크를 허용하세요."
+                if (!hasMic()) return "마이크 권한이 없어 녹음할 수 없습니다. 설정 > 앱 > POSCHAT > 권한에서 마이크를 허용하세요."
             }
             return RecordingService.start(this@MainActivity)
         }

@@ -24,7 +24,7 @@ TESTS = {"type": "array", "items": {"type": "object"}}
 def _only_poschat():
     name = str((office_mcp.CLIENT_INFO or {}).get("name") or "")
     if name and name != POSCHAT_CLIENT:
-        raise ToolFailure("이 메모리 서버는 POSTECH GenAI Chat 안에서만 씁니다(다른 AI 클라이언트 연결은 지원하지 않음).")
+        raise ToolFailure("이 메모리 서버는 POSCHAT 안에서만 씁니다(다른 AI 클라이언트 연결은 지원하지 않음).")
 
 
 def _project(project=None):

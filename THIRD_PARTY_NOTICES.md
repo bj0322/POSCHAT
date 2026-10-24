@@ -42,6 +42,10 @@ document reading and the built-in Office MCP servers:
 | sherpa-onnx (and its bundled ONNX Runtime) | On-device speech recognition and voice activity detection | Apache-2.0 (ONNX Runtime: MIT) |
 | requests, urllib3, charset-normalizer, idna | HTTP | Apache-2.0, MIT, MIT, BSD-3-Clause |
 | certifi | CA certificates | MPL-2.0 |
+| anthropic | Personal Claude API (official Anthropic Python SDK) | Apache-2.0 |
+| httpx2, httpcore2, h11, anyio, sniffio, jiter, docstring-parser (via anthropic) | SDK HTTP client and helpers | BSD-3-Clause, BSD-3-Clause, MIT, MIT, MIT OR Apache-2.0, MIT, MIT |
+| pydantic, pydantic-core, annotated-types, typing-inspection (via anthropic) | SDK data types | MIT |
+| opentelemetry-api (via anthropic) | SDK tracing hooks (not configured by the app) | Apache-2.0 |
 | truststore | OS certificate store | MIT |
 | cryptography, cffi, pycparser | Sync encryption (AES-256-GCM) | Apache-2.0 OR BSD-3-Clause, MIT-0, BSD-3-Clause |
 | keyring, jaraco.classes/context/functools, more-itertools | Connector tokens in the OS credential store | MIT |

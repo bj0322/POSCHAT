@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Beomjoon Kim
 # SPDX-License-Identifier: AGPL-3.0-only
-"""POSTECH GenAI Chat — pywebview 데스크톱 앱 진입점.
+"""POSCHAT — pywebview 데스크톱 앱 진입점.
 
 화면은 web/ 아래의 HTML/CSS/JS이고, JS는 window.pywebview.api.<메서드>로 Bridge를 호출한다.
 Python → JS 알림은 window.onBackendEvent(event)로 보낸다.
@@ -31,8 +31,9 @@ from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
 from api import DEFAULT_MODEL, MODELS, RESPONSES_MODELS, ApiError, ApiSettings
 from version import APP_VERSION
 
-APP_TITLE = "POSTECH GenAI Chat"
+APP_TITLE = "POSCHAT"
 UPDATE_INTERVAL = 6 * 3600  # 시작할 때 새 버전을 확인하는 최소 간격(초)
+UPDATE_EXIT_TIMEOUT = 15  # 업데이트하려고 창을 닫은 뒤 정리가 끝나지 않아도 이 시간(초)이 지나면 프로세스를 끝낸다
 PO_RESERVES = (0, 10, 20, 30, 50)  # PO노트 크레딧 예산 보호: 이번 주 한도의 몇 %를 남겨 둘지(0은 끄기)
 
 SKILL_TEMPLATE = """---
@@ -150,7 +151,7 @@ class Bridge(WorkspaceApi):
 
     def _mode(self):
         mode = self._config.get("api_mode", api.DEFAULT_MODE)
-        return mode if mode in ("a1", "responses", "chat_completions") else api.DEFAULT_MODE
+        return mode if mode in api.MODES else api.DEFAULT_MODE
 
     def _on_credit(self, info):
         self._credit = info
@@ -174,7 +175,22 @@ class Bridge(WorkspaceApi):
         return ws if ws and os.path.isdir(ws) else ""
 
     def _api_key(self):
+        """지금 API 방식이 쓰는 키. 일반 AI 모델(Claude)을 고르면 Claude(Anthropic) 키, 아니면(기본) POSTECH GenAI 키.
+
+        대화·에이전트·PO노트 노트 만들기·요약·평가 같은 모델 호출은 모두 이 키를 쓴다."""
+        return self._anthropic_key() if self._mode() == api.ANTHROPIC_MODE else self._postech_key()
+
+    def _postech_key(self):
+        """POSTECH GenAI 키. 크레딧 확인과 PO노트의 서버 음성 인식은 API 방식과 관계없이 이 키를 쓴다."""
         return self._config.get("api_key") or os.environ.get("POSTECH_GENAI_API_KEY", "")
+
+    def _anthropic_key(self):
+        return self._config.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
+
+    def _missing_key_error(self):
+        if self._mode() == api.ANTHROPIC_MODE:
+            return "Claude API 키가 없습니다. 설정 → API 방식 '일반 AI 모델 (Claude)'에서 키를 입력하세요."
+        return "API 키가 없습니다. 설정에서 입력하세요."
 
     def _add(self, thread_id, role, content, **extra):
         with self._lock:
@@ -203,6 +219,8 @@ class Bridge(WorkspaceApi):
 
     def get_state(self):
         key_source = "settings" if self._config.get("api_key") else ("env" if os.environ.get("POSTECH_GENAI_API_KEY") else None)
+        anthropic_source = "settings" if self._config.get("anthropic_api_key") else (
+            "env" if os.environ.get("ANTHROPIC_API_KEY") else None)
         return {
             "threads": storage.list_threads(),
             "workspace": self._workspace_info(),
@@ -215,10 +233,13 @@ class Bridge(WorkspaceApi):
                 "permission": self._config.get("permission", "ask"),
                 "share_threads": self._config.get("share_threads", True),
                 "key_source": key_source,
+                "anthropic_key_source": anthropic_source,
+                "has_key": bool(self._api_key()),
                 "api_mode": self._mode(),
                 "responses_url": self._config.get("responses_url", ""),
                 "chat_completions_url": self._config.get("chat_completions_url", ""),
                 "model": self._config.get("model", DEFAULT_MODEL),
+                "anthropic_model": self._config.get("anthropic_model", api.DEFAULT_ANTHROPIC_MODEL),
                 "stream": self._config.get("stream", True),
                 "update_check": self._config.get("update_check", True),
                 "notion_source": "settings" if self._config.get("notion_token") else (
@@ -231,6 +252,8 @@ class Bridge(WorkspaceApi):
             "models": [{"id": m, "label": label} for m, label in self._models("chat_completions")],
             "responses_models": [{"id": m, "label": label} for m, label in RESPONSES_MODELS],
             "models_source": "server" if self._config.get("server_models") else "builtin",
+            "anthropic_models": [{"id": m, "label": label} for m, label in self._models(api.ANTHROPIC_MODE)],
+            "anthropic_models_source": "server" if self._config.get("anthropic_server_models") else "builtin",
             "memory": storage.load_memory(),
             "attach_limits": {"max_bytes": attachments.MAX_BYTES, "max_files": attachments.MAX_FILES},
             "default_chat_completions_url": api.DEFAULT_CHAT_COMPLETIONS_URL,
@@ -265,6 +288,9 @@ class Bridge(WorkspaceApi):
         """mode에서 고를 수 있는 (모델 ID, 이름). OpenAI 호환 API는 서버에서 받아 둔 목록을 먼저 쓴다."""
         if mode == "responses":
             return RESPONSES_MODELS
+        if mode == api.ANTHROPIC_MODE:
+            server = [m for m in self._config.get("anthropic_server_models") or [] if isinstance(m, str) and m]
+            return [(m, api.model_label(m)) for m in server] if server else api.ANTHROPIC_MODELS
         server = [m for m in self._config.get("server_models") or [] if isinstance(m, str) and m]
         return [(m, api.model_label(m)) for m in server] if server else MODELS
 
@@ -274,7 +300,8 @@ class Bridge(WorkspaceApi):
     def _default_model(self):
         mode = self._mode()
         allowed = self._models(mode)
-        configured = self._config.get("model", DEFAULT_MODEL)
+        configured = self._config.get(api.model_config_key(mode)) or (
+            api.DEFAULT_ANTHROPIC_MODEL if mode == api.ANTHROPIC_MODE else DEFAULT_MODEL)
         return configured if configured in {model_id for model_id, _ in allowed} else allowed[0][0]
 
     def rename_thread(self, thread_id, title):
@@ -321,6 +348,10 @@ class Bridge(WorkspaceApi):
                 self._config["api_key"] = settings["api_key"].strip()
             if settings.get("clear_key"):
                 self._config["api_key"] = ""
+            if settings.get("anthropic_api_key"):
+                self._config["anthropic_api_key"] = settings["anthropic_api_key"].strip()
+            if settings.get("clear_anthropic_key"):
+                self._config["anthropic_api_key"] = ""
             if settings.get("notion_token"):
                 self._config["notion_token"] = settings["notion_token"].strip()
             if settings.get("clear_notion"):
@@ -339,7 +370,7 @@ class Bridge(WorkspaceApi):
                 self._config["share_threads"] = bool(settings["share_threads"])
             if settings.get("permission") in ("ask", "auto_edit", "auto_all"):
                 self._config["permission"] = settings["permission"]
-            if settings.get("api_mode") in ("a1", "responses", "chat_completions"):
+            if settings.get("api_mode") in api.MODES:
                 self._config["api_mode"] = settings["api_mode"]
             if "responses_url" in settings:
                 self._config["responses_url"] = url
@@ -351,8 +382,11 @@ class Bridge(WorkspaceApi):
             server_models = self._clean_models(settings.get("server_models"))
             if server_models:
                 self._config["server_models"] = server_models
+            anthropic_models = self._clean_models(settings.get("anthropic_server_models"))
+            if anthropic_models:
+                self._config["anthropic_server_models"] = anthropic_models
             if settings.get("model") in self._model_ids(self._mode()):
-                self._config["model"] = settings["model"]
+                self._config[api.model_config_key(self._mode())] = settings["model"]
             if "stream" in settings:
                 self._config["stream"] = bool(settings["stream"])
             if "update_check" in settings:
@@ -381,7 +415,16 @@ class Bridge(WorkspaceApi):
         여기서는 저장하지 않는다. 설정 창이 저장할 때 server_models로 함께 보낸다.
         """
         settings = settings or {}
-        key = str(settings.get("api_key") or "").strip() or self._api_key()
+        if settings.get("api_mode") == api.ANTHROPIC_MODE:
+            key = str(settings.get("anthropic_api_key") or "").strip() or self._anthropic_key()
+            if not key:
+                return {"ok": False, "error": "Claude API 키를 먼저 입력하세요."}
+            try:
+                ids = api.list_anthropic_models(key)
+            except ApiError as e:
+                return {"ok": False, "error": f"모델 목록을 불러오지 못했습니다: {e}"}
+            return {"ok": True, "models": [{"id": m, "label": api.model_label(m)} for m in ids]}
+        key = str(settings.get("api_key") or "").strip() or self._postech_key()
         if not key:
             return {"ok": False, "error": "API 키를 먼저 입력하세요."}
         url = api.endpoint_url(settings.get("chat_completions_url", self._config.get("chat_completions_url", "")),
@@ -625,16 +668,16 @@ class Bridge(WorkspaceApi):
             path, version = updates.download(APP_VERSION, storage.APP_DIR / "updates", on_progress=progress)
             platform = updates.current_platform()
             if platform == "windows":
-                # 설치 프로그램은 앱이 실행 중이면 설치하지 않는다. 같은 폴더에 설치하도록 열고 앱을 닫는다.
+                # 설치 프로그램은 앱이 완전히 닫힐 때까지 기다렸다가 설치한다. 같은 폴더에 설치하도록 열고 앱을 닫는다.
                 install_dir = Path(sys.executable).resolve().parent
-                subprocess.Popen([str(path), f"--dir={install_dir}"], cwd=str(path.parent))
+                subprocess.Popen([str(path), f"--dir={install_dir}", "--update"], cwd=str(path.parent))
                 self._push({"type": "update", "kind": "installing", "version": version,
-                            "message": "설치 프로그램을 열었습니다. 앱을 닫으니 설치 프로그램에서 '설치'를 누르세요."})
+                            "message": "설치 프로그램을 열었습니다. 앱이 닫히면 설치 프로그램에서 '설치'를 누르세요."})
                 threading.Timer(2.0, self._close_for_update).start()
             else:
                 open_path(path)
                 message = ("Android 설치 화면에서 업데이트를 승인하세요." if platform == "android" else
-                           "디스크 이미지를 열었습니다. 앱을 끝낸 뒤 POSTECH GenAI Chat을 응용 프로그램 폴더로 끌어다 놓아 바꾸세요.")
+                           "디스크 이미지를 열었습니다. 앱을 끝낸 뒤 POSCHAT을 응용 프로그램 폴더로 끌어다 놓아 바꾸세요.")
                 self._push({"type": "update", "kind": "opened", "version": version, "message": message})
         except (updates.UpdateError, OSError) as e:
             self._push({"type": "update", "kind": "error", "error": str(e)})
@@ -642,6 +685,15 @@ class Bridge(WorkspaceApi):
             self._updating = False
 
     def _close_for_update(self):
+        """설치 프로그램이 기다리지 않도록 프로세스를 확실히 끝낸다.
+
+        창을 닫은 뒤 run_app이 녹음 저장·MCP 서버 정리를 마치면 바로 종료하고(남은 작업 스레드를 기다리지 않는다),
+        정리가 멈춰도 UPDATE_EXIT_TIMEOUT초 뒤에는 강제로 끝낸다.
+        """
+        self._exit_for_update = True
+        timer = threading.Timer(UPDATE_EXIT_TIMEOUT, os._exit, args=(0,))
+        timer.daemon = True
+        timer.start()
         try:
             self._window.destroy()
         except Exception:
@@ -651,9 +703,9 @@ class Bridge(WorkspaceApi):
 
     def get_credit(self):
         """POSTECH GenAI의 이번 주기 크레딧 사용량. 크레딧을 쓰지 않는 요청으로 확인한다."""
-        key = self._api_key()
+        key = self._postech_key()
         if not key:
-            return {"ok": False, "error": "API 키를 먼저 입력하세요."}
+            return {"ok": False, "error": "POSTECH GenAI API 키를 먼저 입력하세요."}
         url = self._config.get("chat_completions_url") or api.DEFAULT_CHAT_COMPLETIONS_URL
         if urlparse(url).hostname != urlparse(api.DEFAULT_CHAT_COMPLETIONS_URL).hostname:
             url = api.DEFAULT_CHAT_COMPLETIONS_URL  # 다른 OpenAI 호환 서버를 쓰더라도 크레딧은 POSTECH에 묻는다
@@ -679,7 +731,7 @@ class Bridge(WorkspaceApi):
             "reserve": self._po_reserve(),
             "models": stt.models_status() if ok else [],
             "languages": stt.LANGUAGES,
-            "has_key": bool(self._api_key()),
+            "has_key": bool(self._postech_key()),
             "recording": {"note_id": self._po_note, "elapsed": session.elapsed if session else 0,
                           "engine": self._po_label if session else "", "stopping": self._po_stopping}
             if self._po_note else None,
@@ -820,7 +872,7 @@ class Bridge(WorkspaceApi):
         choice = self._config.get("po_engine", "auto")
         language = self._config.get("po_language", "ko")
         model = self._config.get("po_model", stt.DEFAULT_MODEL)
-        key = self._api_key()
+        key = self._postech_key()  # 개인 Claude API는 음성을 받지 않으므로 서버 음성 인식은 POSTECH 키로만 한다
         local = stt.LocalEngine(model, language) if stt.model_installed(model) else None
         server = None
         if key and choice != "local":
@@ -856,7 +908,7 @@ class Bridge(WorkspaceApi):
             engines = self._po_engines(note_id)
             if engines["refiner"] or isinstance(engines["engine"], stt.ServerEngine):
                 try:
-                    api.credit(self._api_key(), self._config.get("chat_completions_url") or None)  # 예산 판단용(무료)
+                    api.credit(self._postech_key(), self._config.get("chat_completions_url") or None)  # 예산 판단용(무료)
                 except ApiError:
                     pass
         except (po_note.NoteError, stt.SttError) as e:
@@ -941,7 +993,7 @@ class Bridge(WorkspaceApi):
         """강의 자료·전사·메모로 필기 노트(note.md)를 만든다. 진행은 po 이벤트로 알린다."""
         key = self._api_key()
         if not key:
-            return {"ok": False, "error": "API 키를 먼저 입력하세요."}
+            return {"ok": False, "error": self._missing_key_error()}
         if self._po_generating:
             return {"ok": False, "error": "다른 노트를 만들고 있습니다. 끝난 뒤 다시 시도하세요."}
         try:
@@ -1010,7 +1062,7 @@ class Bridge(WorkspaceApi):
 
         api_key = self._api_key()
         if not api_key:
-            return {"ok": False, "need_key": True, "error": "API 키가 없습니다. 설정에서 입력하세요."}
+            return {"ok": False, "need_key": True, "error": self._missing_key_error()}
 
         with self._lock:
             thread = storage.load_thread(thread_id)
@@ -1165,7 +1217,10 @@ def selftest():
     from api import ask
     storage.ensure_dirs()
     config = storage.load_config()
-    key = config.get("api_key") or os.environ.get("POSTECH_GENAI_API_KEY", "")
+    if config.get("api_mode") == api.ANTHROPIC_MODE:
+        key = config.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
+    else:
+        key = config.get("api_key") or os.environ.get("POSTECH_GENAI_API_KEY", "")
     lines = [f"version: {APP_VERSION}",
              f"web: {(resource_dir() / 'web' / 'index.html').exists()}",
              f"skills: {len(discover_skills(config.get('workspace', '')))}"]
@@ -1175,6 +1230,8 @@ def selftest():
     except ImportError as e:
         lines.append(f"documents: FAIL {e}")
     lines.append(f"attachments: {attachments.selfcheck()}")
+    sdk = api._anthropic_sdk()  # 1.11 개인 Claude API: 데스크톱 배포본에는 공식 SDK가 함께 묶여야 한다
+    lines.append(f"anthropic: OK {sdk.__version__}" if sdk else "anthropic: FAIL SDK 없음")
     import secret_store
     lines.append(f"secrets: {secret_store.backend_name()}")
     lines.append(f"stt: {stt.selfcheck()}")
@@ -1204,7 +1261,7 @@ def selftest():
             manager.shutdown()  # 서버가 임시 폴더를 쓰고 있으면 지울 수 없으므로 먼저 끈다
     try:
         settings = ApiSettings.from_config(config)
-        lines.append(f"api mode: {settings.mode}" + (f" ({settings.model})" if settings.mode == "responses" else ""))
+        lines.append(f"api mode: {settings.mode}" + (f" ({settings.model})" if settings.mode in ("responses", api.ANTHROPIC_MODE) else ""))
         reply = ask(key, "'정상'이라고 한 단어로만 답하세요.", settings=settings) if key else "(API 키 없음)"
         lines.append(f"api: OK {reply[:80]!r}")
     except ApiError as e:
@@ -1317,6 +1374,8 @@ def run_app():
     finally:
         bridge._po_shutdown()
         bridge._mcp.shutdown()
+        if getattr(bridge, "_exit_for_update", False):
+            os._exit(0)  # 설치 프로그램이 이 프로세스가 끝나기를 기다린다
 
 
 if __name__ == "__main__":

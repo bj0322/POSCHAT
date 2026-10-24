@@ -263,6 +263,19 @@ async function openThread(id) {
   else $("#input").focus();  // 휴대폰에서는 키보드가 화면을 가리지 않게 자동으로 띄우지 않는다
 }
 
+// 지금 API 방식에서 고를 수 있는 모델과 새 대화의 기본 모델(PO노트 노트 만들기도 같은 목록을 쓴다)
+function modeModels() {
+  const mode = S.config.api_mode || "chat_completions";
+  return mode === "responses" ? (S.responsesModels || [])
+    : mode === "anthropic" ? (S.anthropicModels || []) : (S.models || []);
+}
+
+function modeDefaultModel() {
+  const models = modeModels();
+  const configured = (S.config.api_mode === "anthropic") ? S.config.anthropic_model : S.config.model;
+  return models.some((m) => m.id === configured) ? configured : ((models[0] || {}).id || "");
+}
+
 function renderThreadModel() {
   const select = $("#thread-model");
   const picker = $("#thread-model-picker");
@@ -270,9 +283,9 @@ function renderThreadModel() {
   const mode = S.config.api_mode || "chat_completions";
   picker.hidden = !S.thread || mode === "a1";
   if (picker.hidden) return;
-  const models = mode === "responses" ? (S.responsesModels || []) : (S.models || []);
+  const models = modeModels();
   select.replaceChildren(...models.map((m) => h("option", { value: m.id }, m.label)));
-  const selected = S.thread.model || S.config.model || (models[0] || {}).id;
+  const selected = S.thread.model || modeDefaultModel();
   select.value = models.some((m) => m.id === selected) ? selected : ((models[0] || {}).id || "");
   select.disabled = S.busy;
 }
@@ -879,10 +892,17 @@ function showSettings() {
     h("option", { value: "auto_all" }, "모두 자동 허용 (주의)"),
   );
   perm.value = c.permission || "ask";
+  const anthropicHint = c.anthropic_key_source === "settings" ? "저장된 키가 있습니다. 바꾸려면 새 키를 입력하세요."
+    : c.anthropic_key_source === "env" ? "환경 변수 ANTHROPIC_API_KEY의 키를 쓰고 있습니다."
+    : "console.anthropic.com → API Keys에서 만든 본인 키(sk-ant-...)를 넣으세요.";
+  const anthropicKey = h("input", { type: "password", placeholder: c.anthropic_key_source ? "••••••••••••" : "sk-ant-...",
+    autocomplete: "off" });
+  const clearAnthropic = h("input", { type: "checkbox", style: "width:auto;margin:0 6px 0 0" });
   const mode = h("select", {},
-    h("option", { value: "chat_completions" }, "OpenAI 호환 API — GPT·Claude·Gemini (권장)"),
-    h("option", { value: "responses" }, "OpenAI Responses API — GPT-5 계열"),
-    h("option", { value: "a1" }, "a1/gpt 단일 호출 (예전 기본값, 모델은 서버가 정함)"),
+    h("option", { value: "chat_completions" }, "POSTECH GenAI — OpenAI 호환 API, GPT·Claude·Gemini (권장)"),
+    h("option", { value: "anthropic" }, "일반 AI 모델 (Claude) — 내 Claude API 키로 연결"),
+    h("option", { value: "responses" }, "POSTECH GenAI — OpenAI Responses API, GPT-5 계열"),
+    h("option", { value: "a1" }, "POSTECH GenAI — a1/gpt 단일 호출 (예전 기본값, 모델은 서버가 정함)"),
   );
   mode.value = c.api_mode || "chat_completions";
   const url = h("input", { type: "url", placeholder: "https://.../agent/api/a번호/openai/responses", value: c.responses_url || "" });
@@ -925,6 +945,41 @@ function showSettings() {
       loadModels.disabled = false;
     }
   } }, "모델 목록 불러오기");
+  // 일반 AI 모델(Claude, 개인 Claude API 키): 모델 목록은 Anthropic이 알려 주는 대로(이 키로 쓸 수 있는 모델). 저장해야 반영한다.
+  const claudeModel = h("select", {});
+  const fillClaude = (models, selected) => {
+    claudeModel.replaceChildren(...models.map((m) => h("option", { value: m.id }, m.label)));
+    claudeModel.value = models.some((m) => m.id === selected) ? selected : ((models[0] || {}).id || "");
+  };
+  fillClaude(S.anthropicModels || [], c.anthropic_model);
+  const claudeHint = h("small", {}, S.anthropicModelsSource === "server"
+    ? "Anthropic에서 받은 모델 목록입니다." : "기본 목록입니다. '모델 목록 불러오기'로 이 키로 쓸 수 있는 모델을 모두 받아 옵니다.");
+  let anthropicModels = null;
+  const loadClaude = h("button", { class: "btn", type: "button", style: "margin-top:8px", onclick: async () => {
+    loadClaude.disabled = true;
+    try {
+      const result = await api().refresh_models({ api_mode: "anthropic", anthropic_api_key: anthropicKey.value.trim() });
+      if (result.ok === false) return toast(result.error);
+      anthropicModels = result.models.map((m) => m.id);
+      fillClaude(result.models, claudeModel.value);
+      claudeHint.textContent = `Anthropic에서 받은 모델 목록입니다 (${result.models.length}개). 저장하면 반영됩니다.`;
+    } catch (error) {
+      toast(`모델 목록을 불러오지 못했습니다: ${error.message || error}`);
+    } finally {
+      loadClaude.disabled = false;
+    }
+  } }, "모델 목록 불러오기");
+  const anthropicBox = h("div", {},
+    h("div", { class: "field" }, h("label", {}, "Claude API 키 (Anthropic)"), anthropicKey,
+      h("small", {}, anthropicHint, h("br"),
+        "요금은 이 키의 Anthropic 계정으로 청구되고 POSTECH 크레딧은 쓰지 않습니다. 키는 이 기기의 사용자 데이터 폴더(config.json)에 저장되며 동기화되지 않습니다."),
+      c.anthropic_key_source === "settings"
+        ? h("label", { style: "display:flex;align-items:center;font-size:13px;margin-top:4px;cursor:pointer" }, clearAnthropic, "저장된 키 지우기")
+        : null),
+    h("div", { class: "field" }, h("label", {}, "기본 모델"), claudeModel, claudeHint, loadClaude,
+      h("small", {}, "Claude Opus 5.5를 권장합니다. 비용을 줄이려면 Sonnet 5.5나 Haiku 5.5를 고르세요. ",
+        "PO노트의 서버 음성 보정과 크레딧 확인은 POSTECH GenAI 키가 있을 때만 씁니다(Claude API는 음성을 받지 않습니다).")),
+  );
   const stream = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
   stream.checked = c.stream !== false;
   const autoUpdate = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
@@ -945,6 +1000,7 @@ function showSettings() {
   const syncMode = () => {
     responsesBox.hidden = mode.value !== "responses";
     compatibleBox.hidden = mode.value !== "chat_completions";
+    anthropicBox.hidden = mode.value !== "anthropic";
     url.required = mode.value === "responses";
   };
   mode.addEventListener("change", syncMode);
@@ -953,11 +1009,13 @@ function showSettings() {
     h("div", { class: "row guide-link" },
       h("span", { style: "flex:1" }, "처음 쓰거나 기능이 궁금하면 사용법 가이드를 보세요."),
       h("button", { class: "btn", onclick: showGuide }, "사용법 가이드")),
-    h("div", { class: "field" }, h("label", {}, "POSTECH GenAI API 키"), key,
-      h("small", {}, keyHint, h("br"), "키는 이 PC의 사용자 데이터 폴더(config.json)에 저장됩니다.")),
     h("div", { class: "field" }, h("label", {}, "API 방식"), mode),
+    h("div", { class: "field" }, h("label", {}, "POSTECH GenAI API 키"), key,
+      h("small", {}, keyHint, h("br"), "키는 이 PC의 사용자 데이터 폴더(config.json)에 저장됩니다. ",
+        "일반 AI 모델(Claude)을 쓸 때도 PO노트 서버 음성 보정·크레딧 확인에 쓰므로 있으면 넣어 두세요(선택).")),
     responsesBox,
     compatibleBox,
+    anthropicBox,
     h("div", { class: "field" },
       h("label", { style: "display:flex;align-items:center;font-weight:600;cursor:pointer" }, stream, "답변을 받는 대로 표시 (스트리밍)"),
       h("small", {}, "일반 대화의 답변을 글자가 오는 대로 보여 줍니다. 에이전트 모드의 단계 진행은 그대로입니다.")),
@@ -1004,7 +1062,7 @@ function showSettings() {
       h("div", { class: "row" }, h("small", { style: "flex:1;margin:0;word-break:break-all" }, S.dataDir),
         h("button", { class: "btn", onclick: () => api().open_folder("data") }, "열기"))),
   );
-  body.append(h("p", { style: "margin:14px 0 0;color:var(--text-3);font-size:12px" }, `POSTECH GenAI Chat 버전 ${S.version}`),
+  body.append(h("p", { style: "margin:14px 0 0;color:var(--text-3);font-size:12px" }, `POSCHAT 버전 ${S.version}`),
     h("p", { style: "margin:2px 0 0;color:var(--text-3);font-size:12px" }, "서비스 대표자: 김범준"),
     h("p", { style: "margin:2px 0 0;color:var(--text-3);font-size:12px" }, "문의사항은 ",
       h("a", { href: REPO_URL, target: "_blank", style: "color:inherit" }, REPO_URL), "의 문의 메일로 보내 주세요."),
@@ -1020,11 +1078,20 @@ function showSettings() {
             url.focus();
             return toast("Responses API 주소를 입력하세요.");
           }
+          if (mode.value === "anthropic" && !anthropicKey.value.trim()
+              && (!c.anthropic_key_source || clearAnthropic.checked)) {
+            anthropicKey.focus();
+            return toast("일반 AI 모델(Claude)을 쓰려면 Claude API 키를 입력하세요.");
+          }
           const state = await api().save_settings({
             api_key: key.value.trim(), history_messages: hist.value, max_steps: steps.value, permission: perm.value,
             api_mode: mode.value, responses_url: url.value.trim(),
             chat_completions_url: compatibleUrl.value.trim(), server_models: serverModels,
-            model: mode.value === "responses" ? responsesModel.value : compatibleModel.value, stream: stream.checked,
+            model: mode.value === "responses" ? responsesModel.value
+              : mode.value === "anthropic" ? claudeModel.value : compatibleModel.value,
+            stream: stream.checked,
+            anthropic_api_key: anthropicKey.value.trim(), anthropic_server_models: anthropicModels,
+            clear_anthropic_key: clearAnthropic.checked && !anthropicKey.value.trim(),
             update_check: autoUpdate.checked,
             notion_token: notion.value.trim(), clear_notion: clearNotion.checked && !notion.value.trim(),
             firecrawl_key: firecrawl.value.trim(), clear_firecrawl: clearFirecrawl.checked && !firecrawl.value.trim(),
@@ -1037,7 +1104,7 @@ function showSettings() {
       },
     ],
   });
-  setTimeout(() => key.focus(), 50);
+  setTimeout(() => (mode.value === "anthropic" ? anthropicKey : key).focus(), 50);
 }
 
 /* ---------- 업데이트 ---------- */
@@ -1447,6 +1514,8 @@ function applyState(state) {
   S.models = state.models || [];
   S.responsesModels = state.responses_models || [];
   S.modelsSource = state.models_source || "builtin";
+  S.anthropicModels = state.anthropic_models || [];
+  S.anthropicModelsSource = state.anthropic_models_source || "builtin";
   S.memory = state.memory || [];
   S.defaultChatUrl = state.default_chat_completions_url || "";
   if (state.credit) S.credit = state.credit;
@@ -1574,7 +1643,7 @@ async function init() {
   if (S.threads.length) await openThread(S.threads[0].id);
   else await newThread();
   updateSend();
-  if (!state.config.key_source) showSettings();
+  if (!state.config.has_key) showSettings();
   // 새 버전 확인(설정에서 끌 수 있고 6시간에 한 번). 실패해도 사용에 지장이 없으므로 알리지 않는다.
   api().check_for_updates(false).then((r) => { if (r.available) offerUpdate(r); }).catch(() => {});
 }

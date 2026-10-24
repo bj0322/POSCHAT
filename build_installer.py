@@ -5,8 +5,11 @@
     python build_installer.py
 
 필요 패키지: requirements.txt와 pyinstaller (pip install -r requirements.txt pyinstaller)
-결과: Windows는 release/PostechChat-Setup.exe, macOS는 release/PostechChat-mac.dmg(앱 아이콘을 위해 pillow도 필요)
+결과: Windows는 release/POSCHAT-Setup.exe, macOS는 release/POSCHAT-mac.dmg(앱 아이콘을 위해 pillow도 필요)
 빌드 중간 파일은 %TEMP%\\PostechChat-build 에 만든다(클라우드 동기화 폴더에서 빌드하면 느리다).
+
+1.11부터 앱 이름은 POSCHAT이다. 설치 폴더·실행 파일(PostechChat.exe, PostechChat.app)·데이터 폴더 이름은
+이전 버전에서 그대로 업데이트되도록 바꾸지 않고, 화면·바로가기·설치 목록·파일 정보에 보이는 이름만 바꾼다.
 """
 import os
 import plistlib
@@ -18,6 +21,9 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+APP_NAME = "POSCHAT"
+SETUP_FILE = "POSCHAT-Setup.exe"
+DMG_FILE = "POSCHAT-mac.dmg"
 WORK = Path(tempfile.gettempdir()) / "PostechChat-build"
 ICON = ROOT / "assets" / "icon.ico"
 ICON_PNG = ROOT / "assets" / "icon.png"
@@ -33,6 +39,8 @@ APP_DATA = [
     # PO노트 음성 인식: sherpa-onnx는 onnxruntime 등 공유 라이브러리를 sherpa_onnx/lib에 둔다.
     # sounddevice의 PortAudio는 PyInstaller 훅이 함께 넣는다.
     "--collect-binaries", "sherpa_onnx",
+    # 1.11 개인 Claude API: Anthropic SDK는 리소스 모듈 일부를 처음 쓸 때 불러오므로 하위 모듈을 모두 넣는다.
+    "--collect-submodules", "anthropic",
 ]
 
 
@@ -43,6 +51,29 @@ def dependency_licenses():
     dest = WORK / "pylicenses"
     license_check.collect(dest)
     return ["--add-data", f"{dest}{os.pathsep}licenses/python"]
+
+
+def version_file(file_name, description):
+    """Windows 실행 파일의 파일 정보(작업 관리자·속성 창에 보이는 이름과 버전)를 PyInstaller 형식으로 만든다."""
+    from version import APP_VERSION
+
+    numbers = tuple(int(x) for x in APP_VERSION.split(".")) + (0,)
+    strings = {"CompanyName": "PIDS Tech.", "FileDescription": description, "FileVersion": APP_VERSION,
+               "InternalName": APP_NAME, "LegalCopyright": "Copyright © 2026 Beomjoon Kim (AGPL-3.0-only)",
+               "OriginalFilename": file_name, "ProductName": APP_NAME, "ProductVersion": APP_VERSION}
+    text = f"""VSVersionInfo(
+  ffi=FixedFileInfo(filevers={numbers}, prodvers={numbers}, mask=0x3f, flags=0x0, OS=0x40004, fileType=0x1,
+                    subtype=0x0, date=(0, 0)),
+  kids=[
+    StringFileInfo([StringTable('041204B0', [{", ".join(f"StringStruct({k!r}, {v!r})" for k, v in strings.items())}])]),
+    VarFileInfo([VarStruct('Translation', [1042, 1200])])
+  ]
+)
+"""
+    path = WORK / f"version-{file_name}.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return str(path)
 
 
 def pyinstaller(*args):
@@ -67,7 +98,7 @@ def build_mac():
     plist_path = app / "Contents" / "Info.plist"
     with open(plist_path, "rb") as f:
         plist = plistlib.load(f)
-    plist.update(CFBundleDisplayName="POSTECH GenAI Chat", CFBundleShortVersionString=APP_VERSION,
+    plist.update(CFBundleDisplayName=APP_NAME, CFBundleName=APP_NAME, CFBundleShortVersionString=APP_VERSION,
                  CFBundleVersion=APP_VERSION, NSHighResolutionCapable=True,
                  # PO노트 녹음. 이 문구가 없으면 macOS가 마이크를 묻지도 않고 막는다.
                  NSMicrophoneUsageDescription="PO노트에서 강의를 녹음해 받아 적으려면 마이크가 필요합니다.")
@@ -86,9 +117,9 @@ def build_mac():
     shutil.copy2(ROOT / "THIRD_PARTY_NOTICES.md", stage / "THIRD_PARTY_NOTICES.md")
     out = ROOT / "release"
     out.mkdir(exist_ok=True)
-    target = out / "PostechChat-mac.dmg"
+    target = out / DMG_FILE
     target.unlink(missing_ok=True)
-    subprocess.run(["hdiutil", "create", "-volname", "POSTECH GenAI Chat", "-srcfolder", str(stage),
+    subprocess.run(["hdiutil", "create", "-volname", APP_NAME, "-srcfolder", str(stage),
                     "-ov", "-format", "UDZO", str(target)], check=True)
     print(f"완료: {target} ({target.stat().st_size / 1024 / 1024:.1f} MB)")
 
@@ -114,6 +145,7 @@ def main():
     print("[1/3] 앱 빌드")
     pyinstaller(
         "--windowed", "--onedir", "--name", "PostechChat", "--icon", str(ICON), *APP_DATA, *dependency_licenses(),
+        "--version-file", version_file("PostechChat.exe", APP_NAME),
         "--distpath", str(WORK / "app"),
         str(ROOT / "main.py"),
     )
@@ -130,6 +162,7 @@ def main():
     print("[3/3] 설치 프로그램 빌드")
     pyinstaller(
         "--windowed", "--onefile", "--name", "PostechChat-Setup", "--icon", str(ICON),
+        "--version-file", version_file(SETUP_FILE, f"{APP_NAME} 설치 프로그램"),
         "--add-data", f"{payload};.",
         "--add-data", f"{ICON};.",
         "--add-data", f"{ICON_PNG};.",
@@ -139,7 +172,7 @@ def main():
     )
     out = ROOT / "release"
     out.mkdir(exist_ok=True)
-    target = out / "PostechChat-Setup.exe"
+    target = out / SETUP_FILE
     shutil.copy2(WORK / "setup" / "PostechChat-Setup.exe", target)
     sign(target)
     print(f"완료: {target} ({target.stat().st_size / 1024 / 1024:.1f} MB)")
@@ -159,7 +192,7 @@ def sign(path):
         sys.exit("signtool.exe를 찾지 못했습니다. Windows SDK를 설치하세요.")
     subprocess.run([str(tools[-1]), "sign", "/f", pfx, "/p", os.environ.get("WINDOWS_SIGN_PASSWORD", ""),
                     "/fd", "SHA256", "/tr", "http://timestamp.digicert.com", "/td", "SHA256",
-                    "/d", "POSTECH GenAI Chat", str(path)], check=True)
+                    "/d", APP_NAME, str(path)], check=True)
     print(f"서명: {path.name}")
 
 

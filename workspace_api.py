@@ -495,7 +495,7 @@ class WorkspaceApi:
         key = self._api_key()
         thread = storage.load_thread(thread_id)
         if not key:
-            return {"ok": False, "error": "API 키를 먼저 입력하세요."}
+            return {"ok": False, "error": self._missing_key_error()}
         if not thread or not thread.get("messages"):
             return {"ok": False, "error": "요약할 대화가 없습니다."}
         threading.Thread(target=self._summarize_work, args=(thread, key), daemon=True).start()
@@ -875,7 +875,7 @@ class WorkspaceApi:
 
         key = self._api_key()
         if not key:
-            return {"ok": False, "error": "API 키를 먼저 입력하세요."}
+            return {"ok": False, "error": self._missing_key_error()}
         eval_set = evals.sets().get(str(set_name))
         allowed = self._model_ids(self._mode())
         models = [m for m in (models or []) if m in allowed][:6]

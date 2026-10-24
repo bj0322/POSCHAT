@@ -1,4 +1,5 @@
 requests>=2.28
+anthropic>=2.3  # 1.11 개인 Claude API(공식 SDK). 안드로이드에는 없다(api.py가 HTTP로 직접 보낸다)
 truststore>=0.9
 cryptography>=42  # 동기화(sync.py)의 종단간 암호화(AES-256-GCM)
 keyring>=24  # 커넥터 토큰을 OS 보안 저장소(자격 증명 관리자·키체인)에 둔다. 없으면 앱 전용 파일
