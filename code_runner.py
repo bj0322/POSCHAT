@@ -35,6 +35,7 @@ MAX_TAIL = 64 * 1024             # 기록에 남길 끝부분
 FLUSH_SECONDS = 0.1
 MAX_COMMAND = 4000
 MAX_RECORDS = 200
+LINGER_SECONDS = 2.0             # 셸이 끝난 뒤 남은 하위 프로세스를 기다리는 시간
 SECRET_ENV = re.compile(r"(?i)(key|token|secret|password|passwd|credential|auth|cookie|session)")
 NETWORK_RE = re.compile(r"(?i)\b(curl|wget|ssh|scp|sftp|rsync|ftp|telnet|nc|ncat|ping|git\s+(push|pull|fetch|clone|remote|submodule)|"
                         r"pip3?\s+(install|download)|python3?\s+-m\s+pip\s+install|npm\s+(i|install|ci|publish|update)|yarn(\s+(add|install))?|"
@@ -136,7 +137,11 @@ class Masker:
             self.carry = text  # 줄이 끝나기를 조금 기다린다
             return ""
         else:
-            cut = len(text) - self.keep  # 줄이 끝나지 않은 긴 출력: 끝부분은 다음 조각과 이어서 본다
+            # 줄이 끝나지 않은 출력: 끝부분은 다음 조각과 이어서 본다. 키 모양(공백 없는 긴 글자)을 반으로 자르지 않게
+            # 마지막 공백에서 자른다(공백이 없으면 아주 긴 줄일 때만 자른다).
+            limit = len(text) - max(self.keep, 1)
+            space = max(text.rfind(" ", 0, max(0, limit)), text.rfind("\t", 0, max(0, limit)))
+            cut = space + 1 if space >= 0 else (limit if len(text) >= 8192 else 0)
         for s in self.secrets:  # cut이 비밀 한가운데면 비밀 앞에서 자른다
             start = text.find(s)
             while start != -1:
@@ -233,6 +238,7 @@ class RunManager:
         self.secrets = secrets
         self._runs = {}
         self._procs = {}
+        self._jobs = {}   # Windows 작업 개체(자식 프로세스까지 묶음)
         self._lock = threading.Lock()
 
     def _emit(self, **event):
@@ -284,6 +290,10 @@ class RunManager:
         with self._lock:
             self._runs[rec.id] = rec
             self._procs[rec.id] = proc
+            if os.name == "nt":
+                job = _win_job(proc)
+                if job is not None:
+                    self._jobs[rec.id] = job
             for old in sorted(self._runs.values(), key=lambda r: r.started)[:max(0, len(self._runs) - MAX_RECORDS)]:
                 if old.status != "running":
                     self._runs.pop(old.id, None)
@@ -347,24 +357,39 @@ class RunManager:
         t = threading.Thread(target=reader, daemon=True)
         t.start()
         status = None
+        killed_at = exited_at = None
+        job = self._jobs.get(rec.id)
         while not done.wait(FLUSH_SECONDS):
+            now = time.monotonic()
             if pending:
                 flush()
-            elif masker.carry and time.monotonic() - last_flush > 0.5:
+            elif masker.carry and now - last_flush > 0.5:
                 flush(force=True)  # 줄 바꿈 없이 멈춘 출력도 보이게
-            if time.monotonic() > deadline and status is None:
+            if now > deadline and status is None:
                 status = "timeout"
-                self._kill(proc)
             if rec.status == "stopping" and status is None:
                 status = "stopped"
-                self._kill(proc)
+            if status and killed_at is None:
+                killed_at = now
+                self._kill(proc, job)
+            if proc.poll() is not None and exited_at is None:
+                exited_at = now
+            if exited_at is not None and killed_at is None and now - exited_at > LINGER_SECONDS:
+                # 셸은 끝났는데 뒤에 띄운 하위 프로세스가 출력 통로를 쥐고 있다: 남기지 않고 끝낸다
+                killed_at = now
+                self._kill(proc, job)
+                with lock:
+                    pending.append("\n[명령은 끝났지만 뒤에 남은 하위 프로세스를 끝냈습니다]\n")
+            if killed_at is not None and now - killed_at > 5:
+                break  # 끝내지 못한 프로세스가 통로를 쥐고 있어도 기록은 마친다(읽는 스레드는 버린다)
         if status is None and rec.status == "stopping":
             status = "stopped"
         try:
             code = proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
-            self._kill(proc)
+            self._kill(proc, job)
             code = proc.wait()
+        self._close_job(rec.id)
         t.join(2)
         try:
             proc.stdout.close()
@@ -397,24 +422,43 @@ class RunManager:
         return bool(rec.ended)
 
     @staticmethod
-    def _kill(proc):
-        if proc.poll() is not None:
-            return
-        try:
-            if os.name == "nt":
-                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, timeout=15,
-                               creationflags=subprocess.CREATE_NO_WINDOW)
-            else:
-                os.killpg(proc.pid, signal.SIGTERM)
+    def _kill(proc, job=None):
+        """프로세스와 그 자식까지 끝낸다. 셸이 먼저 끝났어도 같은 그룹(POSIX)·작업 개체(Windows)의 자식을 끝낸다."""
+        if os.name == "nt":
+            if job is not None and _win_terminate_job(job):
+                return
+            if proc.poll() is None:
                 try:
-                    proc.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    os.killpg(proc.pid, signal.SIGKILL)
-        except (OSError, subprocess.SubprocessError):
+                    subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, timeout=15,
+                                   creationflags=subprocess.CREATE_NO_WINDOW)
+                except (OSError, subprocess.SubprocessError):
+                    pass
             try:
                 proc.kill()
             except OSError:
                 pass
+            return
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(proc.pid, sig)  # start_new_session: 그룹 번호 = 셸의 pid(셸이 끝나도 그룹은 남는다)
+            except (ProcessLookupError, PermissionError):
+                pass
+            except OSError:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+            if sig == signal.SIGTERM:
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    pass
+                time.sleep(0.2)  # 자식이 SIGTERM으로 끝날 틈
+
+    def _close_job(self, run_id):
+        job = self._jobs.pop(run_id, None)
+        if job is not None:
+            _win_close_job(job)  # KILL_ON_JOB_CLOSE: 남은 자식도 함께 끝난다
 
     def stop(self, run_id):
         rec = self.get(run_id)
@@ -424,18 +468,18 @@ class RunManager:
         with self._lock:
             proc = self._procs.get(rec.id)
         if proc is not None:
-            self._kill(proc)
+            self._kill(proc, self._jobs.get(rec.id))
         return rec
 
     def shutdown(self):
         """앱 종료: 돌고 있는 명령을 모두 끝낸다(프로세스가 남지 않게)."""
         with self._lock:
-            procs = list(self._procs.values())
+            procs = [(rid, p) for rid, p in self._procs.items()]
             for r in self._runs.values():
                 if r.status == "running":
                     r.status = "stopping"
-        for proc in procs:
-            self._kill(proc)
+        for rid, proc in procs:
+            self._kill(proc, self._jobs.get(rid))
 
     def _log(self, rec):
         if not self.log_path:
@@ -448,3 +492,67 @@ class RunManager:
                 f.write(json.dumps(data, ensure_ascii=False) + "\n")
         except OSError:
             pass
+
+
+# ---- Windows 작업 개체: 명령과 그 자식 프로세스를 한 묶음으로 끝낸다 ----
+
+def _win_job(proc):
+    """프로세스를 새 작업 개체에 넣는다(KILL_ON_JOB_CLOSE). 실패하면 None(taskkill로 끝낸다)."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.CreateJobObjectW.restype = wintypes.HANDLE
+        k32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+        k32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
+        k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+
+        class Basic(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                        ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                        ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+                        ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD),
+                        ("SchedulingClass", wintypes.DWORD)]
+
+        class Extended(ctypes.Structure):
+            _fields_ = [("BasicLimitInformation", Basic), ("IoInfo", ctypes.c_ulonglong * 6),
+                        ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+                        ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+        job = k32.CreateJobObjectW(None, None)
+        if not job:
+            return None
+        info = Extended()
+        info.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if not k32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)) or \
+                not k32.AssignProcessToJobObject(job, wintypes.HANDLE(int(proc._handle))):
+            _win_close_job(job)
+            return None
+        return job
+    except Exception:
+        return None
+
+
+def _win_terminate_job(job):
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        return bool(k32.TerminateJobObject(job, 1))
+    except Exception:
+        return False
+
+
+def _win_close_job(job):
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.CloseHandle.argtypes = [wintypes.HANDLE]
+        k32.CloseHandle(job)
+    except Exception:
+        pass

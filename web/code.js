@@ -882,6 +882,8 @@ function codeRenderReview(t) {
     h("div", { class: "code-review-head" },
       h("div", {},
         h("strong", {}, p.path), p.new_file ? " (새 파일)" : "",
+        CODE.state && p.workspace && CODE.state.workspace.path && !p.workspace.endsWith(CODE.state.workspace.name)
+          ? h("span", { class: "code-warn" }, ` (다른 작업 폴더: ${p.workspace})`) : null,
         h("span", { class: `code-badge st-${p.status}` }, CODE_STATUS[p.status] || p.status),
         h("div", { class: "muted" }, [p.title, p.reason ? `이유: ${p.reason}` : "", p.source === "agent" ? "에이전트 제안" : "", p.message].filter(Boolean).join(" · "))),
       p.conflict ? h("p", { class: "code-warn" }, "검토하는 사이에 파일이 바뀌었습니다. 그대로 덮어쓰지 않습니다. '현재 파일에 맞춰 적용'은 덩어리 앞뒤 문맥이 그대로인 경우에만 됩니다.") : null),
@@ -1078,13 +1080,18 @@ async function codeGitCommit(message) {
   if (!String(message || "").trim()) return toast("커밋 메시지를 입력하세요");
   const staged = (CODE.git && CODE.git.files || []).filter((f) => f.staged);
   if (!staged.length) return toast("스테이지한 변경이 없습니다");
+  const hooks = (CODE.git && CODE.git.hooks) || [];
+  const skip = h("input", { type: "checkbox", id: "code-no-verify" });
   const ok = await codeChoose("커밋", h("div", {},
     h("p", {}, "다음 파일의 스테이지한 변경만 커밋합니다. 푸시는 하지 않습니다."),
     h("ul", {}, ...staged.map((f) => h("li", {}, `${f.label} ${f.path}`))),
-    h("pre", { class: "code-commit-preview" }, message)),
+    h("pre", { class: "code-commit-preview" }, message),
+    hooks.length ? h("div", { class: "code-warn" },
+      h("p", {}, `이 저장소의 커밋 훅이 실행됩니다: ${hooks.join(", ")}. 훅은 저장소에 들어 있는 프로그램입니다. 믿을 수 없는 저장소라면 실행하지 마세요.`),
+      h("label", {}, skip, " 이번 커밋에서 훅을 실행하지 않기(--no-verify)")) : null),
   [{ label: "취소", value: false }, { label: "커밋", class: "primary", value: true }]);
   if (!ok) return;
-  const res = await codeCall(api().code_git_commit(message));
+  const res = await codeCall(api().code_git_commit(message, skip.checked));
   if (!res) return;
   CODE.commitDraft = "";
   toast(`커밋했습니다: ${res.commit}`);

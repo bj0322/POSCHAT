@@ -194,8 +194,8 @@ class CodeApi:
         moved = 0
         if not self._code_active:
             for p in self._code_store().pending():
-                if p.proposal_id in self._code_waiters:
-                    code_diff.finish(p, "cancelled", "Code 화면을 닫아 승인 창으로 넘김")
+                if self._code_waiters.get(p.proposal_id) and \
+                        self._code_finish(p, "cancelled", "Code 화면을 닫아 승인 창으로 넘김"):
                     self._code_resolve(p.proposal_id, "fallback")
                     moved += 1
         return {"ok": True, "active": self._code_active, "moved": moved}
@@ -328,12 +328,16 @@ class CodeApi:
     def code_proposals(self):
         return {"ok": True, "proposals": [p.to_dict(full=False) for p in self._code_store().all()]}
 
+    def _code_proposal_ws(self, p):
+        """제안이 만들어진 작업 폴더(사용자가 그 사이 작업 폴더를 바꿔도 다른 폴더의 같은 이름 파일에 쓰지 않는다)."""
+        return p.workspace or self._code_ws()
+
     def code_proposal(self, proposal_id):
         def go():
             p = self._code_store().get(proposal_id)
             data = p.to_dict(full=True)
             if p.status == "pending":
-                now = cw.current_hash(self._code_ws(), p.file_path)
+                now = cw.current_hash(self._code_proposal_ws(p), p.file_path)
                 data["conflict"] = now != p.base_hash
             return {"proposal": data}
         return self._code_call(go)
@@ -341,7 +345,8 @@ class CodeApi:
     def code_review_preview(self, proposal_id, accepted, edited=None):
         def go():
             p = self._code_store().get(proposal_id)
-            res = code_diff.preview(self._code_ws(), p, accepted or [], edited if isinstance(edited, str) else None)
+            res = code_diff.preview(self._code_proposal_ws(p), p, accepted or [],
+                                    edited if isinstance(edited, str) else None)
             res.pop("text", None)
             return res
         return self._code_call(go)
@@ -349,8 +354,8 @@ class CodeApi:
     def code_review_apply(self, proposal_id, accepted, edited=None, rebase=False):
         def go():
             p = self._code_store().get(proposal_id)
-            with self._lock:
-                result = code_diff.apply(self._code_ws(), p, [int(i) for i in (accepted or [])],
+            with self._lock:  # 에이전트 중지(finish)와 겹치지 않게
+                result = code_diff.apply(self._code_proposal_ws(p), p, [int(i) for i in (accepted or [])],
                                          edited if isinstance(edited, str) else None, bool(rebase))
             self._code_resolve(p.proposal_id, result)
             self._push({"type": "code", "kind": "proposal", "proposal": p.to_dict(full=False)})
@@ -363,23 +368,34 @@ class CodeApi:
     def code_review_reject(self, proposal_id):
         def go():
             p = self._code_store().get(proposal_id)
-            result = code_diff.reject(p)
+            with self._lock:
+                result = code_diff.reject(p)
             self._code_resolve(p.proposal_id, result)
             self._push({"type": "code", "kind": "proposal", "proposal": p.to_dict(full=False)})
             return {"proposal": p.to_dict(full=False)}
         return self._code_call(go)
 
     def _code_resolve(self, proposal_id, result):
-        entry = (self._code_waiters or {}).get(proposal_id)
-        if entry:
+        """그 제안을 기다리는 에이전트 모두에게 결과를 알린다(같은 제안을 둘이 기다릴 수 있다)."""
+        for entry in list((self._code_waiters or {}).get(proposal_id, [])):
             entry[1] = result
             entry[0].set()
 
-    def _code_review_edit(self, thread_id, alive, rel, old_text, new_text, title, reason, encoding):
-        """에이전트의 write/edit(agent.Agent.review). None을 돌려주면 예전 승인 창을 쓴다."""
+    def _code_finish(self, p, status, message):
+        """적용 없이 끝낸다. 이미 적용·거부됐으면(사용자가 먼저 눌렀다) 그대로 두고 False."""
+        with self._lock:
+            if p.status != "pending":
+                return False
+            code_diff.finish(p, status, message)
+        self._push({"type": "code", "kind": "proposal", "proposal": p.to_dict(full=False)})
+        return True
+
+    def _code_review_edit(self, thread_id, alive, workspace, rel, old_text, new_text, title, reason, encoding):
+        """에이전트의 write/edit(agent.Agent.review). workspace는 그 에이전트의 작업 폴더.
+        None을 돌려주면 예전 승인 창을 쓴다."""
         if not self._code_active or self._code_android() or self._code_settings()["review"] != "auto":
             return None
-        ws = self._workspace()
+        ws = workspace or self._workspace()
         if not ws:
             return None
         try:
@@ -394,28 +410,43 @@ class CodeApi:
         if permission in ("auto_edit", "auto_all") or "edit" in getattr(self, "_session_allow", set()):
             try:
                 with self._lock:
-                    result = code_diff.apply(ws, p, [h.id for h in p.hunks])
+                    result = code_diff.apply(self._code_proposal_ws(p), p, [h.id for h in p.hunks])
+                    p.status, p.message = "auto", "설정에 따라 자동 적용"
             except (cw.ConflictError, code_diff.ProposalError) as e:
                 return {"status": "conflict", "message": str(e)}
-            p.status, p.message = "auto", "설정에 따라 자동 적용"
+            result = dict(result, status="applied")
+            self._code_resolve(p.proposal_id, result)  # 같은 제안을 기다리던 다른 에이전트에게도
             self._push({"type": "code", "kind": "proposal", "proposal": p.to_dict(full=False)})
             self._push({"type": "code", "kind": "file_changed", "path": p.file_path, "hash": p.result_hash, "by": "agent"})
-            return dict(result, status="applied")
+            return result
         if not alive():
+            if created:
+                self._code_finish(p, "cancelled", "에이전트 실행을 멈춤")
             return {"status": "cancelled", "message": "중지됨"}
         entry = [threading.Event(), None]
-        self._code_waiters[p.proposal_id] = entry
+        self._code_waiters.setdefault(p.proposal_id, []).append(entry)
+        if p.status != "pending":  # 등록하는 사이에 끝났다
+            entry[1] = {"status": p.status if p.status != "auto" else "applied", "message": p.message}
+            entry[0].set()
         self._push({"type": "code", "kind": "proposal", "proposal": p.to_dict(full=False), "new": created})
         self._push({"type": "status", "thread_id": thread_id, "text": f"Code 화면에서 변경을 검토해 주세요: {p.file_path}"})
         try:
             while not entry[0].wait(0.5):
                 if not alive():
-                    code_diff.finish(p, "cancelled", "에이전트 실행을 멈춤")
-                    self._push({"type": "code", "kind": "proposal", "proposal": p.to_dict(full=False)})
-                    return {"status": "cancelled", "message": "중지됨"}
+                    if self._code_finish(p, "cancelled", "에이전트 실행을 멈춤"):
+                        self._code_resolve(p.proposal_id, {"status": "cancelled", "message": "중지됨"})
+                        return {"status": "cancelled", "message": "중지됨"}
+                    entry[0].wait(5)  # 사용자가 막 적용·거부했다: 그 결과를 받는다
+                    break
         finally:
-            self._code_waiters.pop(p.proposal_id, None)
+            waiters = self._code_waiters.get(p.proposal_id, [])
+            if entry in waiters:
+                waiters.remove(entry)
+            if not waiters:
+                self._code_waiters.pop(p.proposal_id, None)
         result = entry[1]
+        if result is None:
+            return {"status": "cancelled", "message": "중지됨"}
         if result == "fallback":
             return None
         return result
@@ -439,8 +470,8 @@ class CodeApi:
     def code_git_unstage(self, paths):
         return self._code_call(lambda: code_git.unstage(self._code_git_ready(), list(paths or [])))
 
-    def code_git_commit(self, message):
-        return self._code_call(lambda: code_git.commit(self._code_git_ready(), str(message or "")))
+    def code_git_commit(self, message, no_verify=False):
+        return self._code_call(lambda: code_git.commit(self._code_git_ready(), str(message or ""), bool(no_verify)))
 
     def code_git_ask(self, kind="explain", path="", staged=False):
         """변경 설명·코드 리뷰·커밋 메시지 제안: 차이를 외부 데이터로 감싼 첨부와 질문."""

@@ -131,6 +131,27 @@ class OpenSaveTests(Base):
         cw.write_file(self.ws, "run.sh", "#!/bin/sh\necho bye\n", info["hash"])
         self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o755)
 
+    @unittest.skipIf(os.name == "nt", "POSIX 권한 비트")
+    def test_new_files_get_normal_permissions_and_read_only_files_are_kept(self):
+        cw.write_file(self.ws, "fresh.py", "x = 1\n", cw.ABSENT)
+        self.assertEqual(stat.S_IMODE(os.stat(Path(self.ws, "fresh.py")).st_mode), cw.DEFAULT_MODE)
+        p = self.put("locked.txt", "keep\n")
+        os.chmod(p, 0o444)
+        self.addCleanup(os.chmod, p, 0o644)
+        info = cw.read_file(self.ws, "locked.txt")
+        if os.access(p, os.W_OK):
+            self.skipTest("관리자 권한으로 실행 중(읽기 전용 파일도 쓸 수 있음)")
+        self.assertTrue(info["readonly"])
+        with self.assertRaises(PermissionError):
+            cw.write_file(self.ws, "locked.txt", "changed\n", info["hash"], force=True)
+        self.assertEqual(p.read_text(), "keep\n")
+
+    def test_empty_base_hash_means_the_file_must_be_new(self):
+        self.put("exists.txt", "a\n")
+        with self.assertRaises(cw.ConflictError):
+            cw.write_file(self.ws, "exists.txt", "b\n", "")
+        self.assertEqual(Path(self.ws, "exists.txt").read_text(), "a\n")
+
     def test_create_rename_delete(self):
         Path(self.ws, "rtl").mkdir()
         cw.create(self.ws, "rtl/top.sv")

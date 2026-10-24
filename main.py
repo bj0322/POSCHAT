@@ -1150,7 +1150,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi):
             browser=self._browser_for_agent(),
             paper=self._paper_for_agent(),
             # 1.15: Code 화면이 열려 있으면 파일 수정은 승인 창 대신 Code 화면의 변경 검토(덩어리별)로
-            review=lambda *a: self._code_review_edit(thread_id, alive, *a),
+            review=lambda *a: self._code_review_edit(thread_id, alive, workspace, *a),
         )
         started, outcome = time.monotonic(), "done"
         try:
@@ -1245,6 +1245,14 @@ def selftest():
     except ImportError as e:
         lines.append(f"documents: FAIL {e}")
     lines.append(f"attachments: {attachments.selfcheck()}")
+    # 1.15 POSCHAT Code: 편집기 묶음과 코드 모듈이 함께 묶였는지
+    import code_diff
+    import code_git
+    import code_runner
+    bundle = resource_dir() / "web" / "vendor" / "codemirror" / "codemirror.min.js"
+    ok = bundle.is_file() and bundle.stat().st_size > 100_000 and bool(code_diff.make_hunks("a\n", "b\n"))
+    lines.append(f"code: {'OK' if ok else 'FAIL 편집기 묶음 없음'} (git {'있음' if code_git.available() else '없음'}, "
+                 f"{code_runner.shell_name()})")
     sdk = api._anthropic_sdk()  # 1.11 개인 Claude API: 데스크톱 배포본에는 공식 SDK가 함께 묶여야 한다
     lines.append(f"anthropic: OK {sdk.__version__}" if sdk else "anthropic: FAIL SDK 없음")
     import secret_store

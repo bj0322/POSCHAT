@@ -6,7 +6,8 @@
 - POSTECH 학생용 AI 데스크톱·안드로이드 앱. Python + pywebview 6.2(Windows: WinForms+WebView2/pythonnet, macOS: Cocoa+WKWebView/pyobjc),
   안드로이드는 Chaquopy(Python 3.11) + Kotlin `MainActivity.kt`. 화면은 `web/`(바닐라 JS, 빌드 도구 없음).
 - 진입점 `main.py`의 `Bridge`가 화면 API(js_api)다. 기능별 화면 API는 믹스인으로 나눈다:
-  `workspace_api.WorkspaceApi`, `browser_api.BrowserApi`(1.13), `paper_api.PaperApi`(1.14).
+  `workspace_api.WorkspaceApi`, `browser_api.BrowserApi`(1.13), `paper_api.PaperApi`(1.14), `code_api.CodeApi`(1.15).
+- Python → 화면 이벤트는 `Bridge._push` → `ui_events.EventPump`(전용 스레드). UI 스레드(네이티브 처리기)에서 `evaluate_js`를 직접 부르지 않는다(B1).
 - 에이전트(`agent.py`)는 JSON 단계(`{"action": ...}`)를 `_tool_<이름>` 메서드로 실행한다. 외부에서 온 글(웹페이지·논문·MCP 결과)은
   `connectors.wrap_untrusted`로 감싼다.
 - 라이선스 AGPL-3.0-only. 새 소스 파일(.py .js .css .html .kt)에는 SPDX 머리말 두 줄을 넣는다(`tools/license_check.py repo`가 검사).
@@ -36,7 +37,7 @@ python tools/license_check.py repo               # SPDX·고지 점검
 ## 릴리스 절차(사용자가 요청할 때만)
 1. 작업 브랜치에서 `version.py`, `docs/release-notes/vX.Y.Z.md`, README 첫 줄·기능 표, `web/app.js` 사용법 가이드를 고친다.
 2. 푸시만으로는 CI가 돌지 않는다. PR을 열거나 `build.yml`을 workflow_dispatch로 실행한다.
-3. CI(license·tests·windows·macos·android·browser-spike)가 모두 통과하면 PR을 머지한다.
+3. CI(license·tests·ui·windows·macos·android·browser-spike)가 모두 통과하면 PR을 머지한다.
 4. main에서 `build.yml`을 workflow_dispatch로 `release=vX.Y.Z` 입력과 함께 실행 → 태그·릴리스·자산 6개
    (POSCHAT-Setup.exe, POSCHAT-mac.dmg, POSCHAT.apk와 옛 이름 PostechChat-* 사본). 태그는 모든 사용자에게 자동 업데이트로 나가므로
    사용자 승인 없이 만들지 않는다.

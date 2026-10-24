@@ -170,7 +170,7 @@ class CodeUiTests(unittest.TestCase):
                 agent = Agent(api_key="k", workspace=str(self.ws), agent_mode=True, max_steps=1, history_messages=1,
                               on_status=lambda t: None, on_tool=lambda s, d: None, confirm=lambda *a: True,
                               cancelled=lambda: not alive(),
-                              review=lambda *a: self.bridge._code_review_edit("t", alive, *a))
+                              review=lambda *a: self.bridge._code_review_edit("t", alive, str(self.ws), *a))
                 new = BASE.replace("value_2 = 2", "value_2 = 200").replace("value_25 = 25", "value_25 = 2500")
                 box = {}
                 t = threading.Thread(target=lambda: box.setdefault("obs", agent._tool_write("sim/review.py", new, "값 조정")))

@@ -87,6 +87,23 @@ class PathTests(unittest.TestCase):
         self.assertEqual(cw.read_file(self.ws, "inside.txt")["text"], "fine")
 
     @unittest.skipUnless(can_symlink(), "심볼릭 링크를 만들 수 없는 환경")
+    def test_delete_and_rename_through_a_folder_link_are_refused(self):
+        os.symlink(self.outside, Path(self.ws, "outlink"), target_is_directory=True)
+        os.symlink(Path(self.outside, "key.txt"), Path(self.outside, "victim"))
+        trash = Path(self.tmp.name, "trash")
+        for rel in ("outlink/victim", "outlink/key.txt"):
+            with self.subTest(rel=rel):
+                with self.assertRaises(cw.WorkspaceError):
+                    cw.delete_to_trash(self.ws, rel, trash)
+                with self.assertRaises(cw.WorkspaceError):
+                    cw.rename(self.ws, rel, "moved")
+        self.assertEqual(sorted(os.listdir(self.outside)), ["key.txt", "victim"])
+        # 작업 폴더 안의 링크 자체는 지우거나 이름을 바꿀 수 있다(가리키는 파일은 그대로)
+        cw.rename(self.ws, "outlink", "outlink2")
+        cw.delete_to_trash(self.ws, "outlink2", trash)
+        self.assertTrue(Path(self.outside, "key.txt").exists())
+
+    @unittest.skipUnless(can_symlink(), "심볼릭 링크를 만들 수 없는 환경")
     def test_file_swapped_for_a_link_after_the_check_is_refused(self):
         """검사(resolve)와 열기 사이에 파일이 밖을 가리키는 링크로 바뀐 경우(TOCTOU)."""
         target = Path(self.ws, "ok.txt")
@@ -139,6 +156,33 @@ class GitInjectionTests(unittest.TestCase):
         self.assertFalse(Path(self.ws, "pwned.txt").exists())
         with self.assertRaises(cw.WorkspaceError):
             code_git.stage(self.ws, ["../outside"])
+
+    def test_repo_filter_and_textconv_drivers_do_not_run(self):
+        marker = Path(self.tmp.name, "filter-ran")
+        cmd = f"{sys.executable} -c \"open(r'{marker}', 'a').write('x'); import sys; sys.stdout.write(sys.stdin.read())\""
+        for key, value in (("filter.evil.clean", cmd), ("filter.evil.smudge", cmd), ("diff.evil.textconv", cmd),
+                           ("include.path", "extra.cfg")):
+            subprocess.run(["git", "config", key, value], cwd=self.ws, check=True)
+        Path(self.ws, ".git", "extra.cfg").write_text(f"[filter \"inc\"]\n\tclean = {cmd}\n".replace("\\", "\\\\"))
+        Path(self.ws, ".gitattributes").write_text("*.txt filter=evil diff=evil\n*.dat filter=inc\n")
+        Path(self.ws, "a.txt").write_text("changed")
+        Path(self.ws, "b.dat").write_text("data")
+        code_git.diff(self.ws, "a.txt")
+        code_git.stage(self.ws, ["a.txt", "b.dat", ".gitattributes"])
+        code_git.diff(self.ws, "a.txt", staged=True)
+        code_git.status(self.ws)
+        self.assertFalse(marker.exists(), "저장소 설정의 filter·textconv 프로그램이 실행됐습니다")
+
+    def test_commit_shows_repo_hooks_and_can_skip_them(self):
+        hook = Path(self.ws, ".git", "hooks", "pre-commit")
+        marker = Path(self.tmp.name, "hook-ran")
+        hook.write_text(f"#!/bin/sh\ntouch '{marker}'\n")
+        hook.chmod(0o755)
+        Path(self.ws, "a.txt").write_text("v2")
+        code_git.stage(self.ws, ["a.txt"])
+        self.assertIn("pre-commit", code_git.status(self.ws)["hooks"])
+        code_git.commit(self.ws, "skip hooks", no_verify=True)
+        self.assertFalse(marker.exists())
 
     def test_repo_config_cannot_run_programs_through_fsmonitor(self):
         marker = Path(self.tmp.name, "ran")

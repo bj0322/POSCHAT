@@ -191,7 +191,7 @@ class AgentReviewTests(unittest.TestCase):
                      on_status=lambda t: None, on_tool=lambda s, d: self.tools.append(s),
                      confirm=lambda kind, title, detail: self.confirms.append(kind) or True,
                      cancelled=lambda: not alive(),
-                     review=lambda *a: self.bridge._code_review_edit("t1", alive, *a))
+                     review=lambda *a: self.bridge._code_review_edit("t1", alive, str(self.ws), *a))
 
     def run_edit(self, agent, new_text):
         box = {}
@@ -266,6 +266,35 @@ class AgentReviewTests(unittest.TestCase):
         self.assertIn("저장 완료", obs)
         self.assertIn("auto\n", (self.ws / "f.py").read_text())
         self.assertEqual(self.bridge._code_store().all()[0].status, "auto")
+
+    def test_proposal_is_applied_to_its_own_workspace_after_switching(self):
+        other = self.ws.parent / "other clone"
+        other.mkdir()
+        (other / "f.py").write_text(BASE)  # 같은 내용의 다른 폴더
+        self.bridge.code_set_active(True)
+        t, box = self.run_edit(self.agent(), changed(BASE, l3="for A\n"))
+        p = self.wait_proposal()
+        self.bridge._config["workspace"] = str(other)  # 검토 중에 작업 폴더를 바꿨다
+        self.assertTrue(self.bridge.code_review_apply(p.proposal_id, [0])["ok"])
+        t.join(5)
+        self.assertIn("for A", (self.ws / "f.py").read_text())
+        self.assertEqual((other / "f.py").read_text(), BASE)
+
+    def test_two_agents_waiting_on_the_same_proposal_both_get_the_result(self):
+        self.bridge.code_set_active(True)
+        new = changed(BASE, l3="same\n")
+        t1, box1 = self.run_edit(self.agent(), new)
+        self.wait_proposal()
+        t2, box2 = self.run_edit(self.agent(), new)
+        time.sleep(0.3)
+        self.assertEqual(len(self.bridge._code_store().pending()), 1)  # 같은 제안을 다시 만들지 않는다
+        p = self.bridge._code_store().pending()[0]
+        self.bridge.code_review_apply(p.proposal_id, [0])
+        t1.join(5)
+        t2.join(5)
+        self.assertIn("저장 완료", box1["obs"])
+        self.assertIn("저장 완료", box2["obs"])
+        self.assertEqual((self.ws / "f.py").read_text().count("same"), 1)
 
     def test_file_changed_while_waiting_for_the_old_confirm_is_not_overwritten(self):
         agent = self.agent()

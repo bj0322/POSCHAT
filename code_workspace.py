@@ -13,6 +13,7 @@
 외부 변경 감지: 열 때 파일 내용의 SHA-256(base_hash)을 돌려주고, 저장할 때 디스크의 해시가 다르면 ConflictError를 낸다.
 """
 import codecs
+import errno
 import hashlib
 import os
 import re
@@ -328,9 +329,21 @@ def encode_text(text, encoding="utf-8", newline="\n"):
         raise WorkspaceError(f"알 수 없는 인코딩입니다: {encoding}")
 
 
+def _default_mode():
+    mask = os.umask(0)
+    os.umask(mask)
+    return 0o666 & ~mask
+
+
+DEFAULT_MODE = _default_mode()  # 새 파일 권한(보통 0644). 시작할 때 한 번 읽는다(umask 읽기는 스레드에 안전하지 않다)
+
+
 def atomic_write(path, data, mode_from=None):
-    """같은 폴더의 임시 파일에 쓰고 os.replace로 바꾼다. 실패하면 원본은 그대로이고 임시 파일은 지운다."""
+    """같은 폴더의 임시 파일에 쓰고 os.replace로 바꾼다. 실패하면 원본은 그대로이고 임시 파일은 지운다.
+    원본의 권한을 옮기고(새 파일은 umask대로), 쓰기 권한이 없는(읽기 전용) 파일은 바꾸지 않는다."""
     path = Path(path)
+    if path.exists() and not os.access(path, os.W_OK):
+        raise PermissionError(errno.EACCES, "읽기 전용 파일이라 저장하지 않았습니다", str(path))
     folder = path.parent
     fd, tmp = tempfile.mkstemp(prefix=f".{path.name[:40]}.", suffix=".poschat-tmp", dir=str(folder))
     try:
@@ -339,11 +352,13 @@ def atomic_write(path, data, mode_from=None):
             f.flush()
             os.fsync(f.fileno())
         source = mode_from if mode_from is not None else (path if path.exists() else None)
-        if source is not None:
-            try:
+        try:
+            if source is not None:
                 shutil.copymode(source, tmp)
-            except OSError:
-                pass
+            else:
+                os.chmod(tmp, DEFAULT_MODE)
+        except OSError:
+            pass
         os.replace(tmp, path)
     except BaseException:
         try:
@@ -361,7 +376,8 @@ def write_file(workspace, rel, text, base_hash, encoding="utf-8", newline="\n", 
         raise WorkspaceError("폴더에는 저장할 수 없습니다.")
     data = encode_text(text, encoding, newline)
     now = current_hash(workspace, clean)
-    if not force and base_hash and now != base_hash:
+    expected = base_hash or ABSENT  # 기준이 없으면 새 파일이어야 한다
+    if not force and now != expected:
         what = "지워졌습니다" if now == ABSENT else "다른 프로그램(또는 에이전트)이 바꿨습니다"
         raise ConflictError(f"연 뒤에 파일이 {what}. 덮어쓰기 전에 바뀐 내용을 확인하세요.", now)
     if not path.parent.is_dir():
@@ -393,17 +409,30 @@ def create(workspace, rel, kind="file"):
     return {"path": clean, "dir": kind == "dir"}
 
 
+def _entry(workspace, clean):
+    """이름 바꾸기·지우기 대상: 마지막 이름이 링크면 링크 자체(따라가지 않음). 어느 경우든 그 이름이 든 폴더의
+    실제 경로가 작업 폴더 안이어야 한다(밖을 가리키는 폴더 링크를 거쳐 밖의 파일을 옮기지 못하게)."""
+    root = root_of(workspace)
+    if not clean:
+        raise WorkspaceError("파일을 고르세요.")
+    lex = root.joinpath(*clean.split("/"))
+    parent = _real(lex.parent)
+    if not _inside(root, parent):
+        raise WorkspaceError("작업 폴더 밖을 가리키는 링크입니다. 다룰 수 없습니다.")
+    path = parent / lex.name
+    if not os.path.lexists(path):
+        raise WorkspaceError(f"파일이 없습니다: {clean}")
+    if not _is_link(path) and not _inside(root, _real(path)):
+        raise WorkspaceError("작업 폴더 밖을 가리키는 링크입니다. 다룰 수 없습니다.")
+    return path
+
+
 def rename(workspace, src, dst):
-    """이름 바꾸기·옮기기(작업 폴더 안에서만, 덮어쓰지 않는다)."""
+    """이름 바꾸기·옮기기(작업 폴더 안에서만, 덮어쓰지 않는다). 링크는 링크 자체의 이름을 바꾼다."""
     a, b = clean_rel(src), clean_rel(dst)
     if not a or not b:
         raise WorkspaceError("이름을 입력하세요.")
-    src_path = resolve(workspace, a, must_exist=True, allow_root=False)
-    # 링크 자체의 이름을 바꿀 때는 링크를 따라가지 않은 경로를 쓴다
-    root = root_of(workspace)
-    src_lex = root.joinpath(*a.split("/"))
-    if _is_link(src_lex):
-        src_path = src_lex
+    src_path = _entry(workspace, a)
     dst_path = resolve(workspace, b, allow_root=False)
     if os.path.lexists(dst_path):
         raise WorkspaceError(f"같은 이름이 이미 있습니다: {b}")
@@ -416,21 +445,18 @@ def rename(workspace, src, dst):
 def delete_to_trash(workspace, rel, trash_dir):
     """파일을 앱의 휴지통 폴더로 옮긴다(되살릴 수 있게). 폴더는 비어 있을 때만 지운다."""
     clean = clean_rel(rel)
-    root = root_of(workspace)
-    lex = root.joinpath(*clean.split("/")) if clean else root
-    if not clean or not os.path.lexists(lex):
+    if not clean:
         raise WorkspaceError("지울 파일이 없습니다.")
-    if not _is_link(lex):
-        resolve(workspace, clean, must_exist=True, allow_root=False)
-    if lex.is_dir() and not _is_link(lex):
+    path = _entry(workspace, clean)
+    if path.is_dir() and not _is_link(path):
         try:
-            lex.rmdir()
+            path.rmdir()
         except OSError:
             raise WorkspaceError("비어 있지 않은 폴더는 지우지 않습니다. 안의 파일을 먼저 지우세요.")
         return {"path": clean, "trash": ""}
     dest = Path(trash_dir) / time.strftime("%Y%m%d-%H%M%S") / clean
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(lex), str(dest))
+    shutil.move(str(path), str(dest))
     return {"path": clean, "trash": str(dest)}
 
 

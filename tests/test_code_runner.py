@@ -78,6 +78,22 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(rec.status, "timeout")
         self.assertLess(rec.seconds, 10)
 
+    def test_background_child_left_by_the_shell_is_ended(self):
+        """셸은 바로 끝나는데 뒤에 띄운 자식이 출력 통로를 쥐고 있어도 실행이 끝나고 자식이 남지 않는다."""
+        script = Path(self.ws, "bg.py")
+        script.write_text("import subprocess, sys\n"
+                          "c = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+                          "print(c.pid, flush=True)\n")  # 자식을 두고 바로 끝난다(자식은 stdout을 물려받음)
+        start = time.monotonic()
+        rec = self.mgr.start(self.ws, f"{PY} bg.py", timeout=60)
+        self.assertTrue(self.mgr.wait(rec.id, 20), "남은 자식 때문에 실행이 끝나지 않았습니다")
+        self.assertLess(time.monotonic() - start, 15)
+        child = int(self.output(rec).split()[0])
+        time.sleep(0.5)
+        self.assertFalse(_alive(child), "뒤에 남은 자식 프로세스가 살아 있습니다")
+        self.assertIn("남은 하위 프로세스", self.output(rec))
+        self.assertEqual(len(self.mgr.running()), 0)
+
     def test_large_output_is_limited(self):
         with patch.object(code_runner, "MAX_STREAM", 5000), patch.object(code_runner, "MAX_TAIL", 2000):
             rec = self.run_cmd(f"{PY} -c \"print('y' * 200000)\"")
@@ -105,6 +121,13 @@ class RunnerTests(unittest.TestCase):
         m = code_runner.Masker(["SECRET-ABCDEFGH"])
         out = m.feed("progress 10%", force=True) + m.feed("... SECRET-ABC", force=True) + m.feed("DEFGH", final=True)
         self.assertNotIn("SECRET-ABCDEFGH", out)
+
+    def test_masker_does_not_cut_a_key_shaped_token_in_half(self):
+        m = code_runner.Masker([])
+        key = "ghp_" + "A" * 36
+        out = m.feed("token " + key[:20], force=True) + m.feed(key[20:] + " done", force=True) + m.feed("", final=True)
+        self.assertNotIn(key[20:], out)
+        self.assertNotIn(key[:20], out)
 
     def test_command_analysis_marks_network_and_dangerous_commands(self):
         a = code_runner.analyze("git push --force origin main")

@@ -5,15 +5,17 @@
 안전 규칙
 - git은 셸 없이 인자 목록으로 부른다. 경로는 code_workspace.clean_rel로 검사한 뒤 '--' 뒤에 두고,
   --literal-pathspecs로 ':(glob)' 같은 경로 마법도 끈다(경로가 옵션이나 패턴으로 읽히지 않는다).
-- 저장소 설정이 프로그램을 실행하는 길(core.fsmonitor, 외부 diff·textconv)은 끈다. 자격 증명을 묻지 않는다(GIT_TERMINAL_PROMPT=0).
+- 저장소 설정이 프로그램을 실행하는 길(core.fsmonitor, 외부 diff·textconv, 저장소 안에 적힌 filter·gpg 프로그램)은 끈다. 자격 증명을 묻지 않는다(GIT_TERMINAL_PROMPT=0).
 - 앱이 부르는 명령은 status·diff·add·restore --staged·commit뿐이다. reset --hard·clean·checkout·push·이력 고치기는 없다.
-  커밋은 사용자가 고른(스테이지한) 변경만, 사용자가 확인한 메시지로 한다(-a를 쓰지 않는다). 커밋 훅은 git 그대로 돈다.
+  커밋은 사용자가 고른(스테이지한) 변경만, 사용자가 확인한 메시지로 한다(-a를 쓰지 않는다). 저장소의 커밋 훅은 커밋 확인 창에 이름을 보이고, 사용자가 끌 수 있다(--no-verify).
 - git 출력과 파일 내용은 AI에게 넘길 때 외부 데이터로 감싼다(code_api가 connectors.wrap_untrusted로).
 """
 import difflib
 import os
+import re
 import shutil
 import subprocess
+import time
 
 import code_workspace as cw
 
@@ -41,12 +43,69 @@ def _env():
     return env
 
 
+_PROGRAM_KEY = re.compile(r"^(filter|diff)\.(.+)\.(clean|smudge|process|required|textconv|command)$|^gpg\.((?:.+\.)?program)$")
+_override_cache = {}
+
+
+def _local_overrides(root):
+    """저장소 안(.git/config·worktree 설정과 그 include)에 적힌 '프로그램을 실행하는 설정'을 이번 호출에서 끈다.
+    압축 파일이나 공유 폴더로 받은 저장소의 .git/config가 filter·textconv·gpg 프로그램을 지정해도 diff·add·commit이
+    그것을 실행하지 않게 한다. 사용자 전역·시스템 설정(예: git-lfs)은 그대로 둔다."""
+    key = str(root)
+    hit = _override_cache.get(key)
+    if hit and time.monotonic() - hit[0] < 5:
+        return hit[1]
+    names = []
+    flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    for args in (["config", "--list", "--name-only", "--show-scope", "--includes"],
+                 ["config", "--local", "--list", "--name-only", "--includes"]):
+        try:
+            r = subprocess.run(["git", *args], cwd=key, capture_output=True, timeout=10, env=_env(),
+                               stdin=subprocess.DEVNULL, creationflags=flags)
+        except (OSError, subprocess.SubprocessError):
+            break
+        if r.returncode != 0:
+            continue
+        for line in r.stdout.decode("utf-8", errors="replace").splitlines():
+            if "\t" in line:
+                scope, name = line.split("\t", 1)
+                if scope not in ("local", "worktree"):
+                    continue
+            else:
+                name = line
+            names.append(name.strip().lower())
+        break
+    out, seen = [], set()
+    for name in names:
+        m = _PROGRAM_KEY.match(name)
+        if not m:
+            continue
+        if m.group(1):
+            kind, driver = m.group(1), m.group(2)
+            if (kind, driver) in seen:
+                continue
+            seen.add((kind, driver))
+            fields = ("clean", "smudge", "process") if kind == "filter" else ("textconv", "command")
+            for f in fields:
+                out += ["-c", f"{kind}.{driver}.{f}="]
+            if kind == "filter":
+                out += ["-c", f"{kind}.{driver}.required=false"]
+        elif ("gpg", name) not in seen:
+            seen.add(("gpg", name))
+            default = {"gpg.program": "gpg", "gpg.openpgp.program": "gpg", "gpg.x509.program": "gpgsm",
+                       "gpg.ssh.program": "ssh-keygen"}.get(name, "gpg")
+            out += ["-c", f"{name}={default}"]
+    _override_cache[key] = (time.monotonic(), out)
+    return out
+
+
 def _git(root, args, timeout=TIMEOUT, stdin=None, check=True):
     if not available():
         raise GitError("git이 설치되어 있지 않습니다. https://git-scm.com 에서 설치하세요.")
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     try:
-        r = subprocess.run(["git", *SAFE_CONFIG, *args], cwd=str(root), input=stdin, capture_output=True,
+        r = subprocess.run(["git", *SAFE_CONFIG, *_local_overrides(root), *args], cwd=str(root), input=stdin,
+                           capture_output=True,
                            timeout=timeout, env=_env(), creationflags=flags,
                            stdin=None if stdin is not None else subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
@@ -145,6 +204,7 @@ def status(workspace):
             strip = len(prefix)
             out["files"].append(_entry(raw[strip:], x, y, orig[strip:] if orig.startswith(prefix) else orig))
     out["conflicts"] = sum(1 for f in out["files"] if f["conflict"])
+    out["hooks"] = hooks(workspace)
     return out
 
 
@@ -187,13 +247,33 @@ def unstage(workspace, paths):
     rels = _paths(workspace, paths)
     root = cw.root_of(workspace)
     r = _git(root, ["restore", "--staged", "--", *rels], check=False)
-    if r.returncode != 0:  # 첫 커밋 전(HEAD 없음)이거나 오래된 git
-        _git(root, ["rm", "--cached", "-q", "--", *rels])
+    if r.returncode != 0:
+        if _git(root, ["rev-parse", "--verify", "-q", "HEAD"], check=False).returncode == 0:
+            _git(root, ["reset", "-q", "HEAD", "--", *rels])  # 오래된 git(2.23 전): 인덱스만 되돌린다
+        else:
+            _git(root, ["rm", "--cached", "-q", "--", *rels])  # 첫 커밋 전: 스테이지에서만 뺀다(파일은 그대로)
     return {"unstaged": rels}
 
 
-def commit(workspace, message):
-    """스테이지한 변경만 커밋한다(사용자가 메시지를 확인한 뒤 화면에서 부른다)."""
+def hooks(workspace):
+    """커밋할 때 git이 실행할 저장소 훅 이름(pre-commit 등). 화면이 커밋 확인 창에 보이고 끌 수 있게 한다."""
+    root = cw.root_of(workspace)
+    r = _git(root, ["rev-parse", "--git-path", "hooks"], check=False)
+    if r.returncode != 0:
+        return []
+    path = r.stdout.decode("utf-8", errors="replace").strip()
+    folder = path if os.path.isabs(path) else os.path.join(str(root), path)
+    names = ("pre-commit", "prepare-commit-msg", "commit-msg", "post-commit", "pre-merge-commit")
+    found = []
+    for n in names:
+        p = os.path.join(folder, n)
+        if os.path.isfile(p) and (os.name == "nt" or os.access(p, os.X_OK)):
+            found.append(n)
+    return found
+
+
+def commit(workspace, message, no_verify=False):
+    """스테이지한 변경만 커밋한다(사용자가 메시지를 확인한 뒤 화면에서 부른다). no_verify면 저장소 훅을 실행하지 않는다."""
     message = str(message or "").strip()
     if not message:
         raise GitError("커밋 메시지를 입력하세요.")
@@ -203,6 +283,6 @@ def commit(workspace, message):
     staged = _git(root, ["diff", "--cached", "--name-only", "-z"]).stdout.split(b"\0")
     if not any(staged):
         raise GitError("스테이지한 변경이 없습니다. 커밋할 파일을 먼저 스테이지하세요.")
-    _git(root, ["commit", "-F", "-"], stdin=message.encode("utf-8"), timeout=120)
+    _git(root, ["commit", "-F", "-"] + (["--no-verify"] if no_verify else []), stdin=message.encode("utf-8"), timeout=120)
     head = _git(root, ["log", "-1", "--format=%h %s"]).stdout.decode("utf-8", errors="replace").strip()
     return {"commit": head}

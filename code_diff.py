@@ -177,6 +177,7 @@ class ChangeProposal:
     title: str = ""
     source: str = "agent"
     thread_id: str = ""
+    workspace: str = ""      # 제안을 만든 작업 폴더(실제 경로). 적용은 늘 이 폴더에 한다
     status: str = "pending"  # pending · applied · partial · edited · rejected · conflict · cancelled · auto
     created: float = field(default_factory=time.time)
     resolved: float = 0.0
@@ -191,7 +192,7 @@ class ChangeProposal:
 
     @property
     def key(self):
-        return (self.file_path, self.base_hash, hashlib.sha256(self.proposed_content.encode("utf-8")).hexdigest())
+        return (self.workspace, self.file_path, self.base_hash, hashlib.sha256(self.proposed_content.encode("utf-8")).hexdigest())
 
     @property
     def is_new_file(self):
@@ -200,7 +201,7 @@ class ChangeProposal:
     def to_dict(self, full=True):
         added = sum(h.to_dict()["added"] for h in self.hunks)
         removed = sum(h.to_dict()["removed"] for h in self.hunks)
-        data = {"id": self.proposal_id, "path": self.file_path, "status": self.status, "reason": self.reason,
+        data = {"id": self.proposal_id, "path": self.file_path, "workspace": self.workspace, "status": self.status, "reason": self.reason,
                 "title": self.title, "source": self.source, "thread_id": self.thread_id, "created": self.created,
                 "resolved": self.resolved, "new_file": self.is_new_file, "added": added, "removed": removed,
                 "hunk_count": len(self.hunks), "accepted": list(self.accepted), "message": self.message,
@@ -259,7 +260,7 @@ def new_proposal(workspace, rel, original, proposed, encoding="utf-8", reason=""
     return ChangeProposal(proposal_id=uuid.uuid4().hex[:16], file_path=rel, base_hash=base,
                           original_content=original, proposed_content=proposed, encoding=encoding or "utf-8",
                           reason=str(reason or "")[:500], title=str(title or "")[:200], source=source,
-                          thread_id=str(thread_id or ""))
+                          thread_id=str(thread_id or ""), workspace=str(cw.root_of(workspace)))
 
 
 def _read_text(workspace, rel, encoding):
