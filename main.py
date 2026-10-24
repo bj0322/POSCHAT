@@ -25,8 +25,10 @@ import po_note
 import storage
 import stt
 import telemetry
+import ui_events
 import updates
 from browser_api import BrowserApi
+from code_api import CodeApi
 from paper_api import PaperApi
 from workspace_api import WorkspaceApi
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
@@ -91,8 +93,9 @@ def _installed_package_licenses():
     return sorted(items, key=lambda x: x["name"].lower())
 
 
-class Bridge(WorkspaceApi, BrowserApi, PaperApi):
-    """JS에서 호출하는 API. 밑줄로 시작하는 이름은 JS에 노출되지 않는다. '연결·도구' 창의 API는 WorkspaceApi에 있다."""
+class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi):
+    """JS에서 호출하는 API. 밑줄로 시작하는 이름은 JS에 노출되지 않는다. '연결·도구' 창의 API는 WorkspaceApi,
+    브라우저는 BrowserApi(1.13), 논문은 PaperApi(1.14), 코드 편집기는 CodeApi(1.15)에 있다."""
 
     def __init__(self):
         storage.ensure_dirs()
@@ -102,6 +105,8 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi):
             storage.save_config(self._config)
         self._lock = threading.RLock()
         self._window = None
+        # 1.15(B1): 화면 이벤트는 전용 스레드가 순서대로 보낸다. _push는 막지 않으므로 UI 스레드에서 불러도 된다.
+        self._events = ui_events.EventPump(self._send_event)
         self._busy = False
         self._run_id = 0
         self._cancel = threading.Event()
@@ -162,12 +167,16 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi):
     # ---- 내부 도우미 ----
 
     def _push(self, event):
+        """화면에 이벤트를 보낸다. 큐에 넣고 바로 돌아온다(웹페이지 뷰의 네이티브 처리기처럼 UI 스레드에서 불러도
+        멈추지 않는다 — B1). 실제 evaluate_js는 ui_events.EventPump의 스레드가 부른다."""
         if getattr(self, "_window", None) is None:
             return
-        try:
-            self._window.evaluate_js(f"window.onBackendEvent({json.dumps(event, ensure_ascii=False)})")
-        except Exception:
-            pass  # 창이 닫히는 중
+        self._events.push(event)
+
+    def _send_event(self, event):
+        window = getattr(self, "_window", None)
+        if window is not None:
+            window.evaluate_js(f"window.onBackendEvent({json.dumps(event, ensure_ascii=False)})")
 
     def _open_url(self, url):
         open_path(url)  # Windows os.startfile·macOS open·안드로이드 host.openPath 모두 https 주소를 브라우저로 연다
@@ -1140,6 +1149,8 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi):
             policy=connectors.Policy(dict(self._config)),
             browser=self._browser_for_agent(),
             paper=self._paper_for_agent(),
+            # 1.15: Code 화면이 열려 있으면 파일 수정은 승인 창 대신 Code 화면의 변경 검토(덩어리별)로
+            review=lambda *a: self._code_review_edit(thread_id, alive, workspace, *a),
         )
         started, outcome = time.monotonic(), "done"
         try:
@@ -1234,6 +1245,14 @@ def selftest():
     except ImportError as e:
         lines.append(f"documents: FAIL {e}")
     lines.append(f"attachments: {attachments.selfcheck()}")
+    # 1.15 POSCHAT Code: 편집기 묶음과 코드 모듈이 함께 묶였는지
+    import code_diff
+    import code_git
+    import code_runner
+    bundle = resource_dir() / "web" / "vendor" / "codemirror" / "codemirror.min.js"
+    ok = bundle.is_file() and bundle.stat().st_size > 100_000 and bool(code_diff.make_hunks("a\n", "b\n"))
+    lines.append(f"code: {'OK' if ok else 'FAIL 편집기 묶음 없음'} (git {'있음' if code_git.available() else '없음'}, "
+                 f"{code_runner.shell_name()})")
     sdk = api._anthropic_sdk()  # 1.11 개인 Claude API: 데스크톱 배포본에는 공식 SDK가 함께 묶여야 한다
     lines.append(f"anthropic: OK {sdk.__version__}" if sdk else "anthropic: FAIL SDK 없음")
     import secret_store
@@ -1381,7 +1400,9 @@ def run_app():
     try:
         webview.start(debug=os.environ.get("POSTECH_CHAT_DEBUG") == "1")
     finally:
+        bridge._events.stop()  # 창이 닫혔다: 더 보내지 않는다(보내는 중인 evaluate_js를 오래 기다리지 않는다)
         bridge._po_shutdown()
+        bridge._code_shutdown()  # 실행 패널에서 돌던 명령을 끝낸다(프로세스가 남지 않게)
         bridge._mcp.shutdown()
         if bridge._browser_obj is not None:
             bridge._browser_obj.close()

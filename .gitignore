@@ -46,3 +46,6 @@ android/.gradle/
 android/local.properties
 android/**/build/
 .kotlin/
+
+# CodeMirror 묶음 빌드(tools/codemirror)
+node_modules/

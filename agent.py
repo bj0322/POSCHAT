@@ -26,6 +26,7 @@ import documents
 import plugins
 import storage
 from api import ApiSettings, ask
+from code_workspace import atomic_write
 from documents import DocumentError
 from mcp_client import MCPError
 
@@ -100,8 +101,8 @@ INIT_TASK = (
 ACTION_DOCS = """{"action": "list", "path": "."}  폴더 목록 보기
 {"action": "read", "path": "파일 경로"}  파일 내용 보기
 {"action": "search", "pattern": "정규식", "glob": "**/*"}  파일 내용 검색
-{"action": "write", "path": "파일 경로", "content": "파일 전체 내용"}  새 파일 작성 또는 전체 덮어쓰기
-{"action": "edit", "path": "파일 경로", "old": "바꿀 부분(파일에 정확히 한 번 나오는 문자열)", "new": "새 내용"}  부분 수정
+{"action": "write", "path": "파일 경로", "content": "파일 전체 내용", "reason": "바꾸는 이유 한 줄"}  새 파일 작성 또는 전체 덮어쓰기
+{"action": "edit", "path": "파일 경로", "old": "바꿀 부분(파일에 정확히 한 번 나오는 문자열)", "new": "새 내용", "reason": "바꾸는 이유 한 줄"}  부분 수정
 {"action": "run", "command": "명령"}  명령 실행 (""" + SHELL_NAME + """, 작업 폴더에서)
 {"action": "skill", "name": "스킬 이름"}  스킬 지침 불러오기
 {"action": "recall", "query": "검색어"}  사용자의 다른 대화에서 관련 내용 찾기
@@ -275,7 +276,7 @@ class Agent:
     def __init__(self, api_key, workspace, agent_mode, max_steps, history_messages,
                  on_status, on_tool, confirm, cancelled, thread_id=None, share_threads=True, mcp=None,
                  api_settings=None, on_delta=None, ai_memory_state=None, on_ai_memory_state=None, policy=None,
-                 browser=None, paper=None):
+                 browser=None, paper=None, review=None):
         self.api_key = api_key
         self.workspace = Path(workspace).resolve() if workspace else None
         self.agent_mode = agent_mode
@@ -309,6 +310,9 @@ class Agent:
         self.browser = browser        # browser.Browser — 옆 브라우저가 열려 있을 때(1.13)
         self.paper = paper            # 논문 화면에 열린 PDF {"id", "path", "title", "pages", "workspace"} (1.14)
         self.steps = 0                # 이번 실행에서 모델이 고른 단계 수(관측용)
+        # 1.15: (rel, 원래 글, 새 글, 제목, 이유, 인코딩) -> 결과 dict 또는 None. Code 화면의 변경 검토(덩어리별 승인).
+        # None을 돌려주면(화면이 닫힘 등) 지금처럼 confirm("edit")으로 묻는다.
+        self.review = review
 
     def _ask(self, prompt, on_delta=None, images=None):
         reply = ask(self.api_key, prompt, settings=self.api_settings, on_delta=on_delta, cancelled=self.cancelled,
@@ -845,8 +849,12 @@ class Agent:
         diff = difflib.unified_diff(old.splitlines(), new.splitlines(), f"a/{rel}", f"b/{rel}", lineterm="")
         return "\n".join(diff)
 
-    def _save(self, p, old_text, new_text, enc, title):
+    def _save(self, p, old_text, new_text, enc, title, reason=""):
         rel = self._rel(p)
+        if self.review is not None:
+            result = self.review(rel, old_text, new_text, title, str(reason or ""), enc)
+            if result is not None:
+                return self._reviewed(rel, title, result)
         diff = self._diff(rel, old_text or "", new_text)
         added = sum(1 for l in diff.splitlines() if l.startswith("+") and not l.startswith("+++"))
         removed = sum(1 for l in diff.splitlines() if l.startswith("-") and not l.startswith("---"))
@@ -854,11 +862,52 @@ class Agent:
             self.denied.append(f"{title}: {rel}")
             self.on_tool(f"⛔ {title} 거부됨: {rel}", diff)
             return "사용자가 이 변경을 거부했습니다."
+        if self._changed_since(p, old_text):
+            # 승인을 기다리는 사이 다른 프로그램(또는 편집기)이 파일을 바꿨다: 덮어쓰지 않는다(1.15)
+            self.on_tool(f"⚠ {title} 적용 안 함: {rel} (승인 대기 중 파일이 바뀜)", diff)
+            return "승인을 기다리는 사이 파일이 바뀌어 저장하지 않았습니다. read로 현재 내용을 다시 확인하세요."
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_bytes(new_text.encode(enc))
+        atomic_write(p, new_text.encode(enc))  # 1.15: 임시 파일에 쓰고 바꾼다(도중 실패해도 원본 유지)
         self._touched.add(rel)
         self.on_tool(f"✏️ {title} {rel} (+{added} −{removed})", diff)
         return f"저장 완료: {rel} (+{added}줄 −{removed}줄)"
+
+    def _changed_since(self, p, old_text):
+        if old_text is None:
+            return p.exists()
+        try:
+            return self._read_file(p)[0] != old_text
+        except (ToolError, OSError):
+            return True
+
+    def _reviewed(self, rel, title, result):
+        """Code 화면 변경 검토의 결과를 진행 기록(모델이 보는 관찰)으로."""
+        status = result.get("status")
+        diff = result.get("diff") or ""
+        added = sum(1 for l in diff.splitlines() if l.startswith("+") and not l.startswith("+++"))
+        removed = sum(1 for l in diff.splitlines() if l.startswith("-") and not l.startswith("---"))
+        if status in ("applied", "partial", "edited"):
+            self._touched.add(rel)
+            label = {"applied": "적용", "partial": f"일부 적용 {len(result.get('accepted') or [])}/{result.get('total')}",
+                     "edited": "사용자가 고쳐서 적용"}[status]
+            self.on_tool(f"✏️ {title} {rel} (+{added} −{removed}, Code 검토: {label})", diff)
+            if status == "partial":
+                return (f"사용자가 Code 화면에서 변경 일부만 적용했습니다: {rel} (받아들인 덩어리 "
+                        f"{len(result.get('accepted') or [])}/{result.get('total')}개). 실제로 적용된 차이:\n"
+                        f"{_truncate(diff, 3000)}\n거부한 부분은 다시 시도하지 마세요. 더 고치려면 read로 현재 내용을 확인하세요.")
+            if status == "edited":
+                return (f"사용자가 제안을 고친 뒤 적용했습니다: {rel}. 최종 차이:\n{_truncate(diff, 3000)}\n"
+                        "사용자가 고친 내용을 되돌리지 마세요.")
+            return f"저장 완료(사용자가 Code 화면에서 검토 후 적용): {rel} (+{added}줄 −{removed}줄)"
+        if status == "rejected":
+            self.denied.append(f"{title}: {rel}")
+            self.on_tool(f"⛔ {title} 거부됨(Code 검토): {rel}", "")
+            return "사용자가 이 변경을 거부했습니다."
+        if status == "unchanged":
+            return f"변경할 내용이 없습니다(파일과 같음): {rel}"
+        message = result.get("message") or status
+        self.on_tool(f"⚠ {title} 적용 안 함: {rel} ({message})", "")
+        return f"변경을 적용하지 않았습니다({message}). 필요하면 read로 파일을 다시 확인하세요."
 
     def _check_text_target(self, p):
         if documents.is_document(p):
@@ -868,13 +917,13 @@ class Agent:
                 hint = "이 형식은 읽기만 지원합니다."
             raise ToolError(f"{p.suffix} 문서는 write/edit로 쓸 수 없습니다. {hint}")
 
-    def _tool_write(self, path, content):
+    def _tool_write(self, path, content, reason=""):
         p = self._resolve(path)
         self._check_text_target(p)
         old, enc = (self._read_file(p) if p.exists() else (None, "utf-8"))
-        return self._save(p, old, str(content), enc, "파일 덮어쓰기" if p.exists() else "새 파일")
+        return self._save(p, old, str(content), enc, "파일 덮어쓰기" if p.exists() else "새 파일", reason)
 
-    def _tool_edit(self, path, old, new):
+    def _tool_edit(self, path, old, new, reason=""):
         p = self._resolve(path)
         self._check_text_target(p)
         text, enc = self._read_file(p)
@@ -887,7 +936,7 @@ class Agent:
             raise ToolError("old 문자열을 파일에서 찾지 못했습니다. read로 정확한 내용을 다시 확인하세요.")
         if count > 1:
             raise ToolError(f"old 문자열이 {count}번 나옵니다. 앞뒤 줄을 더 포함해 한 번만 나오게 하세요.")
-        return self._save(p, text, text.replace(old, new, 1), enc, "파일 수정")
+        return self._save(p, text, text.replace(old, new, 1), enc, "파일 수정", reason)
 
     def _tool_run(self, command):
         command = str(command)

@@ -387,8 +387,9 @@ class UiSmokeTests(unittest.TestCase):
                 # 막힌 주소는 알림만 띄우고 열지 않는다
                 page.fill("#browser-address", "file:///C:/Windows")
                 page.press("#browser-address", "Enter")
-                page.wait_for_selector("#toast:not([hidden])")
-                self.assertIn("http·https", page.inner_text("#toast"))
+                # 앞의 '첨부했습니다' 알림이 아직 떠 있을 수 있으므로 알림 글이 바뀌기를 기다린다
+                page.wait_for_function("!document.querySelector('#toast').hidden && "
+                                       "document.querySelector('#toast').textContent.includes('http·https')")
                 # 도구 화면으로 가면 막대를 숨기고, 돌아오면 다시 보인다
                 page.click("#btn-research")
                 page.wait_for_selector("#browser-bar", state="hidden")

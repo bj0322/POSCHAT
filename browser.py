@@ -181,7 +181,7 @@ class Browser:
             self.mode = getattr(self._backend, "mode", "native")
         return self._backend
 
-    # backend가 부른다
+    # backend가 부른다 — 네이티브 이벤트 처리기(UI 스레드)에서 오므로 _lock을 잡지 않고, on_event도 막지 않아야 한다(B1)
     def navigated(self, url=None, title=None, loading=None, can_back=None, can_forward=None):
         changes = {k: v for k, v in (("url", url), ("title", title), ("loading", loading), ("can_back", can_back),
                                      ("can_forward", can_forward)) if v is not None}

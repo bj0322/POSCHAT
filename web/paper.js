@@ -93,6 +93,7 @@ async function paperToggle() {
 
 async function paperShow() {
   if (window.BR && BR.open && window.browserClose) await browserClose();  // 오른쪽 화면은 하나만
+  if (window.codeLeave) codeLeave();  // 1.15 코드 화면(열린 탭·저장하지 않은 내용은 그대로 남는다)
   if (window.pageLeave) pageLeave();
   if (window.poLeave) poLeave();
   PAPER.open = true;

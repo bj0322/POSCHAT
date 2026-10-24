@@ -36,6 +36,7 @@ const ICONS = {
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
   up_thumb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v11H4V10Z"/><path d="M7 10l4-7a2 2 0 0 1 3 2l-1 5h6a2 2 0 0 1 2 2.3l-1.4 7A2 2 0 0 1 17.6 21H7"/></svg>',
   down_thumb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V3h3v11Z"/><path d="M17 14l-4 7a2 2 0 0 1-3-2l1-5H5a2 2 0 0 1-2-2.3l1.4-7A2 2 0 0 1 6.4 3H17"/></svg>',
+  code: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m8 7-5 5 5 5"/><path d="m16 7 5 5-5 5"/><path d="m14 4-4 16"/></svg>',
   retry: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
 };
 
@@ -763,6 +764,8 @@ window.onBackendEvent = (ev) => {
     document.querySelectorAll("[data-credit]").forEach((el) => { el.textContent = creditText(S.credit); });
   } else if (ev.type === "browser") {
     if (window.browserEvent) browserEvent(ev);
+  } else if (ev.type === "code") {
+    if (window.codeEvent) codeEvent(ev);
   } else if (ev.type === "connector" || ev.type === "hub") {
     if (window.hubEvent) hubEvent(ev);
   } else if (ev.type === "done") {
@@ -1368,6 +1371,16 @@ const GUIDE = [
 **설정 → POSTECH GenAI 크레딧**에서 이 키의 이번 주 크레딧 사용량·한도·남은 양을 봅니다. **확인**을 눌러도 크레딧은 줄지 않습니다. PO노트 화면 위쪽에도 같은 내용이 나옵니다.
 
 Claude Sonnet 5.5 기준으로 1크레딧은 입력 약 250토큰, 출력 약 75토큰이고, 짧은 질문도 호출마다 약 24크레딧이 듭니다. Opus 5.5는 두 배입니다. 에이전트 모드는 단계마다 한 번씩 호출하므로 단계가 많을수록 크레딧을 많이 씁니다.`],
+  ["코드: 채팅 옆 코드 편집기 (1.15)", `
+작업 폴더를 고른 뒤 왼쪽 위 **코드**를 누르면 채팅 오른쪽에 파일 트리와 편집기가 열립니다. 가운데 막대로 너비를, 아래 패널 위 막대로 높이를 바꾸고, **크게 보기**로 채팅을 숨깁니다.
+
+- **파일**: 폴더를 펼쳐 파일을 탭으로 엽니다. 이름·내용 찾기, 새 파일·폴더, 이름 바꾸기, 지우기(데이터 폴더의 휴지통으로). 1MB가 넘는 파일은 읽기 전용입니다.
+- **편집**: 강조·줄 번호·찾기/바꾸기(Ctrl+F)·되돌리기, **Ctrl+S로 저장**. 인코딩·줄 끝(LF/CRLF)을 그대로 두고, 다른 프로그램이 파일을 바꿨으면 덮어쓰기 전에 묻습니다.
+- **AI에게 묻기**: 코드를 선택하고 **AI에게 묻기 ▾**에서 범위(선택·현재 함수/블록·파일·관련 파일)와 할 일(설명·오류 분석·성능·리팩터링·주석·테스트·RTL 검토)을 고르면 경로·줄 번호가 붙은 첨부가 채팅에 들어갑니다.
+- **변경 검토**: 코드 화면을 열어 두고 에이전트에게 고치게 하면, 승인 창 대신 덩어리마다 받아들이거나 거부합니다. 받아들이기 전에는 파일이 바뀌지 않습니다.
+- **Git**: 바뀐 파일·차이, 고른 파일만 스테이지, 스테이지한 변경 커밋, AI 변경 설명·리뷰·커밋 메시지 제안. 푸시는 하지 않습니다.
+- **실행**: 작업 폴더에서 명령을 실행합니다(매번 승인, 출력 실시간 표시, 중지). 작업 폴더는 시작 위치일 뿐 격리가 아닙니다. Verilator·iverilog는 설치돼 있으면 씁니다.
+- 휴대폰 앱은 열기·강조·찾기·묻기·간단한 편집만 됩니다.`],
   ["논문: 채팅 옆 PDF 읽기 (1.14)", `
 왼쪽 위 **논문**을 누르면 채팅 오른쪽에 논문 화면이 열립니다. 가운데 막대를 끌어 너비를 바꿉니다.
 

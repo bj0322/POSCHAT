@@ -10,6 +10,7 @@ upstream notices and licenses.
 | `web/vendor/marked.min.js` | 12.0.2 | https://github.com/markedjs/marked/tree/v12.0.2 | [Marked and Markdown notices](licenses/marked-LICENSE.md) |
 | `web/vendor/purify.min.js` | DOMPurify 3.1.6 | https://github.com/cure53/DOMPurify/tree/3.1.6 | [Apache-2.0 OR MPL-2.0](licenses/DOMPurify-LICENSE.txt) |
 | `web/vendor/katex/` (`katex.min.js`, `katex.min.css`, `fonts/*.woff2`) | KaTeX 0.16.22 | https://github.com/KaTeX/KaTeX/tree/v0.16.22 | [MIT](licenses/KaTeX-LICENSE.txt) |
+| `web/vendor/codemirror/codemirror.min.js` | CodeMirror 6 (`@codemirror/view` 6.43.15, `@codemirror/state` 6.7.6 and the language, search, command and theme packages listed in `licenses/codemirror/PACKAGES.txt`; Lezer parsers; `crelt`, `style-mod`, `w3c-keyname`, `@marijn/find-cluster-break`) | https://codemirror.net/ , https://github.com/codemirror , https://github.com/lezer-parser | [MIT, one license file per package](licenses/codemirror/PACKAGES.txt) |
 | `web/vendor/pdfjs/` (`pdf.min.js`, `pdf.worker.min.js`, `cmaps/`, `standard_fonts/`, `wasm/`) | PDF.js 6.4.299 (`pdfjs-dist`) | https://github.com/mozilla/pdf.js/tree/v6.4.299 | [Apache-2.0](licenses/pdf.js-LICENSE.txt); bundled fonts and decoders keep the license files next to them (`standard_fonts/LICENSE_FOXIT`, `LICENSE_LIBERATION`, `wasm/LICENSE_*`) |
 
 Marked and DOMPurify are bundled unchanged from the imported v1.1.0 source.
@@ -23,6 +24,13 @@ PDF.js files are copied unchanged from the `pdfjs-dist@6.4.299` npm package
 PDF scripting sandbox are left out because the app never runs PDF scripts); the two ES module
 builds are renamed from `.mjs` to `.js` so every platform's local file server
 serves them as JavaScript. Source maps are not included.
+
+The CodeMirror bundle is built from the unmodified npm packages pinned in
+`tools/codemirror/package.json` (and `package-lock.json`) by `tools/codemirror/build.mjs`
+(esbuild, minified IIFE exposing `window.CM`); the only project code in it is
+`tools/codemirror/entry.js` (AGPL-3.0-only). The build copies every bundled package's
+LICENSE file into `licenses/codemirror/`. Verilog/SystemVerilog, Tcl and Shell highlighting
+use the CodeMirror 5 legacy modes from `@codemirror/legacy-modes`.
 
 Plugins installed from the Plugins screen (1.12) are downloaded at the
 user's request from https://github.com/anthropics/knowledge-work-plugins

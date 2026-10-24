@@ -66,6 +66,35 @@ jobs:
           POSCHAT_TEST_MODELS: ${{ runner.temp }}/stt
         run: python -m unittest discover -s tests -v
 
+  ui:
+    # 화면 시험: 실제 Bridge에 붙은 web/ 화면을 Chromium(Playwright)으로 열어 조작한다
+    # (연결·도구·연구·플러그인·브라우저 막대·논문 화면·1.15 코드 화면: 편집·저장·묻기·덩어리 검토·Git·실행·전환·휴대폰 폭)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies and Chromium
+        run: |
+          python -m pip install -r requirements.txt playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Screen tests
+        env:
+          POSTECH_UI_SHOTS: ${{ runner.temp }}/ui-shots
+        run: python -m unittest discover -s tests -p "test_*ui*.py" -v
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-screenshots
+          path: ${{ runner.temp }}/ui-shots
+          if-no-files-found: ignore
+
   windows:
     runs-on: windows-latest
     steps:
@@ -116,7 +145,7 @@ jobs:
           Get-Content $report
           $text = Get-Content $report -Raw
           $version = python -c "from version import APP_VERSION; print(APP_VERSION)"
-          foreach ($want in "version: $version", "web: True", "documents: OK", "attachments: OK", "anthropic: OK", "word OK", "powerpoint OK", "excel OK", "paper OK", "notion OK", "firecrawl OK", "stt: OK", "crypto: OK", "rag: OK", "github OK(19)", "research OK(12)", "memory OK(8)", "python OK(3)", "ssh OK(2)") {
+          foreach ($want in "version: $version", "web: True", "documents: OK", "attachments: OK", "anthropic: OK", "word OK", "powerpoint OK", "excel OK", "paper OK", "notion OK", "firecrawl OK", "stt: OK", "crypto: OK", "rag: OK", "code: OK", "github OK(19)", "research OK(12)", "memory OK(8)", "python OK(3)", "ssh OK(2)") {
             if (-not $text.Contains($want)) { Write-Error "selftest에 '$want'이(가) 없습니다."; exit 1 }
           }
 
@@ -152,8 +181,8 @@ jobs:
           path: release/POSCHAT-Setup.exe
 
   browser-spike:
-    # 1.13 브라우저 기술 검증: 실제 pywebview 창에 네이티브 웹페이지 뷰(WebView2·WKWebView)를 붙여
-    # 열기·이벤트·글 읽기·선택·격리·뒤로 가기·닫기를 확인한다(tests/browser_spike.py).
+    # 1.13 브라우저 기술 검증 + 1.15 B1(앱 멈춤) 회귀 시험: 실제 pywebview 창에 네이티브 웹페이지 뷰(WebView2·WKWebView)를 붙여
+    # 열기·이벤트·글 읽기·선택·격리·이동·이벤트 폭주·닫기를 확인하고, 단계마다 앱 창이 응답하는지 본다(tests/browser_spike.py).
     strategy:
       fail-fast: false
       matrix:
@@ -170,14 +199,21 @@ jobs:
       - name: Install pywebview
         run: python -m pip install "pywebview>=5.0" requests
 
-      - name: Native browser view
+      - name: Native browser view (queued events, B1 fixed)
         run: python tests/browser_spike.py browser-spike.json
+
+      - name: B1 reproduction with the old synchronous push (expected to freeze)
+        # 1.13~1.14 방식(네이티브 처리기에서 바로 evaluate_js)이 앱 창을 멈추게 하는지 확인한다. 멈추면 성공(종료 코드 0).
+        # 재현은 런타임 버전에 따라 달라질 수 있어 결과를 기록만 하고 작업을 실패시키지 않는다.
+        continue-on-error: true
+        timeout-minutes: 3
+        run: python tests/browser_spike.py browser-spike-legacy.json --legacy-push
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: browser-spike-${{ matrix.os }}
-          path: browser-spike.json
+          path: browser-spike*.json
 
   macos:
     # Apple Silicon(M1 이후) 맥용 앱. 서명용 Apple 개발자 인증서가 없어 임시(ad-hoc) 서명만 한다.
@@ -203,7 +239,7 @@ jobs:
           report="$HOME/Library/Application Support/PostechChat/selftest.txt"
           cat "$report"
           version=$(python -c "from version import APP_VERSION; print(APP_VERSION)")
-          for want in "version: $version" "web: True" "documents: OK" "attachments: OK" "anthropic: OK" "word OK" "powerpoint OK" "excel OK" "paper OK" "notion OK" "firecrawl OK" "stt: OK" "crypto: OK" "rag: OK" "github OK(19)" "research OK(12)" "memory OK(8)" "python OK(3)" "ssh OK(2)"; do
+          for want in "version: $version" "web: True" "documents: OK" "attachments: OK" "anthropic: OK" "word OK" "powerpoint OK" "excel OK" "paper OK" "notion OK" "firecrawl OK" "stt: OK" "crypto: OK" "rag: OK" "code: OK" "github OK(19)" "research OK(12)" "memory OK(8)" "python OK(3)" "ssh OK(2)"; do
             grep -qF "$want" "$report" || { echo "selftest에 '$want'이(가) 없습니다."; exit 1; }
           done
           codesign --verify --deep --strict "$app"
@@ -289,7 +325,7 @@ jobs:
           path: android/app/build/reports/androidTests/
 
   publish:
-    needs: [license, tests, windows, macos, android, browser-spike]
+    needs: [license, tests, ui, windows, macos, android, browser-spike]
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release != '')
     runs-on: ubuntu-latest
     steps:
