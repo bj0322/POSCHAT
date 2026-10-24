@@ -321,13 +321,37 @@ class DockedBackend:
             self._win.show()
         self._place()
 
+    def _harden(self):
+        """pywebview가 모든 창에 여는 메시지 통로를 이 창에서는 닫는다(웹페이지 → 앱 호출 차단)."""
+        native = getattr(self._win, "native", None)
+        try:
+            import sys
+
+            if sys.platform == "darwin":
+                webview_view = native.contentView()
+                webview_view.configuration().userContentController().removeScriptMessageHandlerForName_("browserDelegate")
+            elif sys.platform == "win32":
+                settings = native.browser.webview.CoreWebView2.Settings
+                settings.IsWebMessageEnabled = False
+                settings.AreHostObjectsAllowed = False
+                settings.AreDevToolsEnabled = False
+            self.hardened = True
+        except Exception as e:
+            self.note = (self.note + "; " if self.note else "") + f"harden: {type(e).__name__}: {e}"
+
     def _loaded(self):
+        if not getattr(self, "hardened", False):
+            self._harden()
         url = self._win.get_current_url() or ""
         if url and not allowed(url):
             self._browser.blocked(url, "http·https 주소만 열 수 있습니다.")
             self._win.load_url(HOME_URL)
             return
-        self._browser.navigated(url=url, title=self._win.title, loading=False, can_back=True)
+        try:
+            title = self._win.evaluate_js("document.title") or ""
+        except Exception:
+            title = ""
+        self._browser.navigated(url=url, title=str(title), loading=False, can_back=True)
 
     def open(self, url):
         self._win.load_url(url)

@@ -25,7 +25,7 @@ class WebView2Backend:
 
     def __init__(self, window, browser):
         self.form = getattr(window, "native", None)
-        if self.form is None or not hasattr(self.form, "Controls"):
+        if self.form is None:
             raise browser_mod.BrowserError("앱 창을 찾지 못했습니다.")
         self.browser = browser
         self.view = None

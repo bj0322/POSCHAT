@@ -68,7 +68,7 @@ class WKWebViewBackend:
 
     def __init__(self, window, browser):
         self.ns_window = getattr(window, "native", None)
-        if self.ns_window is None or not hasattr(self.ns_window, "contentView"):
+        if self.ns_window is None:
             raise browser_mod.BrowserError("앱 창을 찾지 못했습니다.")
         self.browser = browser
         self.split = None

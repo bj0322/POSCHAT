@@ -90,6 +90,8 @@ async function browserOpen(text) {
   if (res) {
     BR.url = res.url;
     BR.loading = true;
+    const address = $("#browser-address");
+    if (address) address.value = res.url;  // 입력한 글 대신 실제로 연 주소(검색이면 검색 주소)
   }
   renderBrowserBar();
 }

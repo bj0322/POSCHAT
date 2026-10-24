@@ -87,13 +87,20 @@ def main():
         print(("PASS " if ok else "FAIL ") + name, detail if not ok else "", flush=True)
         return ok
 
+    shown = threading.Event()
+    window.events.loaded += shown.set
+
     def run():
         try:
+            # 앱 화면이 다 열린 뒤에 붙인다(실제 앱에서도 사용자가 브라우저를 여는 것은 화면이 뜬 뒤다)
+            step("app window loaded", shown.wait(60), f"native={type(getattr(window, 'native', None)).__name__}")
             b = browser.Browser(browser.desktop_factory(window), on_event=events.append)
+            print("... attaching the page view and opening", url, flush=True)
             b.open(url)
             step("backend", b.mode == "native", f"mode={b.mode} note={getattr(b._backend, 'note', '')}")
             loaded = wait_for(lambda: b.state["url"].startswith(url) and not b.state["loading"] and b.state["title"])
             step("navigation events", loaded, json.dumps(b.state))
+            print("... reading the page", flush=True)
             page = b.read()
             step("read text", "POSCHAT-SPIKE-OK" in page["text"], page["text"][:200])
             step("read selection", "선택할 문장" in page["selection"], page["selection"])
@@ -129,13 +136,15 @@ def main():
             window.destroy()
 
     def watchdog():
-        time.sleep(120)
+        time.sleep(150)
+        print("TIMEOUT: steps so far", json.dumps(report["steps"], ensure_ascii=False), flush=True)
         report.setdefault("error", "timeout")
         out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         import os
         os._exit(3)
 
     threading.Thread(target=watchdog, daemon=True).start()
+    print("... starting pywebview", flush=True)
     webview.start(run)
     server.shutdown()
     print(json.dumps(report, ensure_ascii=False, indent=2))
