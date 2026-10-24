@@ -109,6 +109,8 @@ class WebView2Backend:
 
     # ---- 이벤트 ----
 
+    # 이 처리기들은 UI 스레드에서 돈다. 여기서 막는 호출(evaluate_js처럼 UI 스레드를 기다리는 것)을 하면 안 된다:
+    # browser.navigated() → Bridge._push()는 큐에 넣고 바로 돌아온다(ui_events, B1).
     def _report(self, loading=None):
         core = self.view.CoreWebView2 if self.view is not None else None
         if core is None:
@@ -206,6 +208,10 @@ class WebView2Backend:
         return str(task.Result)
 
     def close(self):
+        if self.form.IsDisposed or self.form.Disposing:
+            self.view = self.splitter = None  # 앱 창이 이미 닫혔다(앱 종료): 컨트롤도 함께 정리됐다
+            return
+
         def go():
             for control in (self.view, self.splitter):
                 if control is not None:

@@ -25,6 +25,7 @@ import po_note
 import storage
 import stt
 import telemetry
+import ui_events
 import updates
 from browser_api import BrowserApi
 from paper_api import PaperApi
@@ -102,6 +103,8 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi):
             storage.save_config(self._config)
         self._lock = threading.RLock()
         self._window = None
+        # 1.15(B1): 화면 이벤트는 전용 스레드가 순서대로 보낸다. _push는 막지 않으므로 UI 스레드에서 불러도 된다.
+        self._events = ui_events.EventPump(self._send_event)
         self._busy = False
         self._run_id = 0
         self._cancel = threading.Event()
@@ -162,12 +165,16 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi):
     # ---- 내부 도우미 ----
 
     def _push(self, event):
+        """화면에 이벤트를 보낸다. 큐에 넣고 바로 돌아온다(웹페이지 뷰의 네이티브 처리기처럼 UI 스레드에서 불러도
+        멈추지 않는다 — B1). 실제 evaluate_js는 ui_events.EventPump의 스레드가 부른다."""
         if getattr(self, "_window", None) is None:
             return
-        try:
-            self._window.evaluate_js(f"window.onBackendEvent({json.dumps(event, ensure_ascii=False)})")
-        except Exception:
-            pass  # 창이 닫히는 중
+        self._events.push(event)
+
+    def _send_event(self, event):
+        window = getattr(self, "_window", None)
+        if window is not None:
+            window.evaluate_js(f"window.onBackendEvent({json.dumps(event, ensure_ascii=False)})")
 
     def _open_url(self, url):
         open_path(url)  # Windows os.startfile·macOS open·안드로이드 host.openPath 모두 https 주소를 브라우저로 연다
@@ -1381,6 +1388,7 @@ def run_app():
     try:
         webview.start(debug=os.environ.get("POSTECH_CHAT_DEBUG") == "1")
     finally:
+        bridge._events.stop()  # 창이 닫혔다: 더 보내지 않는다(보내는 중인 evaluate_js를 오래 기다리지 않는다)
         bridge._po_shutdown()
         bridge._mcp.shutdown()
         if bridge._browser_obj is not None:

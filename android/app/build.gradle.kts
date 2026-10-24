@@ -39,6 +39,8 @@ val syncSharedPython by tasks.registering(Sync::class) {
             "paper.py", "paper_api.py",
             // 1.10: 에이전트 자동화(안드로이드에서는 쓸 수 없음으로 표시)·관측
             "runner_mcp.py", "telemetry.py", "evals.py",
+            // 1.15: 화면 이벤트 큐(B1)
+            "ui_events.py",
         )
     }
     into(sharedPythonDir)

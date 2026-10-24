@@ -19,7 +19,8 @@ READ_TIMEOUT = 15
 
 
 class _Delegate(AppKit.NSObject):
-    """WKNavigationDelegate + WKUIDelegate."""
+    """WKNavigationDelegate + WKUIDelegate. 메인(UI) 스레드에서 불린다: 여기서 UI 스레드를 기다리는 호출을 하면 안 된다
+    (browser.navigated() → Bridge._push()는 큐에 넣고 바로 돌아온다, ui_events·B1)."""
 
     def initWithOwner_(self, owner):
         self = super(_Delegate, self).init()
