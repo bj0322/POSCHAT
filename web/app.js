@@ -28,6 +28,9 @@ const ICONS = {
   book: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2Z"/><path d="M4 21V5"/><path d="M8 7h7"/></svg>',
   terminal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/><path d="M13 15h4"/></svg>',
   blocks: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/></svg>',
+  globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+  forward: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>',
+  external: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
   up_thumb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v11H4V10Z"/><path d="M7 10l4-7a2 2 0 0 1 3 2l-1 5h6a2 2 0 0 1 2 2.3l-1.4 7A2 2 0 0 1 17.6 21H7"/></svg>',
   down_thumb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V3h3v11Z"/><path d="M17 14l-4 7a2 2 0 0 1-3-2l1-5H5a2 2 0 0 1-2-2.3l1.4-7A2 2 0 0 1 6.4 3H17"/></svg>',
@@ -756,6 +759,8 @@ window.onBackendEvent = (ev) => {
   } else if (ev.type === "credit") {
     S.credit = ev.credit;
     document.querySelectorAll("[data-credit]").forEach((el) => { el.textContent = creditText(S.credit); });
+  } else if (ev.type === "browser") {
+    if (window.browserEvent) browserEvent(ev);
   } else if (ev.type === "connector" || ev.type === "hub") {
     if (window.hubEvent) hubEvent(ev);
   } else if (ev.type === "done") {
@@ -1361,6 +1366,15 @@ const GUIDE = [
 **설정 → POSTECH GenAI 크레딧**에서 이 키의 이번 주 크레딧 사용량·한도·남은 양을 봅니다. **확인**을 눌러도 크레딧은 줄지 않습니다. PO노트 화면 위쪽에도 같은 내용이 나옵니다.
 
 Claude Sonnet 5.5 기준으로 1크레딧은 입력 약 250토큰, 출력 약 75토큰이고, 짧은 질문도 호출마다 약 24크레딧이 듭니다. Opus 5.5는 두 배입니다. 에이전트 모드는 단계마다 한 번씩 호출하므로 단계가 많을수록 크레딧을 많이 씁니다.`],
+  ["브라우저: 채팅 옆 웹페이지 (1.13)", `
+왼쪽 위 **브라우저**를 누르면 앱 창이 나뉘어 오른쪽에 웹페이지가 열립니다. 가운데 막대를 끌어 너비를 바꿉니다.
+
+- 채팅 위 막대에서 주소나 검색어를 넣고 Enter. 뒤로·앞으로·새로 고침, 기본 브라우저로 열기(다운로드·로그인이 필요한 사이트), 닫기.
+- **이 페이지에 대해 묻기**: 페이지 글을 채팅에 첨부합니다. **선택한 부분 묻기**: 드래그한 글만 첨부합니다. 질문을 고쳐 보내세요.
+- **연구 라이브러리에 저장**: arXiv·DOI 논문 페이지를 라이브러리에 더합니다(연구 라이브러리를 켜 두어야 합니다).
+- 에이전트 모드에서는 에이전트가 열린 페이지를 읽고, 주소를 열기 전에는 승인을 받습니다.
+
+웹페이지는 POSCHAT의 파일·실행·MCP·API 키에 접근할 수 없고, 페이지 내용은 '외부 데이터'로 표시되어 그 안의 지시를 따르지 않습니다.`],
   ["PO노트: 강의 녹음·필기 노트", `
 왼쪽 위 **PO노트**에서 강의마다 노트를 만듭니다.
 

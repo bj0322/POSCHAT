@@ -33,6 +33,8 @@ val syncSharedPython by tasks.registering(Sync::class) {
             "memory_store.py", "memory_mcp.py", "handoff.py", "sync.py",
             // 1.12: 플러그인(Knowledge Work Plugins)
             "plugins.py",
+            // 1.13: 브라우저(웹페이지 뷰는 MainActivity가 만든다)
+            "browser.py", "browser_api.py",
             // 1.10: 에이전트 자동화(안드로이드에서는 쓸 수 없음으로 표시)·관측
             "runner_mcp.py", "telemetry.py", "evals.py",
         )

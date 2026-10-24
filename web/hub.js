@@ -84,6 +84,7 @@ function pageOpen(id) {
   $(PAGES[id].button)?.classList.add("active");
   document.querySelectorAll(".thread.active").forEach((t) => t.classList.remove("active"));
   if (isNarrow()) setCollapsed(true);
+  if (window.renderBrowserBar) renderBrowserBar();
   renderPage();
 }
 
@@ -98,6 +99,7 @@ function pageLeave() {
   $("#agent-label").hidden = false;
   if (S.thread) $("#chat-title").textContent = S.thread.title;
   renderThreadModel();
+  if (window.renderBrowserBar) renderBrowserBar();
 }
 
 function renderPage() {

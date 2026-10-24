@@ -349,6 +349,59 @@ class UiSmokeTests(unittest.TestCase):
         finally:
             plugins.remove("productivity")
 
+    def test_browser_bar_opens_pages_and_attaches_them_to_chat(self):
+        from unittest.mock import patch
+
+        from playwright.sync_api import sync_playwright
+
+        import browser_api
+        from test_browser import FakeBackend
+
+        backends = []
+
+        def factory(b):
+            backends.append(FakeBackend(b))
+            return backends[-1]
+
+        self.bridge._browser_obj = None
+        with patch.object(browser_api, "android_factory", factory), sync_playwright() as p:
+            browser, page, errors = self.open(p)
+            try:
+                button = page.wait_for_selector("#btn-browser:not([hidden])")
+                self.assertEqual(button.get_attribute("aria-pressed"), "false")
+                page.click("#btn-browser")
+                page.wait_for_selector("#browser-bar:not([hidden])")
+                self.assertEqual(page.get_attribute("#btn-browser", "aria-pressed"), "true")
+                self.assertTrue(page.is_visible("#composer-wrap"))  # 채팅은 그대로 옆에 남는다
+                page.fill("#browser-address", "arxiv.org/abs/1706.03762")
+                page.press("#browser-address", "Enter")
+                page.wait_for_function("document.querySelector('#browser-status').textContent.includes('Attention')")
+                self.assertEqual(page.input_value("#browser-address"), "https://arxiv.org/abs/1706.03762")
+                self.assertIn(("open", "https://arxiv.org/abs/1706.03762"), backends[0].calls)
+                self.assertFalse(page.is_disabled("#browser-back"))
+                page.click("#browser-ask-page")
+                page.wait_for_selector("#attach-tray .tray-item.ready")
+                self.assertIn("웹페이지 - Attention", page.inner_text("#attach-tray"))
+                self.assertEqual(page.input_value("#input"), "이 페이지의 핵심을 요약해 줘.")
+                self.shot(page, "browser-bar")
+                # 막힌 주소는 알림만 띄우고 열지 않는다
+                page.fill("#browser-address", "file:///C:/Windows")
+                page.press("#browser-address", "Enter")
+                page.wait_for_selector("#toast:not([hidden])")
+                self.assertIn("http·https", page.inner_text("#toast"))
+                # 도구 화면으로 가면 막대를 숨기고, 돌아오면 다시 보인다
+                page.click("#btn-research")
+                page.wait_for_selector("#browser-bar", state="hidden")
+                page.click("#btn-new")
+                page.wait_for_selector("#browser-bar:not([hidden])")
+                page.click("button[aria-label='브라우저 닫기']")
+                page.wait_for_selector("#browser-bar", state="hidden")
+                self.assertIn(("hide",), backends[0].calls)
+                self.assertEqual(errors, [])
+            finally:
+                browser.close()
+                self.bridge._browser_obj = None
+
     def test_settings_switch_to_the_personal_claude_api(self):
         from playwright.sync_api import sync_playwright
 

@@ -6,6 +6,8 @@ import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -17,6 +19,9 @@ import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.MimeTypeMap
+import android.webkit.PermissionRequest
+import android.webkit.WebViewClient
+import android.widget.LinearLayout
 import android.webkit.ValueCallback
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -44,6 +49,10 @@ import java.util.concurrent.TimeUnit
  */
 class MainActivity : ComponentActivity() {
     internal lateinit var webView: WebView  // 계측 테스트에서 화면 상태를 확인한다
+    // 1.13 브라우저: 앱 화면과 나란히 두는 웹페이지 뷰. POSCHAT API(JavascriptInterface)를 주지 않는다.
+    internal var browserView: WebView? = null
+    private lateinit var root: LinearLayout
+    @Volatile private var browserRatio = 0.55
     private val executor = Executors.newCachedThreadPool()
     private val pythonReady = CountDownLatch(1)
     @Volatile private var bridge: PyObject? = null
@@ -95,7 +104,10 @@ class MainActivity : ComponentActivity() {
 
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         webView = WebView(this)
-        setContentView(webView)
+        root = LinearLayout(this)
+        root.addView(webView, LinearLayout.LayoutParams(0, 0, 1f))
+        setContentView(root)
+        layoutPanes()
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.addJavascriptInterface(JsHost(), "PoschatHost")
@@ -150,6 +162,13 @@ class MainActivity : ComponentActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
+                // 브라우저가 열려 있고 뒤로 갈 페이지가 있으면 웹페이지부터 뒤로
+                browserView?.let { b ->
+                    if (b.visibility == android.view.View.VISIBLE && b.canGoBack()) {
+                        b.goBack()
+                        return
+                    }
+                }
                 // 열린 창이나 사이드바가 있으면 화면이 닫고(true), 없으면 앱을 뒤로 보낸다.
                 webView.evaluateJavascript("window.__androidBack ? window.__androidBack() : false") { handled ->
                     if (handled != "true") {
@@ -165,9 +184,95 @@ class MainActivity : ComponentActivity() {
         webView.loadUrl("https://${WebViewAssetLoader.DEFAULT_DOMAIN}/assets/web/index.html")
     }
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        layoutPanes()
+    }
+
+    /** 세로 화면은 위(웹페이지)·아래(앱), 가로 화면은 왼쪽(앱)·오른쪽(웹페이지). */
+    private fun layoutPanes() {
+        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        root.orientation = if (landscape) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+        val b = browserView
+        val shown = b != null && b.visibility == android.view.View.VISIBLE
+        val appWeight = if (shown) (1 - browserRatio).toFloat() else 1f
+        webView.layoutParams = LinearLayout.LayoutParams(0, 0, appWeight).also {
+            if (landscape) it.height = LinearLayout.LayoutParams.MATCH_PARENT else it.width = LinearLayout.LayoutParams.MATCH_PARENT
+        }
+        if (b != null) {
+            root.removeView(b)
+            root.addView(b, if (landscape) 1 else 0, LinearLayout.LayoutParams(0, 0, browserRatio.toFloat()).also {
+                if (landscape) it.height = LinearLayout.LayoutParams.MATCH_PARENT else it.width = LinearLayout.LayoutParams.MATCH_PARENT
+            })
+        }
+        root.requestLayout()
+    }
+
+    /** 브라우저 이벤트를 Python(browser.Browser)으로 넘긴다. Python이 앱 화면에 알린다. */
+    private fun browserEvent(fields: Map<String, Any?>) {
+        val json = JSONObject(fields).toString()
+        executor.execute {
+            runCatching { pythonReady.await(); bridge?.callAttr("browser_event", json) }
+        }
+    }
+
+    private fun browserReport(view: WebView, loading: Boolean) {
+        browserEvent(mapOf("url" to (view.url ?: ""), "title" to (view.title ?: ""), "loading" to loading,
+            "can_back" to view.canGoBack(), "can_forward" to view.canGoForward()))
+    }
+
+    private fun allowedUrl(uri: Uri?): Boolean =
+        uri != null && (uri.scheme == "http" || uri.scheme == "https") && !uri.host.isNullOrEmpty() &&
+            uri.host != WebViewAssetLoader.DEFAULT_DOMAIN
+
+    private fun ensureBrowser(): WebView {
+        browserView?.let { return it }
+        val b = WebView(this)
+        b.settings.javaScriptEnabled = true
+        b.settings.domStorageEnabled = true
+        b.settings.allowFileAccess = false
+        b.settings.allowContentAccess = false
+        b.settings.setSupportMultipleWindows(false)  // target=_blank도 같은 뷰에서 연다
+        b.settings.builtInZoomControls = true
+        b.settings.displayZoomControls = false
+        // addJavascriptInterface를 하지 않는다: 웹페이지가 POSCHAT을 부를 길이 없다
+        b.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                if (allowedUrl(request.url)) return false
+                browserEvent(mapOf("kind" to "blocked", "url" to request.url.toString(), "reason" to "http·https 주소만 열 수 있습니다."))
+                return true
+            }
+
+            override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                browserReport(view, true)
+            }
+
+            override fun onPageFinished(view: WebView, url: String) {
+                browserReport(view, false)
+            }
+        }
+        b.webChromeClient = object : WebChromeClient() {
+            override fun onPermissionRequest(request: PermissionRequest) {
+                request.deny()  // 카메라·마이크 등
+            }
+
+            override fun onReceivedTitle(view: WebView, title: String?) {
+                browserReport(view, view.progress < 100)
+            }
+        }
+        b.setDownloadListener { url, _, _, _, _ ->
+            browserEvent(mapOf("kind" to "blocked", "url" to url, "reason" to "다운로드는 기본 브라우저에서 하세요(외부 브라우저로 열기)."))
+        }
+        b.visibility = android.view.View.GONE
+        browserView = b
+        layoutPanes()
+        return b
+    }
+
     override fun onDestroy() {
         if (isFinishing) bridge?.let { b -> executor.execute { runCatching { b.callAttr("shutdown") } } }
         webView.destroy()
+        browserView?.destroy()
         super.onDestroy()
     }
 
@@ -254,6 +359,68 @@ class MainActivity : ComponentActivity() {
 
         fun micStop() {
             RecordingService.stop(this@MainActivity)
+        }
+
+        // ---- 1.13 브라우저(android_main.AndroidBrowser가 부른다) ----
+
+        fun browserShow(ratio: Double) {
+            browserRatio = ratio.coerceIn(0.25, 0.8)
+            runOnUiThread {
+                ensureBrowser().visibility = android.view.View.VISIBLE
+                layoutPanes()
+            }
+        }
+
+        fun browserHide() {
+            runOnUiThread {
+                browserView?.visibility = android.view.View.GONE
+                layoutPanes()
+            }
+        }
+
+        fun browserOpen(url: String) {
+            runOnUiThread { if (allowedUrl(Uri.parse(url))) ensureBrowser().loadUrl(url) }
+        }
+
+        fun browserNav(action: String) {
+            runOnUiThread {
+                browserView?.let {
+                    when (action) {
+                        "back" -> it.goBack()
+                        "forward" -> it.goForward()
+                        "reload" -> it.reload()
+                        "stop" -> it.stopLoading()
+                    }
+                }
+            }
+        }
+
+        fun browserRatio(ratio: Double) {
+            browserRatio = ratio.coerceIn(0.25, 0.8)
+            runOnUiThread { layoutPanes() }
+        }
+
+        /** 웹페이지에서 script를 실행해 결과(JSON 문자열)를 돌려준다. Python 스레드에서 불린다. */
+        fun browserRead(script: String): String {
+            val latch = CountDownLatch(1)
+            var result = ""
+            runOnUiThread {
+                val b = browserView
+                if (b == null) latch.countDown() else b.evaluateJavascript(script) { value ->
+                    result = value ?: ""
+                    latch.countDown()
+                }
+            }
+            latch.await(15, TimeUnit.SECONDS)
+            return result
+        }
+
+        fun browserClose() {
+            runOnUiThread {
+                browserView?.let { root.removeView(it); it.destroy() }
+                browserView = null
+                layoutPanes()
+            }
         }
 
         /** 데스크톱의 os.startfile: https 주소(OAuth 로그인 등)는 브라우저로, 파일은 알맞은 앱으로 열고, 폴더는 경로를 알려 준다. */
