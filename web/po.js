@@ -51,6 +51,7 @@ async function poOpen() {
   $("#po-view").hidden = false;
   $("#chat-title").textContent = "PO노트";
   $("#btn-po").classList.add("active");
+  if (window.renderBrowserBar) renderBrowserBar();
   document.querySelectorAll(".thread.active").forEach((t) => t.classList.remove("active"));
   if (isNarrow()) setCollapsed(true);
   await poRefresh();
@@ -67,6 +68,7 @@ function poLeave() {
   $("#composer-wrap").hidden = false;
   $("#agent-label").hidden = false;
   $("#btn-po").classList.remove("active");
+  if (window.renderBrowserBar) renderBrowserBar();
   if (S.thread) $("#chat-title").textContent = S.thread.title;
   renderThreadModel();
 }

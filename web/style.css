@@ -647,3 +647,22 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 @media (prefers-reduced-motion: reduce) {
   .switch-thumb, .switch-thumb::after { transition: none; }
 }
+
+/* ---------- 브라우저 막대 (browser.js): 웹페이지는 오른쪽 네이티브 뷰가 그린다 ---------- */
+#browser-bar { border-bottom: 1px solid var(--border); padding: 6px 10px; display: flex; flex-direction: column; gap: 6px; background: var(--bg); }
+#browser-bar[hidden] { display: none; }
+.browser-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.browser-row .icon-btn { width: 32px; height: 32px; flex: none; }
+.browser-row .icon-btn:disabled { opacity: .35; cursor: default; }
+.browser-row .icon-btn svg { width: 18px; height: 18px; }
+.browser-address { flex: 1; min-width: 0; display: flex; }
+.browser-address input { flex: 1; min-width: 0; border: 1px solid var(--border); background: var(--bubble); color: var(--text); border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 13.5px; outline: none; }
+.browser-address input:focus { border-color: var(--text-3); background: var(--bg); }
+.browser-actions { flex-wrap: wrap; gap: 6px; }
+.browser-action { padding: 4px 12px; font-size: 12.5px; }
+.browser-action:disabled { opacity: .45; cursor: default; }
+.browser-status { flex: 1; min-width: 80px; color: var(--text-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+@media (max-width: 720px) {
+  .browser-status { display: none; }
+  .browser-action { padding: 4px 10px; }
+}

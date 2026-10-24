@@ -151,6 +151,34 @@ jobs:
           name: POSCHAT-Setup
           path: release/POSCHAT-Setup.exe
 
+  browser-spike:
+    # 1.13 브라우저 기술 검증: 실제 pywebview 창에 네이티브 웹페이지 뷰(WebView2·WKWebView)를 붙여
+    # 열기·이벤트·글 읽기·선택·격리·뒤로 가기·닫기를 확인한다(tests/browser_spike.py).
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pywebview
+        run: python -m pip install "pywebview>=5.0" requests
+
+      - name: Native browser view
+        run: python tests/browser_spike.py browser-spike.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-spike-${{ matrix.os }}
+          path: browser-spike.json
+
   macos:
     # Apple Silicon(M1 이후) 맥용 앱. 서명용 Apple 개발자 인증서가 없어 임시(ad-hoc) 서명만 한다.
     runs-on: macos-latest
@@ -261,7 +289,7 @@ jobs:
           path: android/app/build/reports/androidTests/
 
   publish:
-    needs: [license, tests, windows, macos, android]
+    needs: [license, tests, windows, macos, android, browser-spike]
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release != '')
     runs-on: ubuntu-latest
     steps:

@@ -61,6 +61,9 @@ MAX_HISTORY_CHARS = 10000
 MAX_NOTE_CHARS = 6000  # 프롬프트에 넣는 memory.md·USER.md 각각의 최대 글자 수
 MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_SEARCH_DOC_BYTES = 20 * 1024 * 1024
+BROWSER_ACTION_DOC = (
+    '{"action": "browser_read", "what": "page"}  사용자가 옆 브라우저에서 보고 있는 웹페이지 읽기 (what: page|selection)\n'
+    '{"action": "browser_open", "url": "주소 또는 검색어"}  옆 브라우저에서 주소 열기 (사용자 승인)')
 MCP_ACTION_DOC = '{"action": "mcp", "tool": "서버.도구", "args": {"인자": "값"}}  MCP 도구 실행 (아래 [MCP 도구] 목록)'
 MCP_RULE = ("- Word(.docx)·PowerPoint(.pptx)·Excel(.xlsx) 파일을 만들거나 고칠 때는 write/edit 대신 mcp 도구를 쓰세요. "
             "고치기 전에 read로 내용을 확인하세요.\n"
@@ -267,7 +270,8 @@ def _git_commits(workspace, before):
 class Agent:
     def __init__(self, api_key, workspace, agent_mode, max_steps, history_messages,
                  on_status, on_tool, confirm, cancelled, thread_id=None, share_threads=True, mcp=None,
-                 api_settings=None, on_delta=None, ai_memory_state=None, on_ai_memory_state=None, policy=None):
+                 api_settings=None, on_delta=None, ai_memory_state=None, on_ai_memory_state=None, policy=None,
+                 browser=None):
         self.api_key = api_key
         self.workspace = Path(workspace).resolve() if workspace else None
         self.agent_mode = agent_mode
@@ -298,6 +302,7 @@ class Agent:
         self.commands = []            # 이번 실행의 run 명령 {"command", "code"} — 테스트 결과로 인계에 남긴다
         self.denied = []              # 사용자가 거부한 단계 — 인계의 '필요한 승인'
         self.project = ""             # 통합 메모리의 프로젝트 키("workspace/project")
+        self.browser = browser        # browser.Browser — 옆 브라우저가 열려 있을 때(1.13)
         self.steps = 0                # 이번 실행에서 모델이 고른 단계 수(관측용)
 
     def _ask(self, prompt, on_delta=None, images=None):
@@ -661,8 +666,10 @@ class Agent:
             "자동화 프로그램이 당신이 고른 단계를 수행하고 결과를 진행 기록에 추가합니다.\n"
             "JSON 객체 하나로만 답하세요. 설명 문장 금지. 최종 답변은 done의 answer에 한국어로 쓰세요.\n"
             + MATH_RULE + "\nanswer는 JSON 문자열이므로 LaTeX의 백슬래시는 두 번 쓰세요. 예: \"\\\\(x^2\\\\)\"",
-            "[단계 종류]\n" + ACTION_DOCS + ("\n" + MCP_ACTION_DOC if self.mcp_servers else ""),
-            "[규칙]\n" + RULES + ("\n" + MCP_RULE + "\n" + connectors.UNTRUSTED_RULE if self.mcp_servers else "")
+            "[단계 종류]\n" + ACTION_DOCS + ("\n" + MCP_ACTION_DOC if self.mcp_servers else "")
+            + ("\n" + BROWSER_ACTION_DOC if self.browser else ""),
+            "[규칙]\n" + RULES + ("\n" + MCP_RULE if self.mcp_servers else "")
+            + ("\n" + connectors.UNTRUSTED_RULE if self.mcp_servers or self.browser else "")
             + ("\n" + AI_MEMORY_RULE.format(name=self.ai_memory.server.name) if self.ai_memory else ""),
             f"[작업 폴더]\n{self.workspace}",
         ]
@@ -901,6 +908,46 @@ class Agent:
         obs = f"종료 코드 {r.returncode}\n{_truncate(out.strip(), MAX_OBS_CHARS) or '(출력 없음)'}"
         self.on_tool(f"▶ run {command} (종료 코드 {r.returncode})", _truncate(out.strip(), 4000))
         return obs
+
+    # ---- 옆 브라우저(1.13) ----
+
+    def _tool_browser_read(self, what="page"):
+        import browser as browser_mod
+
+        if self.browser is None:
+            raise ToolError("브라우저가 열려 있지 않습니다.")
+        try:
+            page = self.browser.read()
+        except browser_mod.BrowserError as e:
+            raise ToolError(str(e))
+        selection = str(what) == "selection"
+        if selection and not page["selection"].strip():
+            raise ToolError("사용자가 웹페이지에서 선택한 글이 없습니다.")
+        text = connectors.wrap_untrusted(browser_mod.page_markdown(page, selection_only=selection), f"웹페이지 {page['url']}")
+        self.on_tool(f"🌐 browser_read {page['title'] or page['url']}", _truncate(text, 4000))
+        return _truncate(text, MAX_OBS_CHARS)
+
+    def _tool_browser_open(self, url):
+        import browser as browser_mod
+
+        if self.browser is None:
+            raise ToolError("브라우저가 열려 있지 않습니다.")
+        try:
+            target = browser_mod.normalize(url)
+        except browser_mod.BrowserError as e:
+            raise ToolError(str(e))
+        # 웹페이지의 지시로 주소에 정보를 실어 보내는 일을 막기 위해 여는 주소를 사용자에게 보이고 승인을 받는다
+        if not self.confirm("run", "브라우저에서 열기", target):
+            self.denied.append(f"브라우저에서 열기: {target[:200]}")
+            self.on_tool(f"⛔ browser_open 거부됨: {target}", "")
+            return "사용자가 이 주소를 여는 것을 거부했습니다."
+        self.browser.open(target)
+        for _ in range(60):  # 최대 15초 동안 다 열리기를 기다린다
+            if self.cancelled() or not self.browser.state.get("loading"):
+                break
+            time.sleep(0.25)
+        self.on_tool(f"🌐 browser_open {target}", "")
+        return f"브라우저에서 열었습니다: {self.browser.state.get('url') or target}. 내용은 browser_read로 읽으세요."
 
     def _mcp_tool_docs(self):
         lines = []

@@ -113,13 +113,73 @@ def _setup(files_dir, res_dir):
     mcp_client.INPROCESS_BUILTIN = True  # 하위 프로세스 대신 앱 안의 스레드로 내장 MCP 서버를 돌린다
 
 
+class AndroidBrowser:
+    """1.13 브라우저: MainActivity의 두 번째 WebView(POSCHAT API 없음)를 다룬다. browser.Browser의 백엔드."""
+
+    mode = "android"
+
+    def __init__(self, browser):
+        self.browser = browser
+
+    def show(self, ratio):
+        _host.browserShow(float(ratio))
+
+    def hide(self):
+        _host.browserHide()
+
+    def open(self, url):
+        _host.browserOpen(url)
+
+    def back(self):
+        _host.browserNav("back")
+
+    def forward(self):
+        _host.browserNav("forward")
+
+    def reload(self):
+        _host.browserNav("reload")
+
+    def stop(self):
+        _host.browserNav("stop")
+
+    def set_ratio(self, ratio):
+        _host.browserRatio(float(ratio))
+
+    def read(self, script):
+        return str(_host.browserRead(script) or "")
+
+    def close(self):
+        _host.browserClose()
+
+
+def browser_event(event_json):
+    """MainActivity가 웹페이지 뷰의 주소·제목·불러오기 상태를 알린다."""
+    b = _bridge._browser(create=False) if _bridge is not None else None
+    if b is None:
+        return
+    ev = json.loads(event_json)
+    if ev.get("kind") == "blocked":
+        b.blocked(ev.get("url", ""), ev.get("reason", ""))
+        return
+    b.navigated(url=ev.get("url"), title=ev.get("title"), loading=ev.get("loading"), can_back=ev.get("can_back"),
+                can_forward=ev.get("can_forward"))
+
+
 def start(host, files_dir, res_dir):
     global _bridge, _host
     _host = host
     if _bridge is not None:
-        return  # 프로세스가 살아 있는 채로 화면만 다시 열렸다: 대화·MCP 상태를 그대로 쓰고 host만 바꾼다
+        # 프로세스가 살아 있는 채로 화면만 다시 열렸다: 대화·MCP 상태를 그대로 쓰고 host만 바꾼다.
+        # 새 화면에는 웹페이지 뷰가 없으므로 브라우저는 닫힌 상태로 돌린다.
+        b = _bridge._browser(create=False)
+        if b is not None:
+            b._backend, b.visible = None, False
+        return
     _setup(files_dir, res_dir)
+    import browser_api
     import main
+
+    browser_api.android_factory = AndroidBrowser
 
     os.startfile = lambda path: _host.openPath(str(path))  # 스킬·데이터 폴더·mcp.json 열기
     _bridge = main.Bridge()

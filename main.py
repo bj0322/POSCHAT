@@ -26,6 +26,7 @@ import storage
 import stt
 import telemetry
 import updates
+from browser_api import BrowserApi
 from workspace_api import WorkspaceApi
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
 from api import DEFAULT_MODEL, MODELS, RESPONSES_MODELS, ApiError, ApiSettings
@@ -89,7 +90,7 @@ def _installed_package_licenses():
     return sorted(items, key=lambda x: x["name"].lower())
 
 
-class Bridge(WorkspaceApi):
+class Bridge(WorkspaceApi, BrowserApi):
     """JS에서 호출하는 API. 밑줄로 시작하는 이름은 JS에 노출되지 않는다. '연결·도구' 창의 API는 WorkspaceApi에 있다."""
 
     def __init__(self):
@@ -1136,6 +1137,7 @@ class Bridge(WorkspaceApi):
             ai_memory_state=thread.get("ai_memory"),
             on_ai_memory_state=save_ai_memory_state,
             policy=connectors.Policy(dict(self._config)),
+            browser=self._browser_for_agent(),
         )
         started, outcome = time.monotonic(), "done"
         try:
@@ -1379,6 +1381,8 @@ def run_app():
     finally:
         bridge._po_shutdown()
         bridge._mcp.shutdown()
+        if bridge._browser_obj is not None:
+            bridge._browser_obj.close()
         if getattr(bridge, "_exit_for_update", False):
             os._exit(0)  # 설치 프로그램이 이 프로세스가 끝나기를 기다린다
 
