@@ -107,7 +107,7 @@ class CodeUiTests(unittest.TestCase):
             try:
                 self.open_code(page)
                 self.assertEqual(page.get_attribute("#btn-code", "aria-pressed"), "true")
-                self.assertTrue(page.is_visible("#main"))  # 채팅 옆에 열린다
+                self.assertTrue(page.is_hidden("#main"))  # 1.17.2: 채팅 옆이 아니라 하나의 화면으로 열린다
                 # SystemVerilog: 강조(키워드 토큰)와 언어 표시
                 self.open_file(page, "rtl", "rtl/counter.sv")
                 self.assertIn("SystemVerilog", page.inner_text("#code-statusbar"))
@@ -266,11 +266,18 @@ class CodeUiTests(unittest.TestCase):
                 self.assertTrue(page.is_hidden("#paper-pane"))
                 self.assertIn("// 저장 안 함", page.inner_text(".code-tabpane:not([hidden]) .cm-content"))
                 self.assertIn("dirty", page.get_attribute(".code-tab.active", "class"))
-                # 크게 보기(채팅 숨기기)
-                page.click("#code-full")
+                # 1.17.2: 코드는 하나의 화면(전체) — 채팅과 나누어 띄우지 않고, 나누는 막대·크게 보기 단추도 없다
                 self.assertTrue(page.is_hidden("#main"))
-                page.click("#code-full")
+                self.assertEqual(page.locator("#code-full, #code-resizer").count(), 0)
+                # 새 채팅으로 가면 코드 화면이 닫히고, 다시 열면 탭·저장하지 않은 내용이 그대로다
+                page.click("#btn-new")
+                page.wait_for_selector("#code-pane", state="hidden")
                 self.assertTrue(page.is_visible("#main"))
+                self.assertEqual(page.get_attribute("#btn-code", "aria-pressed"), "false")
+                page.click("#btn-code")
+                page.wait_for_selector("#code-pane:not([hidden])")
+                self.assertTrue(page.is_hidden("#main"))
+                self.assertIn("dirty", page.get_attribute(".code-tab.active", "class"))
                 # 저장하지 않은 탭을 닫으면 묻는다
                 page.click(".code-tab.active .code-tab-close")
                 page.wait_for_selector(".modal:has-text('저장하지 않은 변경')")

@@ -1,6 +1,6 @@
 # POSCHAT Code 구조 (1.15)
 
-채팅 옆 코드 편집기. 사용 방법은 [code-editor-guide.md](../code-editor-guide.md), 보안은 [code-security.md](../code-security.md).
+코드 편집기(1.17.2부터 채팅과 나누지 않는 하나의 전체 화면: `#app.code-open`이면 `#main`을 숨긴다). 사용 방법은 [code-editor-guide.md](../code-editor-guide.md), 보안은 [code-security.md](../code-security.md).
 
 ## 한눈에
 

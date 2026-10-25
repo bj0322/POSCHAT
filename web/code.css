@@ -2,13 +2,10 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
 /* POSCHAT Code(1.15): 채팅 옆 코드 편집기. 논문 화면(#paper-pane)과 같은 자리·같은 모양을 쓴다. */
 
-#code-resizer { flex: none; width: 6px; cursor: col-resize; background: var(--border); }
-#code-resizer:hover, #code-resizer:focus-visible { background: var(--text-3); outline: none; }
-#code-resizer[hidden] { display: none; }
-#code-pane { flex: none; width: var(--code-w, 56%); min-width: 420px; display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
+/* 1.17.2: 코드는 하나의 화면(섹션) — 열면 채팅 자리 전체를 쓴다(채팅과 나누어 띄우지 않음) */
+#code-pane { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
 #code-pane[hidden] { display: none; }
-#app.code-full #main, #app.code-full #code-resizer { display: none; }
-#app.code-full #code-pane { flex: 1; width: auto; }
+#app.code-open #main { display: none; }
 
 .code-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 6px 8px; border-bottom: 1px solid var(--border); }
 .code-head .icon-btn, .code-toolbar .icon-btn, .code-files-bar .icon-btn { width: 30px; height: 30px; }
@@ -165,9 +162,7 @@ textarea.code-input { resize: vertical; }
 .code-modal-editor > .cm-editor { height: 100%; }
 
 @media (max-width: 720px) {
-  /* 휴대폰: 코드 화면이 채팅을 덮는다. 파일 목록은 위에 겹쳐 열고 닫는다 */
-  #app.code-open #main { display: none; }
-  #code-pane { width: 100%; min-width: 0; flex: 1; }
+  /* 휴대폰: 파일 목록은 위에 겹쳐 열고 닫는다 */
   .code-files { position: absolute; z-index: 20; top: 46px; bottom: 0; left: 0; width: min(280px, 85vw); box-shadow: var(--shadow); }
   .code-body { position: relative; }
   .code-bottom { height: var(--code-bottom-h, 180px); }

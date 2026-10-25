@@ -25,7 +25,7 @@ Object.assign(ICONS, {
 const CODE = {
   open: false, state: null, tabs: [], active: null, seq: 0, tree: new Map(), expanded: new Set([""]),
   bottom: "review", bottomOpen: true, git: null, gitBusy: false, gitPick: new Set(), runs: [], runOut: new Map(),
-  runShown: null, full: false, filesOpen: true, search: null, dark: false, ready: false, loadingTree: false,
+  runShown: null, filesOpen: true, search: null, dark: false, ready: false, loadingTree: false,
 };
 const CODE_PRESETS = [
   ["explain", "코드 설명"], ["bug", "오류 분석"], ["perf", "성능 개선"], ["refactor", "리팩터링 제안"],
@@ -89,38 +89,15 @@ const codeFeature = (name) => !!(CODE.state && CODE.state.features && CODE.state
 function codePane() {
   let pane = $("#code-pane");
   if (pane) return pane;
+  // 1.17.2: 코드는 채팅 옆에 나누어 띄우지 않고 하나의 화면(섹션)으로 전체를 쓴다. 채팅으로는 사이드바나 닫기(×)로 돌아간다
   pane = h("section", { id: "code-pane", "aria-label": "POSCHAT Code", hidden: true });
-  const resizer = h("div", { id: "code-resizer", role: "separator", "aria-orientation": "vertical", tabindex: "0",
-    "aria-label": "코드 화면 너비 조절 (왼쪽·오른쪽 화살표)", title: "끌어서 너비 조절", hidden: true });
-  resizer.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    resizer.setPointerCapture(e.pointerId);
-    const move = (ev) => codeSetWidth(window.innerWidth - ev.clientX);
-    const up = () => { resizer.removeEventListener("pointermove", move); resizer.removeEventListener("pointerup", up); };
-    resizer.addEventListener("pointermove", move);
-    resizer.addEventListener("pointerup", up);
-  });
-  resizer.addEventListener("keydown", (e) => {
-    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-    e.preventDefault();
-    codeSetWidth(pane.getBoundingClientRect().width + (e.key === "ArrowLeft" ? 40 : -40));
-  });
-  $("#app").append(resizer, pane);
+  $("#app").append(pane);
   try {
-    const w = Number(localStorage.getItem("poschat.codeWidth"));
-    if (w) codeSetWidth(w);
     const b = Number(localStorage.getItem("poschat.codeBottom"));
     if (b) document.documentElement.style.setProperty("--code-bottom-h", b + "px");
   } catch { /* 기본 너비 */ }
   codeBuild(pane);
   return pane;
-}
-
-function codeSetWidth(px) {
-  const max = Math.max(420, window.innerWidth - 380);
-  const w = Math.round(Math.min(max, Math.max(420, px)));
-  document.documentElement.style.setProperty("--code-w", w + "px");
-  try { localStorage.setItem("poschat.codeWidth", String(w)); } catch { /* 무시 */ }
 }
 
 function codeBuild(pane) {
@@ -147,8 +124,7 @@ function codeBuild(pane) {
       btn("files", "파일 목록 보이기·숨기기", () => codeToggleFiles(), { id: "code-files-toggle", "aria-pressed": "true" }),
       h("h2", { class: "code-title", id: "code-title" }, "코드"),
       h("small", { class: "code-ws", id: "code-ws" }, ""),
-      btn("expand", "코드 화면 크게 보기(채팅 숨기기)", () => codeToggleFull(), { id: "code-full", "aria-pressed": "false" }),
-      btn("close", "코드 화면 닫기", () => codeLeave())),
+      btn("close", "코드 화면 닫고 채팅으로", () => codeLeave())),
     h("div", { class: "code-body", id: "code-body" },
       h("aside", { class: "code-files", id: "code-files", "aria-label": "파일" }),
       h("div", { class: "code-main" },
@@ -179,28 +155,21 @@ function codeToggleFiles(on = !CODE.filesOpen) {
   $("#code-files-toggle").setAttribute("aria-pressed", String(on));
 }
 
-function codeToggleFull(on = !CODE.full) {
-  CODE.full = on;
-  $("#app").classList.toggle("code-full", on);
-  $("#code-full").setAttribute("aria-pressed", String(on));
-  $("#code-full").classList.toggle("active", on);
-}
-
 async function codeToggle() {
   if (CODE.open) return codeLeave();
   return codeShow();
 }
 
 async function codeShow() {
-  if (window.BR && BR.open && window.browserClose) await browserClose();  // 오른쪽 화면은 하나만
+  if (window.BR && BR.open && window.browserClose) await browserClose();  // 코드 화면은 채팅·옆 화면을 모두 가린다
   if (window.paperLeave) paperLeave();
   if (window.pageLeave) pageLeave();
   if (window.poLeave) poLeave();
   CODE.open = true;
   const pane = codePane();
   pane.hidden = false;
-  $("#code-resizer").hidden = isNarrow();
   $("#app").classList.add("code-open");
+  document.querySelectorAll(".thread.active").forEach((t) => t.classList.remove("active"));  // 다른 화면처럼 대화 선택을 뺀다
   $("#btn-code")?.classList.add("active");
   $("#btn-code")?.setAttribute("aria-pressed", "true");
   if (isNarrow()) { setCollapsed(true); if (CODE.tabs.length) codeToggleFiles(false); }
@@ -220,10 +189,9 @@ async function codeShow() {
 function codeLeave() {
   if (!CODE.open) return;
   CODE.open = false;
-  codeToggleFull(false);
   $("#code-pane").hidden = true;
-  $("#code-resizer").hidden = true;
   $("#app").classList.remove("code-open");
+  if (typeof renderSidebar === "function") renderSidebar();  // 채팅으로 돌아오면 지금 대화를 다시 표시
   $("#btn-code")?.classList.remove("active");
   $("#btn-code")?.setAttribute("aria-pressed", "false");
   // 닫혀 있으면 에이전트 수정은 예전 승인 창으로 묻는다(대기 중인 제안도 넘긴다)
@@ -785,7 +753,7 @@ async function codeAsk(t, kind, preset) {
   if (!input.value.trim()) input.value = res.question;
   autoresize();
   updateSend();
-  if (isNarrow() || CODE.full) { codeToggleFull(false); if (isNarrow()) codeLeave(); }
+  codeLeave();  // 채팅으로 돌아가 묻는다(열린 탭·저장하지 않은 내용은 그대로 남고, 사이드바 '코드'로 다시 온다)
   input.focus();
   input.select();
   toast("코드를 첨부했습니다. 질문을 고쳐 보내세요");
@@ -1291,11 +1259,6 @@ function codeInit() {
   if (media.addEventListener) media.addEventListener("change", onTheme);
   $("#btn-code")?.addEventListener("click", () => codeToggle());
   window.addEventListener("focus", () => { if (CODE.open) codeCheckDisk(); });
-  let timer = null;
-  window.addEventListener("resize", () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => { if (CODE.open) $("#code-resizer").hidden = isNarrow() || CODE.full; }, 200);
-  });
 }
 
 window.codeShow = codeShow;

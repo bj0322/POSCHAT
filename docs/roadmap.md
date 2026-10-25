@@ -1,6 +1,6 @@
 # POSCHAT 로드맵과 다음 작업 (v1.16부터)
 
-마지막 갱신: 2026-10-25, v1.17.1 릴리스 시점. 작업 지침은 저장소 최상위 [CLAUDE.md](../CLAUDE.md).
+마지막 갱신: 2026-10-25, v1.17.2 릴리스 시점. 작업 지침은 저장소 최상위 [CLAUDE.md](../CLAUDE.md).
 
 **플랫폼 정책(2026-10, 사용자 지시)**: 안드로이드 앱은 따로 요청하지 않으면 기능을 맞추지 않는다. 데스크톱(Windows·macOS)만 손본다.
 공유 Python·화면 코드는 안드로이드 빌드에도 들어가므로 새 모듈은 계속 공유 목록에 넣고, 안드로이드에서 안 되는 기능은 '쓸 수 없음'으로 막는다. CI의 android 작업과 APK 자산은 그대로 둔다.
@@ -15,7 +15,7 @@
 | 1.16 | Code 에이전트(작업 탭), POSCHAT Lab, AI 브라우저 에이전트, 사이드바 정리, 보안 검토 반영(사이트 승인 kind `site`, `.git` 수정 금지) | 릴리스 |
 | 1.17 | Adaptive Hybrid AI Engine: 로컬 AI(Ollama)·자동 모델 선택(4정책)·3단계(경량 Cloud·프런티어 상담)·품질 검증·승격·비용 통계·벤치마크 | 릴리스(3단계·캐싱은 기본 꺼짐, 실제 모델 측정은 남음) |
 | 1.17.1 | Code 에이전트 2(Claude Code·Codex처럼): 권한 모드 4가지·다시 묻지 않기 규칙·작업 중 지시·슬래시 명령·지시별 되돌리기·AGENTS.md·격리 작업 공간(git worktree)·새 도구, 손익분기 실험 도구 | 릴리스 |
-| 1.17.2 | Code 에이전트 3(터미널처럼, 사용자 요청 '완벽히 CLI처럼'): 작업 탭 전체를 Claude Code 같은 터미널로 — `● Read(…) ⎿` 기록·줄 번호 diff·접힌 출력(Ctrl+O), 기록 안의 승인 선택지(1·2·3·Esc, 거부하며 다르게 하라고 알리기), Shift+Tab 모드(작업 중에도), Esc 멈춤·Esc 두 번 되돌리기, ↑↓ 지난 입력, `/`·`@` 자동 완성, `!명령`·`#메모`·`@파일`, 프로젝트 명령(.poschat/.claude commands), /clear /resume /status /diff /revert /todos /permissions /memory /worktree /apply /keep /discard /delete | 작업 브랜치(릴리스 전) |
+| 1.17.2 | Code 에이전트 3(터미널처럼, 사용자 요청 '완벽히 CLI처럼'): 작업 탭 전체를 Claude Code 같은 터미널로 — `● Read(…) ⎿` 기록·줄 번호 diff·접힌 출력(Ctrl+O), 기록 안의 승인 선택지(1·2·3·Esc, 거부하며 다르게 하라고 알리기), Shift+Tab 모드(작업 중에도), Esc 멈춤·Esc 두 번 되돌리기, ↑↓ 지난 입력, `/`·`@` 자동 완성, `!명령`·`#메모`·`@파일`, 프로젝트 명령(.poschat/.claude commands), /clear /resume /status /diff /revert /todos /permissions /memory /worktree /apply /keep /discard /delete. 코드는 채팅과 나누지 않는 하나의 전체 화면 | 릴리스 |
 
 ## 지금 할 일
 

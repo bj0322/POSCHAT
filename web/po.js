@@ -45,6 +45,7 @@ const isRecordingNote = (id) => !!recording() && recording().note_id === id;
 
 /* ---------- 화면 전환 ---------- */
 async function poOpen() {
+  if (window.codeLeave) codeLeave();  // 코드도 하나의 화면(탭은 그대로)
   if (window.pageLeave) pageLeave();
   PO.open = true;
   for (const sel of ["#scroll", "#composer-wrap", "#thread-model-picker", "#agent-label"]) $(sel).hidden = true;
