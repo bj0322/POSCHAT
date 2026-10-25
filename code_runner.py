@@ -10,6 +10,8 @@
 - 기록(RunRecord): 명령·작업 폴더·입력 파일·종료 코드·실행 시간·출력 끝부분·출력에서 찾은 소스 위치(파일:줄).
   v1.16 Lab이 실험 실행 기록으로 다시 쓸 수 있게 JSON 한 줄씩 남긴다.
 
+원격(SSH) 작업 폴더(1.18)면 같은 명령을 서버의 원격 도우미가 실행하고 출력을 흘려보낸다(remote_client.RemoteProc).
+
 작업 폴더는 명령이 시작하는 위치일 뿐 보안 격리(샌드박스)가 아니다. 명령은 사용자 권한으로 PC 전체에 닿을 수 있다.
 """
 import codecs
@@ -27,6 +29,7 @@ from dataclasses import asdict, dataclass, field
 
 import code_workspace as cw
 import privacy
+import remote_fs
 
 DEFAULT_TIMEOUT = 600
 MAX_TIMEOUT = 3600
@@ -158,19 +161,31 @@ def find_locations(workspace, text, limit=50):
     out, seen = [], set()
     try:
         root = cw.root_of(workspace)
-    except cw.WorkspaceError:
+    except (cw.WorkspaceError, OSError):
         return out
+    remote = None
+    if remote_fs.is_remote(root):   # 원격(SSH): 나온 경로들을 서버에서 한 번에 확인한다
+        raws = {m.group("path") for line in text.splitlines() for rx in LOCATION_PATTERNS for m in rx.finditer(line)}
+        try:
+            remote = remote_fs.call(root, "runner.locations", root.path, sorted(raws)) if raws else {}
+        except OSError:
+            return out
     for line in text.splitlines():
         for rx in LOCATION_PATTERNS:
             for m in rx.finditer(line):
                 raw = m.group("path")
-                try:
-                    p = os.path.realpath(raw if os.path.isabs(raw) else os.path.join(root, raw))
-                    rel = os.path.relpath(p, root).replace("\\", "/")
-                except ValueError:
-                    continue
-                if rel.startswith("..") or not os.path.isfile(p):
-                    continue
+                if remote is not None:
+                    rel = remote.get(raw)
+                    if not rel:
+                        continue
+                else:
+                    try:
+                        p = os.path.realpath(raw if os.path.isabs(raw) else os.path.join(root, raw))
+                        rel = os.path.relpath(p, root).replace("\\", "/")
+                    except ValueError:
+                        continue
+                    if rel.startswith("..") or not os.path.isfile(p):
+                        continue
                 key = (rel, int(m.group("line")))
                 if key in seen:
                     continue
@@ -191,6 +206,15 @@ def input_files(workspace, command, limit=20):
     except ValueError:
         words = command.split()
     out = []
+    if remote_fs.is_remote(workspace):
+        cand = [w.strip("\"'") for w in words[1:]]
+        cand = [w for w in cand if w and not w.startswith("-")][:limit * 3]
+        if not cand:
+            return out
+        try:
+            return remote_fs.call(workspace, "runner.input_files", remote_fs.split(workspace)[1], cand, limit)
+        except OSError:
+            return out
     for w in words[1:]:
         w = w.strip("\"'")
         if not w or w.startswith("-") or len(out) >= limit:
@@ -282,6 +306,7 @@ class RunManager:
         for k, v in (extra_env or {}).items():
             if not SECRET_ENV.search(str(k)):
                 env[str(k)] = str(v)
+        remote = remote_fs.is_remote(root)
         popen = dict(cwd=str(root), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                      env=env, shell=True)
         if os.name == "nt":
@@ -290,13 +315,17 @@ class RunManager:
             popen["start_new_session"] = True  # 중지할 때 자식까지 한꺼번에
             popen["executable"] = "/bin/sh"
         try:
-            proc = subprocess.Popen(command, **popen)
+            if remote:   # 원격(SSH) 작업 폴더: 서버에서 실행한다(서버의 환경 변수에서도 비밀 이름은 뺀다)
+                extra = {k: v for k, v in env.items() if k in (extra_env or {}) or k.startswith("PYTHON")}
+                proc = remote_fs.connection(root.host).popen(root.path, command, extra, SECRET_ENV.pattern)
+            else:
+                proc = subprocess.Popen(command, **popen)
         except OSError as e:
             raise RunnerError(f"명령을 시작하지 못했습니다: {e}")
         with self._lock:
             self._runs[rec.id] = rec
             self._procs[rec.id] = proc
-            if os.name == "nt":
+            if os.name == "nt" and not remote:
                 job = _win_job(proc)
                 if job is not None:
                     self._jobs[rec.id] = job
@@ -436,6 +465,9 @@ class RunManager:
     @staticmethod
     def _kill(proc, job=None):
         """프로세스와 그 자식까지 끝낸다. 셸이 먼저 끝났어도 같은 그룹(POSIX)·작업 개체(Windows)의 자식을 끝낸다."""
+        if hasattr(proc, "kill_tree"):   # 원격 명령(remote_client.RemoteProc): 서버의 도우미가 그룹을 끝낸다
+            proc.kill_tree()
+            return
         if os.name == "nt":
             if job is not None and _win_terminate_job(job):
                 return

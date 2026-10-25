@@ -18,6 +18,7 @@ import subprocess
 import time
 
 import code_workspace as cw
+from remote_fs import remote_ok
 
 TIMEOUT = 30
 MAX_DIFF_BYTES = 400_000
@@ -133,6 +134,7 @@ def _paths(workspace, paths):
     return out
 
 
+@remote_ok
 def repo_info(workspace):
     root = cw.root_of(workspace)
     if not available():
@@ -154,6 +156,7 @@ def _entry(path, x, y, orig=""):
             "label": "충돌" if conflict else STATE_NAMES.get(y if y != "." else x, "")}
 
 
+@remote_ok
 def status(workspace):
     """현재 가지·앞서고 뒤처진 커밋 수·변경 파일. 작업 폴더가 저장소 안의 하위 폴더면 그 안의 파일만."""
     info = repo_info(workspace)
@@ -208,6 +211,7 @@ def status(workspace):
     return out
 
 
+@remote_ok
 def diff(workspace, rel, staged=False):
     """파일 하나의 차이(unified). 새 파일(추적 안 함)은 빈 파일과의 차이로 만든다."""
     rel = _paths(workspace, [rel])[0]
@@ -228,6 +232,7 @@ def diff(workspace, rel, staged=False):
             "truncated": truncated}
 
 
+@remote_ok
 def diff_all(workspace, staged=False, max_bytes=MAX_DIFF_BYTES):
     """작업 폴더 전체 차이(커밋 메시지·리뷰 요청용)."""
     root = cw.root_of(workspace)
@@ -237,12 +242,14 @@ def diff_all(workspace, staged=False, max_bytes=MAX_DIFF_BYTES):
     return {"diff": text[:max_bytes].decode("utf-8", errors="replace"), "truncated": len(text) > max_bytes}
 
 
+@remote_ok
 def stage(workspace, paths):
     rels = _paths(workspace, paths)
     _git(cw.root_of(workspace), ["add", "--", *rels])
     return {"staged": rels}
 
 
+@remote_ok
 def unstage(workspace, paths):
     rels = _paths(workspace, paths)
     root = cw.root_of(workspace)
@@ -255,6 +262,7 @@ def unstage(workspace, paths):
     return {"unstaged": rels}
 
 
+@remote_ok
 def hooks(workspace):
     """커밋할 때 git이 실행할 저장소 훅 이름(pre-commit 등). 화면이 커밋 확인 창에 보이고 끌 수 있게 한다."""
     root = cw.root_of(workspace)
@@ -272,6 +280,7 @@ def hooks(workspace):
     return found
 
 
+@remote_ok
 def commit(workspace, message, no_verify=False):
     """스테이지한 변경만 커밋한다(사용자가 메시지를 확인한 뒤 화면에서 부른다). no_verify면 저장소 훅을 실행하지 않는다."""
     message = str(message or "").strip()

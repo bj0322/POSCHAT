@@ -5,6 +5,7 @@
 read와 search는 이 모듈로 문서를 텍스트로 바꿔 다룬다. 문서를 만들거나 고치는 일은
 내장 오피스 MCP 서버(office_mcp.py)가 맡는다.
 """
+import os
 import re
 import struct
 import zipfile
@@ -28,7 +29,7 @@ class DocumentError(Exception):
 
 
 def is_document(path):
-    suffix = Path(path).suffix.lower()
+    suffix = os.path.splitext(str(path))[1].lower()   # 원격 경로(remote_fs.RPath, ssh://…)도 이름으로만 본다
     return suffix in DOCUMENT_EXTS or suffix in LEGACY_EXTS
 
 

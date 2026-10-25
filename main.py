@@ -34,6 +34,7 @@ from code_agent import CodeAgentApi
 from code_api import CodeApi
 from lab_api import LabApi
 from paper_api import PaperApi
+from ssh_api import SshApi
 from workspace_api import WorkspaceApi
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
 from api import DEFAULT_MODEL, MODELS, RESPONSES_MODELS, ApiError, ApiSettings
@@ -98,10 +99,11 @@ def _installed_package_licenses():
     return sorted(items, key=lambda x: x["name"].lower())
 
 
-class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, AdaptiveApi):
+class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, LabApi, AdaptiveApi):
     """JS에서 호출하는 API. 밑줄로 시작하는 이름은 JS에 노출되지 않는다. '연결·도구' 창의 API는 WorkspaceApi,
     브라우저는 BrowserApi(1.13), 논문은 PaperApi(1.14), 코드 편집기는 CodeApi(1.15),
-    Code 에이전트는 CodeAgentApi(1.16), 실험 기록은 LabApi(1.16), AI 실행 정책·로컬 AI는 AdaptiveApi(1.17)에 있다."""
+    Code 에이전트는 CodeAgentApi(1.16), 실험 기록은 LabApi(1.16), AI 실행 정책·로컬 AI는 AdaptiveApi(1.17),
+    코드 화면의 원격(SSH) 작업 폴더는 SshApi(1.18)에 있다."""
 
     def __init__(self):
         storage.ensure_dirs()
@@ -1385,6 +1387,13 @@ def selftest():
     lines.append(f"stt: {stt.selfcheck()}")
     import terminal
     lines.append(f"terminal: {terminal.selfcheck()}")
+    import ssh_remote   # 1.18: paramiko와 암호 라이브러리(cryptography·bcrypt·pynacl)가 묶였는지
+    lines.append(f"ssh: {ssh_remote.selfcheck()}")
+    import remote_client   # 1.18: 서버로 보낼 원격 도우미 소스가 설치본에 들어 있는지
+    try:
+        lines.append(f"remote: OK {len(remote_client.bundle())} bytes")
+    except Exception as e:
+        lines.append(f"remote: FAIL {type(e).__name__}: {e}")
     import tempfile
     import rag
     import sync
@@ -1532,6 +1541,7 @@ def run_app():
         bridge._ca_shutdown()  # Code 에이전트 작업을 멈춘다
         bridge.adaptive_pull_cancel()  # 1.17: 받던 로컬 모델이 있으면 멈춘다(Ollama가 다음에 이어 받는다)
         bridge._code_shutdown()  # 실행 패널에서 돌던 명령을 끝낸다(프로세스가 남지 않게)
+        bridge._ssh_shutdown()  # 1.18: SSH 연결을 닫는다(서버의 도우미·명령도 함께 끝난다)
         bridge._mcp.shutdown()
         if bridge._browser_obj is not None:
             bridge._browser_obj.close()

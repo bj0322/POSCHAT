@@ -335,6 +335,84 @@ class CodeUiTests(unittest.TestCase):
             finally:
                 browser.close()
 
+    @unittest.skipUnless(os.name != "nt" and importlib.util.find_spec("paramiko") is not None, "paramiko·POSIX 필요")
+    def test_ssh_remote_folder(self):
+        """1.18: 코드 화면 위 'SSH'로 서버(시험용 SSH 서버)에 연결 → 호스트 키 확인 → 암호·OTP → 폴더 고르기 → 원격 파일·터미널 →
+        연결이 끊기면 '다시 연결' → 로컬로 되돌리기."""
+        import tempfile
+
+        import fake_ssh
+        from playwright.sync_api import sync_playwright
+
+        home = Path(tempfile.mkdtemp()) / "server-home"
+        (home / "chip").mkdir(parents=True)
+        (home / "chip" / "alu.sv").write_text("module alu; endmodule\n", encoding="utf-8")
+        env = patch.dict(os.environ, {"HOME": str(home), "SSH_AUTH_SOCK": ""})
+        env.start()
+        srv = fake_ssh.FakeSSH(home=str(home), allowed=("keyboard-interactive",)).__enter__()
+        target = f"student@127.0.0.1:{srv.port}"
+        with sync_playwright() as p:
+            browser, page, errors = self.open(p)
+            try:
+                self.open_code(page)
+                page.click("#code-ssh")
+                page.wait_for_selector("#ssh-target")
+                page.fill("#ssh-target", target)
+                page.click("#ssh-connect")
+                page.wait_for_selector(".modal:has-text('처음 연결하는 서버') code")
+                self.assertIn("SHA256:", page.inner_text(".modal:has-text('처음 연결하는 서버') code"))
+                self.shot(page, "code-ssh-hostkey")
+                page.click(".modal:has-text('처음 연결하는 서버') button:has-text('받아들이고 연결')")
+                page.wait_for_selector(".modal:has-text('POSTECH 로그인') #ssh-field-1")
+                self.assertEqual(page.get_attribute("#ssh-field-0", "type"), "password")
+                page.fill("#ssh-field-0", "pw-1234")
+                page.fill("#ssh-field-1", "246810")
+                page.keyboard.press("Enter")
+                page.wait_for_selector("#ssh-browser .ssh-dir:has-text('chip')", timeout=20000)
+                self.assertIn("연결됨", page.inner_text("#ssh-status"))
+                self.shot(page, "code-ssh-browse")
+                page.click("#ssh-browser .ssh-dir:has-text('chip')")
+                page.wait_for_function("SSH.folder && SSH.folder.path.endsWith('/chip')")
+                page.click("#ssh-open")
+                page.wait_for_selector(".code-row[data-path='alu.sv']")
+                self.assertIn(f"SSH {target}:", page.inner_text("#code-ws"))
+                self.assertEqual(page.locator(".modal").count(), 0)
+                self.open_file(page, "", "alu.sv")
+                self.assertIn("module alu", page.inner_text(".code-tabpane:not([hidden]) .cm-content"))
+                # 터미널: 서버의 그 폴더에서 열린다
+                page.wait_for_function("TERM.sessions.some((s) => s.title.includes('ssh '))", timeout=20000)
+                tid = page.evaluate("TERM.sessions.find((s) => s.title.includes('ssh ')).id")
+                page.evaluate(f"termShow('{tid}', true)")
+                page.click(".code-term:not([hidden]) .xterm")
+                page.keyboard.type("pwd")
+                page.keyboard.press("Enter")
+                text = (f"() => {{ const b = TERM.sessions.find((s) => s.id === '{tid}').term.buffer.active; let t = ''; "
+                        "for (let i = 0; i < b.length; i++) t += b.getLine(i).translateToString(true) + '\\n'; return t; }")
+                page.wait_for_function(f"({text})().includes('/chip')", timeout=15000)
+                self.shot(page, "code-ssh-open")
+                # 연결이 끊기면 다시 연결 안내
+                page.evaluate("api().code_ssh_disconnect()")
+                page.wait_for_selector("#code-ssh-reconnect", timeout=15000)
+                self.assertIn("offline", page.get_attribute("#code-ws", "class"))
+                page.click("#code-ssh-reconnect")
+                page.wait_for_selector(".modal:has-text('POSTECH 로그인') #ssh-field-1")   # 호스트 키는 다시 묻지 않는다
+                page.fill("#ssh-field-0", "pw-1234")
+                page.fill("#ssh-field-1", "246810")
+                page.click(".modal:has-text('POSTECH 로그인') button:has-text('확인')")
+                page.wait_for_selector(".code-row[data-path='alu.sv']", timeout=20000)
+                # 로컬로 되돌리기
+                page.click("#code-ssh")
+                page.click(".modal button:has-text('로컬 작업 폴더로')")
+                page.wait_for_selector(".code-row[data-path='rtl']")
+                self.assertNotIn("SSH", page.inner_text("#code-ws"))
+                self.assertEqual([e for e in errors if "favicon" not in e], [])
+            finally:
+                browser.close()
+                self.bridge.code_ssh_local()
+                self.bridge._ssh_shutdown()
+                srv.stop()
+                env.stop()
+
     def test_code_pane_fits_a_phone_screen(self):
         from playwright.sync_api import sync_playwright
 

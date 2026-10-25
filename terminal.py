@@ -7,6 +7,7 @@
   SSH 에이전트(SSH_AUTH_SOCK)·로그인 세션 정보 몇 가지는 넘긴다.
 - 읽는 스레드가 출력을 조금씩(약 30ms) 모아 on_output(id, 글)로 보낸다. 다시 그릴 때를 위해 끝부분(200KB)을 남긴다.
 - 앱이 닫히면 모든 셸과 그 자식 프로세스를 끝낸다. 안드로이드에서는 쓰지 않는다(SUPPORTED).
+- 원격(SSH) 작업 폴더면 서버의 셸(SSH pty 채널, ssh_remote)을 같은 방식(read·write·resize·exit_code·close)으로 쓴다.
 """
 import codecs
 import os
@@ -19,6 +20,7 @@ import time
 import uuid
 
 import code_runner
+import remote_fs
 
 MAX_TERMINALS = 6
 SCROLLBACK = 200_000
@@ -208,13 +210,22 @@ class TerminalManager:
                 raise TerminalError(f"터미널은 {MAX_TERMINALS}개까지 열 수 있습니다. 쓰지 않는 터미널을 닫으세요.")
             self.count += 1
             n = self.count
-        exe, args, name = shell or default_shell()
         cols, rows = _clamp(cols, 2, 500, 80), _clamp(rows, 2, 300, 24)
-        cwd = cwd if cwd and os.path.isdir(cwd) else os.path.expanduser("~")
-        try:
-            backend = (_WinPty if os.name == "nt" else _PosixPty)([exe, *args], cwd, terminal_env(), cols, rows)
-        except OSError as e:
-            raise TerminalError(f"셸을 시작하지 못했습니다: {e.strerror or e}") from e
+        if remote_fs.is_remote(cwd):   # 원격(SSH) 작업 폴더: 서버의 로그인 셸을 그 폴더에서 연다
+            host, path = remote_fs.split(cwd)
+            name = "ssh " + host
+            try:
+                backend = remote_fs.connection(host).shell(path, cols, rows)
+            except OSError as e:
+                raise TerminalError(f"원격 터미널을 열지 못했습니다: {e}") from e
+            cwd = str(cwd)
+        else:
+            exe, args, name = shell or default_shell()
+            cwd = cwd if cwd and os.path.isdir(cwd) else os.path.expanduser("~")
+            try:
+                backend = (_WinPty if os.name == "nt" else _PosixPty)([exe, *args], cwd, terminal_env(), cols, rows)
+            except OSError as e:
+                raise TerminalError(f"셸을 시작하지 못했습니다: {e.strerror or e}") from e
         s = Session("term-" + uuid.uuid4().hex[:8], f"{n}: {name}", cwd, backend)
         with self.lock:
             self.sessions[s.id] = s

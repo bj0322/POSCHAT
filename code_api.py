@@ -8,6 +8,7 @@
 - Git: code_git (상태·차이·스테이지·커밋, 푸시 없음)
 - 명령 실행: code_runner (사용자 승인 뒤 실행, 출력 스트리밍) — 1.18부터 코드 화면에는 쓰지 않고 Lab·에이전트가 쓴다
 - 터미널(1.18): terminal (아래 패널의 대화형 셸, Windows ConPTY·macOS/Linux pty). 사용자가 직접 치는 터미널이라 승인 창이 없다
+- 원격(SSH) 작업 폴더(1.18): ssh_api가 연결을 맡고, 작업 폴더가 'ssh://…'이면 위 모듈들이 서버의 원격 도우미에서 같은 일을 한다(remote_fs)
 
 모든 API는 앱 화면(js_api)에서만 부를 수 있다. 웹페이지 뷰·PDF 화면에는 js_api가 없다(browser.py·paper.js).
 입력은 여기서 모두 검사한다(경로는 code_workspace.clean_rel, 길이·형식).
@@ -35,6 +36,7 @@ import code_git
 import code_runner
 import code_workspace as cw
 import connectors
+import remote_fs
 import storage
 import terminal
 
@@ -119,7 +121,7 @@ class CodeApi:
         }
 
     def _code_ws(self):
-        ws = self._workspace()
+        ws = self._code_ws_opt()   # 1.18: 원격(SSH) 작업 폴더면 'ssh://…'(ssh_api)
         if not ws:
             raise cw.WorkspaceError("작업 폴더가 지정되지 않았습니다. 사이드바 아래의 '작업 폴더'에서 폴더를 고르세요.")
         return ws
@@ -152,16 +154,20 @@ class CodeApi:
     # ---- 화면 상태·설정 ----
 
     def code_state(self):
-        ws = self._workspace()
+        ws = self._code_ws_opt()
         android = self._code_android()
         conf = self._config.get("code") or {}
         store = self._code_store()
+        remote = self._ssh_info()
+        git = (remote.get("server") or {}).get("git", True) if remote else code_git.available()
         return {
             "ok": True,
-            "workspace": {"path": ws, "name": os.path.basename(ws.rstrip("\\/")) if ws else ""},
+            "workspace": {"path": ws, "name": os.path.basename(ws.rstrip("\\/")) if ws else "", "remote": bool(remote)},
+            "remote": remote,
             "platform": "android" if android else {"win32": "windows", "darwin": "mac"}.get(sys.platform, "linux"),
-            "features": {"run": not android, "git": not android and code_git.available(), "review": not android,
-                         "edit": True, "search": True, "ask": True, "terminal": not android and terminal.SUPPORTED},
+            "features": {"run": not android, "git": not android and git, "review": not android,
+                         "edit": True, "search": True, "ask": True, "terminal": not android and terminal.SUPPORTED,
+                         "ssh": self._ssh_supported()},
             "settings": self._code_settings(),
             "recent": (conf.get("recent") or {}).get(ws, []) if ws else [],
             "history": conf.get("history") or [],
@@ -250,8 +256,11 @@ class CodeApi:
 
     def code_delete(self, path):
         """화면에서 사용자가 확인한 뒤 부른다. 파일은 데이터 폴더의 code-trash로 옮긴다(되살릴 수 있다)."""
-        return self._code_call(lambda: {"deleted": cw.delete_to_trash(self._code_ws(), str(path),
-                                                                        storage.APP_DIR / "code-trash")})
+        def go():
+            ws = self._code_ws()
+            trash = None if remote_fs.is_remote(ws) else storage.APP_DIR / "code-trash"   # 원격은 서버의 ~/.cache/poschat/trash
+            return {"deleted": cw.delete_to_trash(ws, str(path), trash)}
+        return self._code_call(go)
 
     def code_search(self, query, mode="name", regex=False, case=False):
         def go():
@@ -591,7 +600,7 @@ class CodeApi:
     def _code_term_call(self, fn):
         try:
             return {"ok": True, **(fn() or {})}
-        except (terminal.TerminalError, cw.WorkspaceError) as e:
+        except (terminal.TerminalError, cw.WorkspaceError, remote_fs.RemoteError) as e:
             return {"ok": False, "error": str(e)}
 
     def code_term_open(self, cols=80, rows=24):
@@ -599,7 +608,7 @@ class CodeApi:
         def go():
             if self._code_android():
                 raise terminal.TerminalError("안드로이드에서는 터미널을 쓸 수 없습니다(PC 앱에서 쓰세요).")
-            return {"terminal": self._code_terms().open(self._workspace(), cols, rows).to_dict()}
+            return {"terminal": self._code_terms().open(self._code_ws_opt(), cols, rows).to_dict()}
         return self._code_term_call(go)
 
     def code_term_write(self, term_id, data):
@@ -626,7 +635,9 @@ class CodeApi:
             if not body:
                 raise terminal.TerminalError("물어볼 터미널 출력이 없습니다.")
             body = code_runner.Masker(self._code_secrets()).feed(body, final=True)
-            wrapped = connectors.wrap_untrusted(f"작업 폴더: {self._workspace()}\n\n```\n{body}\n```\n", f"{title} 출력")
+            ws = self._code_ws_opt()
+            where = remote_fs.label(ws) + " (SSH 원격)" if ws and remote_fs.is_remote(ws) else ws
+            wrapped = connectors.wrap_untrusted(f"작업 폴더: {where}\n\n```\n{body}\n```\n", f"{title} 출력")
             name = re.sub(r"[\\/:*?\"<>|]", "_", f"터미널 출력 - {str(title)[:30]}.md")
             return {"attachments": [self._code_attach(name, wrapped)],
                     "question": "이 터미널 출력에서 무슨 일이 일어났는지 설명하고, 오류가 있으면 원인과 고치는 방법을 알려 줘."}

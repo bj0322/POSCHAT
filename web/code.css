@@ -325,3 +325,40 @@ textarea.code-input { resize: vertical; }
 @media (prefers-color-scheme: dark) { .code-term { background: #151515; } }
 .code-term .xterm-viewport { background-color: transparent !important; }   /* 터미널 아래 남는 줄이 검게 보이지 않게(바탕은 .code-term) */
 .code-side-body .code-git-actions .btn { padding: 3px 9px; font-size: 12px; }
+
+/* ---------- 1.18 SSH 원격 작업 폴더(web/code-ssh.js) ---------- */
+.code-ws.remote { color: var(--text-2); }
+.code-ws.remote::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 6px 1px 2px;
+  background: var(--ok); vertical-align: middle; }
+.code-ws.remote.offline::before { background: var(--danger); }
+.code-ssh-btn { margin-right: 4px; }
+.code-ssh-btn.active { background: var(--active); }
+.ssh-dialog { display: flex; flex-direction: column; gap: 10px; }
+.ssh-help { margin: 0; font-size: 13px; line-height: 1.5; }
+.ssh-row { display: flex; gap: 6px; align-items: center; }
+.ssh-row .code-input { flex: 1; min-width: 0; }
+.ssh-sub { font-size: 12.5px; color: var(--text-3); margin-bottom: 4px; }
+.ssh-status { font-size: 13px; min-height: 1.4em; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.ssh-status:empty { display: none; }
+.ssh-status.failed, .ssh-status.lost { color: var(--danger); }
+.ssh-status.connected b { color: var(--ok); }
+.ssh-browser { border: 1px solid var(--border); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.ssh-browser[hidden] { display: none; }
+.ssh-dirs { max-height: 260px; overflow: auto; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 6px; }
+.ssh-dir { text-align: left; border: 0; background: none; padding: 5px 8px; font: inherit; font-size: 13px; color: var(--text); cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ssh-dir:hover, .ssh-dir:focus-visible { background: var(--active); }
+.ssh-dir.up { color: var(--text-2); }
+.ssh-empty { padding: 8px; font-size: 13px; }
+.ssh-hidden { font-size: 12.5px; color: var(--text-2); display: flex; align-items: center; gap: 4px; }
+.ssh-git { font-size: 12px; color: var(--text-2); border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; }
+.ssh-recent { display: flex; flex-direction: column; gap: 2px; }
+.ssh-recent-row { display: flex; align-items: center; gap: 2px; }
+.ssh-recent-open { flex: 1; min-width: 0; text-align: left; border: 0; background: none; padding: 5px 6px; border-radius: 6px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ssh-recent-open:hover { background: var(--active); }
+.ssh-recent-open span { color: var(--text-2); }
+.ssh-fp { display: flex; flex-direction: column; gap: 2px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; margin: 8px 0; }
+.ssh-fp code { font-size: 12.5px; word-break: break-all; }
+.ssh-secret { display: flex; flex-direction: column; gap: 8px; }
+.ssh-field { display: flex; flex-direction: column; gap: 3px; font-size: 13px; }

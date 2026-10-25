@@ -37,8 +37,8 @@ val syncSharedPython by tasks.registering(Sync::class) {
             "browser.py", "browser_api.py",
             // 1.14: 논문 읽기(PDF.js 화면은 web/vendor/pdfjs)
             "paper.py", "paper_api.py",
-            // 1.18: Code 화면의 터미널(안드로이드에서는 쓸 수 없음으로 표시)
-            "terminal.py",
+            // 1.18: Code 화면의 터미널, SSH 원격 작업 폴더(안드로이드에서는 쓸 수 없음으로 표시. ssh_remote.py는 paramiko라 데스크톱 전용)
+            "terminal.py", "remote_fs.py", "remote_client.py", "remote_helper.py", "ssh_api.py",
             // 1.10: 에이전트 자동화(안드로이드에서는 쓸 수 없음으로 표시)·관측
             "runner_mcp.py", "telemetry.py", "evals.py",
             // 1.15: 화면 이벤트 큐(B1), POSCHAT Code(안드로이드는 열기·편집·저장·묻기만, Git·실행은 막는다)

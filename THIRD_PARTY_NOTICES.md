@@ -76,11 +76,18 @@ document reading and the built-in Office MCP servers:
 | pythonnet, clr_loader (Windows) / pyobjc (macOS) | pywebview platform backends | MIT |
 | CPython | The bundled Python interpreter | PSF-2.0 |
 | pywinpty (Windows) | Code terminal pseudo console (ConPTY; bundles winpty and Microsoft's OpenConsole/conpty) | MIT |
+| paramiko | SSH connection for remote work folders in the Code screen | LGPL-2.1-or-later |
+| bcrypt, PyNaCl (bundles libsodium), invoke (via paramiko) | SSH key decryption and signatures, paramiko helpers | Apache-2.0, Apache-2.0 (libsodium: ISC), BSD-2-Clause |
 | PyInstaller bootloader | Starts the bundled app | GPL-2.0-or-later with the PyInstaller bootloader exception |
 
 The desktop builds copy the license and notice files that each bundled
 Python package ships into `licenses/python/<package>-<version>/` inside the
 app. The app shows all of them under Settings → Third-party licenses.
+
+paramiko is used unmodified, as published on PyPI. Because POSCHAT itself is
+free software (AGPL-3.0-only) with its complete source and build scripts
+(`build_installer.py`) published, you can rebuild the app against a modified
+or newer paramiko, as the LGPL allows.
 
 The Android app bundles the Chaquopy runtime (MIT) with CPython 3.11
 (PSF-2.0), the Android builds of the Python packages above from the Chaquopy

@@ -24,6 +24,7 @@ import attachments
 import connectors
 import documents
 import plugins
+import remote_fs
 import storage
 from api import ApiError, ApiSettings, ask
 from code_workspace import atomic_write
@@ -184,9 +185,25 @@ def load_init(workspace):
     if not workspace:
         return None
     try:
-        return (Path(workspace) / "INIT.md").read_text(encoding="utf-8", errors="replace")
+        return (remote_fs.path_of(workspace) / "INIT.md" if remote_fs.is_remote(workspace) else Path(workspace) / "INIT.md") \
+            .read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
+
+
+def _extract_remote(p):
+    import tempfile
+
+    fd, tmp = tempfile.mkstemp(suffix=p.suffix or ".bin", prefix="poschat-remote-")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(p.read_bytes())
+        return documents.extract_text(Path(tmp))
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
 
 
 def _truncate(text, limit):
@@ -272,6 +289,13 @@ def _git_head(workspace):
     """작업 폴더 저장소의 HEAD 커밋(없으면 ""). 인계에 이번 실행의 커밋을 남기는 데 쓴다."""
     if not workspace:
         return ""
+    if remote_fs.is_remote(workspace):   # 원격(SSH) 작업 폴더: 서버의 git
+        import code_project
+        try:
+            head = code_project.git(str(workspace), "rev-parse", "HEAD", timeout=10, check=False).strip()
+        except Exception:
+            return ""
+        return head if re.fullmatch(r"[0-9a-f]{40,64}", head) else ""
     try:
         r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=workspace, capture_output=True, timeout=5,
                            stdin=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
@@ -284,6 +308,14 @@ def _git_commits(workspace, before):
     after = _git_head(workspace)
     if not before or not after or before == after:
         return []
+    if remote_fs.is_remote(workspace):
+        import code_project
+        try:
+            out = code_project.git(str(workspace), "log", "--oneline", "--no-decorate", "-n", "30", f"{before}..{after}",
+                                   timeout=10, check=False)
+        except Exception:
+            out = ""
+        return out.splitlines() or [f"{before[:10]}..{after[:10]}"]
     try:
         r = subprocess.run(["git", "log", "--oneline", "--no-decorate", "-n", "30", f"{before}..{after}"], cwd=workspace,
                            capture_output=True, timeout=5, stdin=subprocess.DEVNULL,
@@ -301,7 +333,9 @@ class Agent:
                  browser=None, paper=None, review=None, browser_progress=None, browser_paused=None, engine=None,
                  prompt_cache=False):
         self.api_key = api_key
-        self.workspace = Path(workspace).resolve() if workspace else None
+        # 원격(SSH) 작업 폴더(1.18)면 RPath: 아래 도구들의 파일 작업이 서버에서 일어난다(remote_fs)
+        self.workspace = remote_fs.path_of(workspace) if remote_fs.is_remote(workspace) else \
+            (Path(workspace).resolve() if workspace else None)
         self.agent_mode = agent_mode
         self.max_steps = max_steps
         self.history_messages = history_messages
@@ -794,6 +828,10 @@ class Agent:
         return p.relative_to(self.workspace).as_posix() or "."
 
     def _iter_files(self, root):
+        if isinstance(root, remote_fs.RPath):   # 서버에서 한 번에 받아 온다(stat도 함께)
+            for path, st in remote_fs.call(root, "fs.walk", root.path, sorted(SKIP_DIRS)):
+                yield remote_fs.RPath(root.host, path, st)
+            return
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
             for f in sorted(filenames):
@@ -804,7 +842,11 @@ class Agent:
         if not root.is_dir():
             raise ToolError(f"폴더가 아닙니다: {path}")
         lines = []
-        for dirpath, dirnames, filenames in os.walk(root):
+        if isinstance(root, remote_fs.RPath):
+            lines, more = remote_fs.call(root, "fs.tree", root.path, sorted(SKIP_DIRS), MAX_TREE_ENTRIES, self.workspace.path)
+            if more:
+                lines = lines[:MAX_TREE_ENTRIES] + [f"... (항목이 많아 {MAX_TREE_ENTRIES}개까지만 표시)"]
+        for dirpath, dirnames, filenames in (os.walk(root) if not isinstance(root, remote_fs.RPath) else ()):
             dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
             base = Path(dirpath)
             for d in dirnames:
@@ -840,7 +882,10 @@ class Agent:
         cached = self._doc_cache.get(p)
         if cached and cached[0] == stamp:
             return cached[1]
-        text = documents.extract_text(p)
+        if isinstance(p, remote_fs.RPath):   # 서버의 문서: 받아 와서 임시 파일로 읽는다
+            text = _extract_remote(p)
+        else:
+            text = documents.extract_text(p)
         self._doc_cache[p] = (stamp, text)
         return text
 
@@ -861,6 +906,14 @@ class Agent:
         return _truncate(text, MAX_READ_CHARS)
 
     def _tool_search(self, pattern, glob="**/*"):
+        if isinstance(self.workspace, remote_fs.RPath):   # 서버에서 한 번에 찾는다(파일마다 주고받지 않게)
+            found = remote_fs.call(self.workspace, "agent.search", self.workspace.path, str(pattern), str(glob or "**/*"),
+                                   sorted(SKIP_DIRS), MAX_FILE_BYTES, sorted(set(documents.DOCUMENT_EXTS) | set(documents.LEGACY_EXTS)))
+            result = "\n".join(found["matches"]) or "(일치 항목 없음)"
+            if found.get("skipped_documents"):
+                result += f"\n(원격 작업 폴더의 문서 파일 {found['skipped_documents']}개는 찾지 않았습니다. read로 읽으세요)"
+            self.on_tool(f"🔍 search {pattern}" + (f" ({glob})" if glob not in ("**/*", "*") else ""), result)
+            return result
         try:
             rx = re.compile(pattern)
         except re.error:

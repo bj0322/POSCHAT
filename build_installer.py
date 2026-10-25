@@ -41,6 +41,9 @@ APP_DATA = [
     "--add-data", f"{ROOT / 'LICENSE'}{os.pathsep}.",
     "--add-data", f"{ROOT / 'THIRD_PARTY_NOTICES.md'}{os.pathsep}.",
     "--add-data", f"{ROOT / 'licenses'}{os.pathsep}licenses",
+    # 1.18 SSH 원격 작업 폴더: 서버로 보내 실행할 원격 도우미 소스(remote_client.bundle이 읽는다)
+    *[x for name in ("remote_fs", "code_workspace", "code_git", "code_project", "remote_helper")
+      for x in ("--add-data", f"{ROOT / (name + '.py')}{os.pathsep}remote")],
     # python-docx·python-pptx는 새 문서를 만들 때 패키지 안의 기본 서식 파일을 쓴다.
     "--collect-data", "docx", "--collect-data", "pptx",
     # PO노트 음성 인식: sherpa-onnx는 onnxruntime 등 공유 라이브러리를 sherpa_onnx/lib에 둔다.

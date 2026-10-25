@@ -57,8 +57,14 @@ async function termEnsure() {
     for (const t of (r && r.terminals) || []) if (t.alive) termAttach(t, t.scrollback || "");
   }
   // 저절로 열 때는 초점을 가져가지 않는다(작업 탭의 입력 칸이 먼저). 터미널을 누르거나 Ctrl+`이면 터미널로
-  if (!TERM.sessions.length && !TERM.opening) await termNew(false);
-  else termFit();
+  // 1.18: 작업 폴더가 바뀌면(로컬 ↔ SSH 서버) 그 폴더의 터미널이 없을 때 하나 더 연다(예전 터미널은 그대로 둔다)
+  const ws = CODE.state && CODE.state.workspace.path;
+  const here = TERM.sessions.find((s) => s.alive && ws && s.cwd === ws);
+  if (!TERM.opening && (!TERM.sessions.length || (ws && !here))) await termNew(false);
+  else {
+    if (here && here.id !== TERM.active) termShow(here.id);
+    termFit();
+  }
 }
 
 function termView() {

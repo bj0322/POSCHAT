@@ -4,7 +4,7 @@
 
 /* ---------- POSCHAT Code(1.15): 코드 편집기 ----------
    하나의 전체 화면(1.17.2)에 왼쪽 패널(파일 · Git · 변경 검토, 1.18) + 편집기(CodeMirror 6, web/vendor/codemirror) +
-   아래 패널(터미널, 1.18 — web/code-term.js)을 둔다. 파일 읽기·쓰기·Git·터미널은 모두 Python(code_api.py)이 한다.
+   아래 패널(터미널, 1.18 — web/code-term.js)을 둔다. 작업 폴더는 로컬 폴더 또는 SSH 서버의 폴더(1.18 — web/code-ssh.js). 파일 읽기·쓰기·Git·터미널은 모두 Python(code_api.py)이 한다.
    화면을 닫거나 다른 화면으로 바꿔도 열린 탭·저장하지 않은 내용·터미널은 그대로 남는다(숨기기만 한다).
    v1.16 Lab이 다시 쓸 수 있게 편집기(codeEditorTab)를 나눠 둔다. */
 
@@ -124,6 +124,9 @@ function codeBuild(pane) {
       btn("files", "파일 목록 보이기·숨기기", () => codeToggleFiles(), { id: "code-files-toggle", "aria-pressed": "true" }),
       h("h2", { class: "code-title", id: "code-title" }, "코드"),
       h("small", { class: "code-ws", id: "code-ws" }, ""),
+      // 1.18: SSH 서버의 폴더를 작업 폴더로(web/code-ssh.js)
+      h("button", { class: "btn small code-ssh-btn", id: "code-ssh", type: "button", hidden: true,
+        title: "SSH 서버의 폴더를 코드 화면에서 엽니다", onclick: () => window.sshOpen && sshOpen() }, "SSH"),
       btn("close", "코드 화면 닫고 채팅으로", () => codeLeave())),
     h("div", { class: "code-body", id: "code-body" },
       h("aside", { class: "code-files", id: "code-files", "aria-label": "파일" }),
@@ -209,8 +212,14 @@ async function codeRefreshState() {
   const changed = CODE.state && CODE.state.workspace.path !== st.workspace.path;
   CODE.state = st;
   CODE.runs = st.runs || [];
-  $("#code-ws").textContent = st.workspace.name ? `· ${st.workspace.name}` : "";
-  $("#code-ws").title = st.workspace.path || "";
+  const remote = st.remote;
+  const ws = $("#code-ws");
+  ws.textContent = remote ? `· SSH ${remote.label}` : st.workspace.name ? `· ${st.workspace.name}` : "";
+  ws.title = remote ? `${remote.label} (${remote.connected ? "연결됨" : "연결 안 됨"})` : st.workspace.path || "";
+  ws.classList.toggle("remote", !!remote);
+  ws.classList.toggle("offline", !!remote && !remote.connected);
+  $("#code-ssh").hidden = !codeFeature("ssh");
+  $("#code-ssh").classList.toggle("active", !!remote);
   if (CODE.side !== "files" && !codeFeature(CODE.side)) CODE.side = "files";
   if (changed) {
     if (CODE.tabs.some((t) => t.kind === "file" && t.editor.isDirty())) {
@@ -224,22 +233,39 @@ async function codeRefreshState() {
     CODE.git = null;
   }
   codeRenderFiles();
-  if (st.workspace.path && !CODE.tree.has("")) codeLoadDir("");
+  if (codeWsReady() && !CODE.tree.has("")) codeLoadDir("");
   // 아래 터미널: 사용자가 접어 두었으면 그대로, 펼쳐져 있으면 터미널을 연다(이미 있으면 다시 붙인다)
   $("#code-pane").classList.toggle("bottom-closed", !CODE.bottomOpen);
-  if (CODE.bottomOpen && CODE.open && window.termEnsure) termEnsure();
+  if (CODE.bottomOpen && CODE.open && window.termEnsure && (codeWsReady() || !st.remote)) termEnsure();
   codeRenderTabs();
 }
 
 /* ---------- 파일 트리 ---------- */
 
+/* 작업 폴더를 쓸 수 있는지(원격이면 연결돼 있어야 한다) */
+function codeWsReady() {
+  const st = CODE.state;
+  return !!(st && st.workspace.path && (!st.remote || st.remote.connected));
+}
+
 function codeRenderFiles() {
   const box = $("#code-files");
   const st = CODE.state;
+  if (st && st.remote && !st.remote.connected) {   // 1.18: 원격 작업 폴더인데 연결이 없다
+    const r = st.remote;
+    box.replaceChildren(h("div", { class: "code-nows" },
+      h("p", {}, h("b", {}, `SSH: ${r.label}`), h("br"),
+        r.state === "connecting" ? "연결 중입니다…" : "서버에 연결돼 있지 않습니다. 다시 연결하면 파일·Git·터미널을 쓸 수 있습니다."),
+      r.message && r.state !== "connecting" ? h("p", { class: "muted" }, r.message) : null,
+      h("button", { class: "btn primary", id: "code-ssh-reconnect", disabled: r.state === "connecting", onclick: () => sshReconnect() }, "다시 연결"),
+      h("button", { class: "btn", onclick: () => sshLocal() }, "로컬 작업 폴더로")));
+    return;
+  }
   if (!st || !st.workspace.path) {
     box.replaceChildren(h("div", { class: "code-nows" },
       h("p", {}, "작업 폴더를 먼저 고르세요. 코드 화면은 작업 폴더 안의 파일만 열고 저장합니다."),
-      h("button", { class: "btn primary", onclick: async () => { await chooseWorkspace(); codeRefreshState(); } }, "작업 폴더 고르기")));
+      h("button", { class: "btn primary", onclick: async () => { await chooseWorkspace(); codeRefreshState(); } }, "작업 폴더 고르기"),
+      codeFeature("ssh") ? h("button", { class: "btn", onclick: () => sshOpen() }, "SSH 서버의 폴더 열기") : null));
     return;
   }
   const tool = (icon, label, onclick, extra = {}) => h("button", { class: "icon-btn", title: label, "aria-label": label,
@@ -1145,6 +1171,8 @@ function codeEvent(ev) {
     }
   } else if (ev.kind === "term_output" || ev.kind === "term_exit") {
     if (window.termEvent) termEvent(ev);
+  } else if (ev.kind && ev.kind.startsWith("ssh_")) {
+    if (window.sshEvent) sshEvent(ev);
   }
 }
 

@@ -164,6 +164,24 @@ Agent._tool_write/_tool_edit → Agent._save(p, old, new, enc, title, reason)
 - 자동으로 열 때는 초점을 가져가지 않는다(작업 탭 입력 칸이 먼저). 터미널을 누르거나 Ctrl+`·+ 로 열면 초점을 옮긴다.
 - Windows 배포본은 `--collect-all winpty`로 `_winpty.pyd`·`conpty.dll`·`OpenConsole.exe`를 싣는다. CI는 설치본 selftest의 `terminal: OK`(실제 셸 한 줄)를 본다.
 
+## SSH 원격 작업 폴더 (1.18)
+VS Code Remote-SSH처럼 코드 화면의 작업 폴더를 SSH 서버의 폴더로 바꾼다. 서버에는 python3만 있으면 된다.
+
+| 파일 | 하는 일 |
+|---|---|
+| `remote_fs.py` | 원격 경로: 글 `ssh://<연결>/<절대 경로>`(설정·작업 기록)와 `RPath`(pathlib 흉내, 파일 작업은 서버에). `@remote_ok`: 인자에 원격 경로가 있으면 같은 함수를 서버에서 실행. 연결 목록(register), 값 주고받기(경로·바이트·stat·예외) |
+| `remote_helper.py` | 서버에서 도는 도우미(Python 3.6+). JSON 한 줄 요청을 스레드로 처리: `code_workspace`·`code_git`·`code_project` 함수, `fs.*`(RPath), `agent.search`, `runner.*`, `proc.*`(명령 실행·출력 이벤트·프로세스 그룹 끝내기) |
+| `remote_client.py` | 앱 쪽: `HelperClient`(요청·답·이벤트), `RemoteProc`(Popen처럼 — RunManager가 그대로 씀), `bundle()`(도우미와 모듈 소스, 설치본은 `_MEIPASS/remote`), `remote_command()`(어떤 로그인 셸이든 /bin/sh로 python3을 찾음), 시험용 `LocalHelper` |
+| `ssh_remote.py` | paramiko 연결(데스크톱 전용): ~/.ssh/config, 호스트 키 확인(앱 known_hosts), 인증(에이전트·키·keyboard-interactive·암호, 부분 성공), ProxyJump(direct-tcpip)·ProxyCommand, 도우미 채널, 터미널(`SshShell`, pty 채널) |
+| `ssh_api.py` | Bridge 믹스인: `code_ssh_connect`(뒤 스레드) → `ssh_state`·`ssh_prompt` 이벤트, `code_ssh_answer`·`browse`·`open`·`local`·`disconnect`. `_code_ws_opt()`가 코드 화면의 작업 폴더(원격이면 ssh://…) |
+| `web/code-ssh.js` | SSH 창(서버·최근 폴더·폴더 고르기), 호스트 키·암호·OTP 창, 끊김 안내 |
+
+- 원격이 되는 곳: `code_workspace`·`code_git`·`code_project`의 공개 함수(@remote_ok), `code_runner.RunManager.start`(RemoteProc), `terminal.TerminalManager.open`
+  (SshShell), `agent.Agent`(workspace가 RPath — `_iter_files`·list·search는 서버에서 한 번에, 문서는 받아 와서 읽음), `code_agent`(되돌리기 백업은 로컬 데이터 폴더).
+- 도우미 묶음은 Python 3.6 문법만 쓴다(`tests/test_remote.py`가 ast로 검사, 3.6의 `subprocess.run(capture_output=)`은 시작 코드가 맞춘다).
+- 시험: `tests/test_remote.py`(LocalHelper로 SSH 없이 같은 도우미), `tests/test_ssh.py`·`tests/fake_ssh.py`(paramiko 서버 모드로 인증·호스트 키·점프 호스트·터미널), `tests/test_code_ui.py`의 `test_ssh_remote_folder`.
+- 설치본 진단: `ssh: OK`(paramiko·cryptography·bcrypt·pynacl 서명), `remote: OK`(도우미 소스가 들어 있음).
+
 ## Code 에이전트 3 (1.17.2) — 터미널처럼
 | 파일 | 하는 일 |
 |---|---|

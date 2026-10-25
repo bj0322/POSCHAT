@@ -28,6 +28,7 @@ import code_project
 import code_runner
 import code_workspace as cw
 import documents
+import remote_fs
 import storage
 from agent import ACTION_DOCS, MAX_READ_CHARS, Agent, ToolError, _truncate
 from code_workspace import atomic_write
@@ -474,6 +475,15 @@ class CodeAgent(Agent):
         return "멈췄습니다.\n" + self._job_text(rec)
 
 
+def _remote_note(root):
+    """원격(SSH) 작업 폴더일 때 에이전트에게 알릴 것."""
+    if not remote_fs.is_remote(root):
+        return ""
+    host, path = remote_fs.split(root)
+    return (f"원격 SSH 서버 '{host}'의 폴더 {path}에서 일합니다. 파일 도구와 run 명령은 모두 그 서버에서 실행됩니다"
+            "(보통 Linux 셸, 이 PC가 아님). 경로는 작업 폴더 기준 상대 경로로 쓰세요.")
+
+
 class CodeAgentApi:
     """main.Bridge가 상속한다(CodeApi와 함께). 화면은 web/code-agent.js의 '작업' 탭."""
 
@@ -539,7 +549,7 @@ class CodeAgentApi:
 
     def code_agent_state(self):
         def go():
-            ws = self._workspace()
+            ws = self._code_ws_opt()
             running = self._ca_running
             info = {}
             if ws and not self._code_android():
@@ -636,6 +646,8 @@ class CodeAgentApi:
                     cmd, _, rest = first.partition(" ")
                     label = {"/init": "AGENTS.md 만들기", "/review": "코드 리뷰", "/test": "테스트 실행·고치기"}.get(cmd.lower(), "")
                     first = (rest.strip() if cmd.lower() == "/plan" else (label + (f": {rest.strip()}" if rest.strip() else ""))) or first
+                if options.get("isolate") and remote_fs.is_remote(ws):
+                    raise TaskError("원격(SSH) 작업 폴더에서는 아직 격리 작업(git worktree)을 쓸 수 없습니다. 격리 없이 맡기세요.")
                 task = store.new(ws, first, mode)
                 if options.get("isolate"):
                     path = tasks_dir().parent / "worktrees" / task["id"]
@@ -787,7 +799,7 @@ class CodeAgentApi:
 
     @staticmethod
     def _ca_read(p):
-        raw = Path(p).read_bytes()
+        raw = (p if hasattr(p, "read_bytes") else Path(p)).read_bytes()   # 원격(RPath)이면 서버에서 읽는다
         for enc in ("utf-8-sig", "utf-8", "cp949"):
             try:
                 return raw.decode(enc), enc
@@ -867,7 +879,8 @@ class CodeAgentApi:
             prompt_cache=adaptive_engine.settings(self._config)["prompt_cache"],
             mode=mode, allowed=lambda command: code_project.rule_allows(self._ca_rules(ws), command), steer=steer,
             project_note=("격리 작업 공간(git worktree)에서 일합니다. 원래 작업 폴더는 사용자가 '적용'할 때 바뀝니다. "
-                          "설치하지 않은 의존성(node_modules·가상환경)은 없을 수 있습니다." if os.path.normcase(str(root)) != os.path.normcase(str(ws)) else ""))
+                          "설치하지 않은 의존성(node_modules·가상환경)은 없을 수 있습니다." if os.path.normcase(str(root)) != os.path.normcase(str(ws))
+                          else _remote_note(root)))
         running["agent"] = agent
         status, answer = "done", ""
         try:
