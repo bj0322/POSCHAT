@@ -176,10 +176,27 @@ jobs:
           $report = Get-Content (Join-Path $env:APPDATA "PostechChat\selftest.txt") -Raw
           if (-not $report.Contains("version: $version")) { Write-Error "업데이트한 앱이 실행되지 않습니다."; exit 1 }
 
+      - name: Microsoft Store installer (silent install, exit code, Store mode)
+        # 1.18: Store(EXE 방식)는 무인 설치(--silent)와 종료 코드 0을 요구한다. Store판은 스스로 업데이트하지 않는다(distribution: store).
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "PostechChat-store"
+          $p = Start-Process -FilePath "release\POSCHAT-Store-Setup.exe" -ArgumentList "--silent", "--dir=$dir", "--no-desktop" -Wait -PassThru
+          Get-Content (Join-Path $env:TEMP "PostechChat-install.log")
+          if ($p.ExitCode -ne 0) { Write-Error "Store 설치 프로그램의 종료 코드가 $($p.ExitCode)입니다."; exit 1 }
+          if (-not (Test-Path (Join-Path $dir "_internal\distribution.txt"))) { Write-Error "Store판에 distribution.txt가 없습니다."; exit 1 }
+          $env:APPDATA = Join-Path $env:RUNNER_TEMP "selftest-store"
+          Start-Process -FilePath (Join-Path $dir "PostechChat.exe") -ArgumentList "--selftest" -Wait
+          $report = Get-Content (Join-Path $env:APPDATA "PostechChat\selftest.txt") -Raw
+          if (-not $report.Contains("distribution: store")) { Write-Error "Store판이 Store 모드로 실행되지 않습니다."; exit 1 }
+          if (Test-Path (Join-Path $env:RUNNER_TEMP "PostechChat-install\_internal\distribution.txt")) { Write-Error "GitHub판에 distribution.txt가 들어갔습니다."; exit 1 }
+
       - uses: actions/upload-artifact@v4
         with:
           name: POSCHAT-Setup
-          path: release/POSCHAT-Setup.exe
+          path: |
+            release/POSCHAT-Setup.exe
+            release/POSCHAT-Store-Setup.exe
 
   browser-spike:
     # 1.13 브라우저 기술 검증 + 1.15 B1(앱 멈춤) 회귀 시험: 실제 pywebview 창에 네이티브 웹페이지 뷰(WebView2·WKWebView)를 붙여
@@ -352,7 +369,8 @@ jobs:
           cp dist/POSCHAT-Setup.exe dist/PostechChat-Setup.exe
           cp dist/POSCHAT-mac.dmg dist/PostechChat-mac.dmg
           cp dist/POSCHAT.apk dist/PostechChat.apk
-          gh release create "$TAG" dist/POSCHAT-Setup.exe dist/POSCHAT-mac.dmg dist/POSCHAT.apk \
+          # 1.18: POSCHAT-Store-Setup.exe는 Microsoft Store 제출용(파트너 센터에 이 버전의 주소를 넣는다). 앱의 자동 업데이트는 받지 않는다
+          gh release create "$TAG" dist/POSCHAT-Setup.exe dist/POSCHAT-Store-Setup.exe dist/POSCHAT-mac.dmg dist/POSCHAT.apk \
             dist/PostechChat-Setup.exe dist/PostechChat-mac.dmg dist/PostechChat.apk \
             --repo "$GITHUB_REPOSITORY" --title "POSCHAT $TAG" --target "$GITHUB_SHA" \
             --notes-file notes.md --generate-notes

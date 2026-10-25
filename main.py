@@ -37,6 +37,7 @@ from paper_api import PaperApi
 from workspace_api import WorkspaceApi
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
 from api import DEFAULT_MODEL, MODELS, RESPONSES_MODELS, ApiError, ApiSettings
+import version
 from version import APP_VERSION
 
 APP_TITLE = "POSCHAT"
@@ -268,7 +269,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
                     "env" if os.environ.get("FIRECRAWL_API_KEY") else None),
             },
             "data_dir": str(storage.APP_DIR),
-            "version": APP_VERSION,
+            "version": APP_VERSION, "distribution": version.distribution(),
             "models": [{"id": m, "label": label} for m, label in self._models("chat_completions")],
             "responses_models": [{"id": m, "label": label} for m, label in RESPONSES_MODELS],
             "models_source": "server" if self._config.get("server_models") else "builtin",
@@ -625,10 +626,13 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
             result["available"] = False
         result["can_install"] = bool(result["asset"]) and self._can_self_update()
         result["current"] = APP_VERSION
+        result["store"] = version.distribution() == "store"   # Store판: Store에서 업데이트하도록 안내만 한다
         return result
 
     @staticmethod
     def _can_self_update():
+        if version.distribution() == "store":
+            return False  # Store가 심사한 설치 파일만 설치되도록 스스로 받지 않는다(Store 정책 10.2.9)
         platform = updates.current_platform()
         if platform == "windows":
             return bool(getattr(sys, "frozen", False))  # 소스로 실행 중이면 설치 프로그램으로 바꿀 것이 없다
@@ -669,6 +673,14 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
     def open_release_page(self):
         import webbrowser
         webbrowser.open(updates.RELEASES_PAGE)
+
+    def open_store_updates(self):
+        """Store판: Microsoft Store(제품 페이지 또는 다운로드 및 업데이트)를 연다."""
+        try:
+            open_path(updates.store_url())
+            return {"ok": True}
+        except OSError as e:
+            return {"ok": False, "error": f"Microsoft Store를 열지 못했습니다: {e}"}
 
     def download_update(self):
         """새 버전을 내려받아 설치를 시작한다. 진행은 {"type": "update"} 이벤트로 알린다."""
@@ -1298,7 +1310,7 @@ def selftest():
         key = config.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
     else:
         key = config.get("api_key") or os.environ.get("POSTECH_GENAI_API_KEY", "")
-    lines = [f"version: {APP_VERSION}",
+    lines = [f"version: {APP_VERSION}", f"distribution: {version.distribution()}",
              f"web: {(resource_dir() / 'web' / 'index.html').exists()}",
              f"skills: {len(discover_skills(config.get('workspace', '')))}"]
     try:

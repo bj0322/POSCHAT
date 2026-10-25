@@ -5,7 +5,8 @@
     python build_installer.py
 
 필요 패키지: requirements.txt와 pyinstaller (pip install -r requirements.txt pyinstaller)
-결과: Windows는 release/POSCHAT-Setup.exe, macOS는 release/POSCHAT-mac.dmg(앱 아이콘을 위해 pillow도 필요)
+결과: Windows는 release/POSCHAT-Setup.exe와 release/POSCHAT-Store-Setup.exe(Microsoft Store 제출용, 1.18),
+macOS는 release/POSCHAT-mac.dmg(앱 아이콘을 위해 pillow도 필요)
 빌드 중간 파일은 %TEMP%\\PostechChat-build 에 만든다(클라우드 동기화 폴더에서 빌드하면 느리다).
 
 1.11부터 앱 이름은 POSCHAT이다. 설치 폴더·실행 파일(PostechChat.exe, PostechChat.app)·데이터 폴더 이름은
@@ -20,9 +21,15 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+import version
+
 ROOT = Path(__file__).resolve().parent
 APP_NAME = "POSCHAT"
 SETUP_FILE = "POSCHAT-Setup.exe"
+# Microsoft Store 제출용(EXE 방식): 앱이 스스로 업데이트하지 않고 Store로 안내한다(version.distribution).
+# Store는 설치 파일과 그 안의 모든 PE 파일(exe·dll·pyd)이 신뢰받는 CA의 인증서로 서명돼 있어야 받는다(정책 10.2.9).
+STORE_SETUP_FILE = "POSCHAT-Store-Setup.exe"
+PE_SUFFIXES = (".exe", ".dll", ".pyd")
 DMG_FILE = "POSCHAT-mac.dmg"
 WORK = Path(tempfile.gettempdir()) / "PostechChat-build"
 ICON = ROOT / "assets" / "icon.ico"
@@ -150,50 +157,87 @@ def main():
         str(ROOT / "main.py"),
     )
     app_dir = WORK / "app" / "PostechChat"
-    sign(app_dir / "PostechChat.exe")
+    sign_tree(app_dir)  # 1.18: 앱의 exe뿐 아니라 아직 서명되지 않은 dll·pyd까지(Store 정책)
 
     print("[2/3] 앱 압축")
     payload = WORK / "payload.zip"
-    with zipfile.ZipFile(payload, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+    zip_app(app_dir, payload)
+    store_payload = WORK / "store" / "payload.zip"   # Store판: 같은 앱 + _internal/distribution.txt("store")
+    store_payload.parent.mkdir(parents=True, exist_ok=True)
+    zip_app(app_dir, store_payload, extra={f"_internal/{version.DISTRIBUTION_FILE}": "store\n"})
+
+    print("[3/3] 설치 프로그램 빌드")
+    out = ROOT / "release"
+    out.mkdir(exist_ok=True)
+    for name, data, label in ((SETUP_FILE, payload, "setup"), (STORE_SETUP_FILE, store_payload, "store-setup")):
+        pyinstaller(
+            "--windowed", "--onefile", "--name", "PostechChat-Setup", "--icon", str(ICON),
+            "--version-file", version_file(name, f"{APP_NAME} 설치 프로그램"),
+            "--add-data", f"{data};.",
+            "--add-data", f"{ICON};.",
+            "--add-data", f"{ICON_PNG};.",
+            "--paths", str(ROOT),  # installer.py가 저장소 최상위의 version.py를 가져온다
+            "--distpath", str(WORK / label),
+            str(ROOT / "installer" / "installer.py"),
+        )
+        target = out / name
+        shutil.copy2(WORK / label / "PostechChat-Setup.exe", target)
+        sign(target)
+        print(f"완료: {target} ({target.stat().st_size / 1024 / 1024:.1f} MB)")
+
+
+def zip_app(app_dir, target, extra=None):
+    """앱 폴더를 설치 프로그램에 넣을 payload.zip으로. extra: {zip 안 경로: 글} — 더 넣을 파일."""
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         for f in sorted(app_dir.rglob("*")):
             if f.is_file():
                 zf.write(f, f.relative_to(app_dir).as_posix())
-
-    print("[3/3] 설치 프로그램 빌드")
-    pyinstaller(
-        "--windowed", "--onefile", "--name", "PostechChat-Setup", "--icon", str(ICON),
-        "--version-file", version_file(SETUP_FILE, f"{APP_NAME} 설치 프로그램"),
-        "--add-data", f"{payload};.",
-        "--add-data", f"{ICON};.",
-        "--add-data", f"{ICON_PNG};.",
-        "--paths", str(ROOT),  # installer.py가 저장소 최상위의 version.py를 가져온다
-        "--distpath", str(WORK / "setup"),
-        str(ROOT / "installer" / "installer.py"),
-    )
-    out = ROOT / "release"
-    out.mkdir(exist_ok=True)
-    target = out / SETUP_FILE
-    shutil.copy2(WORK / "setup" / "PostechChat-Setup.exe", target)
-    sign(target)
-    print(f"완료: {target} ({target.stat().st_size / 1024 / 1024:.1f} MB)")
+        for name, text in (extra or {}).items():
+            zf.writestr(name, text)
 
 
-def sign(path):
+def signtool():
+    kits = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Windows Kits" / "10" / "bin"
+    tools = sorted(kits.glob("*/x64/signtool.exe"))
+    if not tools:
+        sys.exit("signtool.exe를 찾지 못했습니다. Windows SDK를 설치하세요.")
+    return str(tools[-1])
+
+
+def sign(*paths):
     """코드 서명 인증서가 있으면 Windows 실행 파일에 서명한다(SmartScreen '알 수 없는 게시자' 경고를 줄인다).
 
     WINDOWS_SIGN_PFX(.pfx 파일 경로)와 WINDOWS_SIGN_PASSWORD 환경 변수가 있을 때만 서명한다. 없으면 건너뛴다.
     """
     pfx = os.environ.get("WINDOWS_SIGN_PFX")
-    if not pfx:
+    if not pfx or not paths:
         return
-    kits = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Windows Kits" / "10" / "bin"
-    tools = sorted(kits.glob("*/x64/signtool.exe"))
-    if not tools:
-        sys.exit("signtool.exe를 찾지 못했습니다. Windows SDK를 설치하세요.")
-    subprocess.run([str(tools[-1]), "sign", "/f", pfx, "/p", os.environ.get("WINDOWS_SIGN_PASSWORD", ""),
-                    "/fd", "SHA256", "/tr", "http://timestamp.digicert.com", "/td", "SHA256",
-                    "/d", APP_NAME, str(path)], check=True)
-    print(f"서명: {path.name}")
+    tool = signtool()
+    for i in range(0, len(paths), 50):   # 명령 줄 길이 제한
+        batch = [str(p) for p in paths[i:i + 50]]
+        subprocess.run([tool, "sign", "/f", pfx, "/p", os.environ.get("WINDOWS_SIGN_PASSWORD", ""),
+                        "/fd", "SHA256", "/tr", "http://timestamp.digicert.com", "/td", "SHA256",
+                        "/d", APP_NAME, *batch], check=True, stdout=subprocess.DEVNULL)
+    print(f"서명: {', '.join(Path(p).name for p in paths[:3])}{f' 외 {len(paths) - 3}개' if len(paths) > 3 else ''}")
+
+
+def signed(path):
+    """이미 믿을 수 있는 서명(예: python.org의 python312.dll)이 있으면 True — 그 서명은 그대로 둔다."""
+    r = subprocess.run([signtool(), "verify", "/pa", "/q", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return r.returncode == 0
+
+
+def sign_tree(folder):
+    """앱 폴더의 모든 PE 파일(exe·dll·pyd) 가운데 아직 서명되지 않은 것에 서명한다(Microsoft Store 정책 10.2.9)."""
+    if not os.environ.get("WINDOWS_SIGN_PFX"):
+        return
+    files = [p for p in sorted(Path(folder).rglob("*")) if p.is_file() and p.suffix.lower() in PE_SUFFIXES]
+    todo = [p for p in files if not signed(p)]
+    print(f"PE 파일 {len(files)}개 중 서명이 없는 {len(todo)}개에 서명합니다")
+    sign(*todo)
+    left = [p for p in todo if not signed(p)]
+    if left:
+        sys.exit("서명하지 못한 파일: " + ", ".join(p.name for p in left[:10]))
 
 
 if __name__ == "__main__":

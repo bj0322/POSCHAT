@@ -14,6 +14,7 @@ const ICONS = {
   stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>',
   copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>',
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  flag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg>',
   pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
   chev: '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>',
@@ -324,6 +325,48 @@ async function newThread() {
   await openThread(thread.id);
 }
 
+/* 부적절한 AI 응답 신고(1.18, Microsoft Store 정책 11.16 '생성형 AI 콘텐츠'): GitHub 이슈 양식(.github/ISSUE_TEMPLATE/ai-report.yml)을
+   채워서 브라우저로 연다. 이슈는 공개이므로 답변을 넣을지는 사용자가 고르고, 넣을 글을 보고 고칠 수 있다. 앱이 몰래 보내는 것은 없다. */
+const REPORT_REASONS = ["유해하거나 위험한 내용", "혐오·차별·괴롭힘", "성적인 내용", "개인정보 노출", "사실과 다른 내용(환각)", "그 밖의 문제"];
+const REPORT_MAX = 1500;  // 주소 길이 제한 때문에 답변은 앞부분만
+
+function reportUrl({ reason, note, response, model }) {
+  const q = new URLSearchParams({ template: "ai-report.yml", title: `[AI 응답 신고] ${reason}`, reason,
+    what: note || "", response: response || "", model: model || "", version: `${S.version || ""}${S.distribution === "store" ? " (Microsoft Store)" : ""}` });
+  return `${REPO_URL}/issues/new?${q.toString()}`;
+}
+
+function reportAiResponse({ content, model }) {
+  const text = String(content || "");
+  const reason = h("select", { id: "report-reason", "aria-label": "신고 이유" }, ...REPORT_REASONS.map((r) => h("option", { value: r }, r)));
+  const note = h("textarea", { id: "report-note", rows: 3, placeholder: "무엇이 문제인지 짧게 적어 주세요(선택)" });
+  const include = h("input", { type: "checkbox", id: "report-include" });
+  const preview = h("textarea", { id: "report-response", rows: 6, hidden: true, "aria-label": "이슈에 넣을 답변" },
+    text.length > REPORT_MAX ? text.slice(0, REPORT_MAX) + " …(잘림)" : text);
+  include.addEventListener("change", () => { preview.hidden = !include.checked; });
+  modal({
+    title: "부적절한 응답 신고",
+    body: h("div", { class: "report-form" },
+      h("p", { style: "margin:0 0 10px;color:var(--text-2)" }, "AI가 만든 답변에 문제가 있으면 알려 주세요. 신고는 GitHub 이슈로 받고, 확인해 고칩니다. ",
+        h("b", {}, "GitHub 이슈는 누구나 볼 수 있습니다"), " — 개인정보·비밀이 든 내용은 넣지 마세요(GitHub 계정이 필요합니다)."),
+      h("label", { class: "field" }, h("span", {}, "이유"), reason),
+      h("label", { class: "field" }, h("span", {}, "설명"), note),
+      h("label", { style: "display:flex;gap:6px;align-items:center;margin:6px 0" }, include, "답변 내용을 함께 넣기(아래에서 고칠 수 있음)"),
+      preview),
+    buttons: [{ label: "취소", value: null }, { label: "GitHub에서 신고 열기", class: "primary", action: (close) => {
+      const url = reportUrl({ reason: reason.value, note: note.value.trim(), response: include.checked ? preview.value : "", model });
+      const a = h("a", { href: url, target: "_blank", rel: "noopener", hidden: true, id: "report-link" });
+      document.body.append(a);
+      a.click();
+      setTimeout(() => a.remove(), 1000);
+      close();
+      toast("브라우저에서 신고 양식을 열었습니다. 내용을 확인하고 'Create'를 누르세요");
+    } }],
+  });
+}
+window.reportAiResponse = reportAiResponse;
+window.reportUrl = reportUrl;
+
 // 답변 평가(👍/👎): 대화에 저장하고 사용량·진단 탭의 모델별 비교에 쓴다
 function feedbackButton(msg, rating) {
   const btn = h("button", { title: rating > 0 ? "좋은 답변" : "아쉬운 답변", class: msg.feedback === rating ? "active" : "",
@@ -359,6 +402,8 @@ function messageNode(msg) {
         h("div", { class: "msg-actions" },
           h("button", { title: "복사", html: ICONS.copy, onclick: () => copyText(msg.content) }),
           feedbackButton(msg, 1), feedbackButton(msg, -1),
+          h("button", { title: "부적절한 응답 신고", "aria-label": "부적절한 응답 신고", class: "report-btn", html: ICONS.flag,
+            onclick: () => reportAiResponse({ content: msg.content, model: (msg.routing && msg.routing.model) || (S.thread && S.thread.model) || "" }) }),
         ),
       ),
     );
@@ -1190,17 +1235,22 @@ function offerUpdate(update, attempts = 0) {
     h("p", { style: "margin:0 0 10px" }, `새 버전 ${update.version}을 쓸 수 있습니다. 지금 버전은 ${update.current || S.version}입니다.`),
     update.notes ? h("div", { class: "update-notes" }, renderMarkdown(update.notes)) : null,
     h("small", { style: "display:block;margin-top:10px;color:var(--text-3)" },
-      update.can_install ? "GitHub Releases에서 설치 파일을 받아 크기·SHA-256을 확인한 뒤 설치를 시작합니다. 대화·설정은 그대로 남습니다."
-        : "이 기기에서는 자동으로 설치할 수 없습니다. Releases 페이지에서 받아 설치하세요."));
+      update.store ? "Microsoft Store로 설치한 앱입니다. Store의 다운로드 및 업데이트(또는 POSCHAT 페이지)에서 업데이트하세요. " +
+        "새 버전은 Store 심사(보통 1~2일)를 거친 뒤 Store에 보입니다. 대화·설정은 그대로 남습니다."
+        : update.can_install ? "GitHub Releases에서 설치 파일을 받아 크기·SHA-256을 확인한 뒤 설치를 시작합니다. 대화·설정은 그대로 남습니다."
+          : "이 기기에서는 자동으로 설치할 수 없습니다. Releases 페이지에서 받아 설치하세요."));
   modal({
     title: "업데이트",
     body,
     buttons: [
       { label: "이 버전 건너뛰기", action: (close) => { api().skip_update(update.version); close(); } },
       { label: "나중에", value: null },
-      update.can_install
-        ? { label: "업데이트", class: "primary", action: (close) => { close(); startUpdate(update); } }
-        : { label: "Releases 열기", class: "primary", action: (close) => { api().open_release_page(); close(); } },
+      update.store
+        ? { label: "Microsoft Store 열기", class: "primary", action: async (close) => {
+          const r = await api().open_store_updates(); if (r && r.ok === false) toast(r.error); close(); } }
+        : update.can_install
+          ? { label: "업데이트", class: "primary", action: (close) => { close(); startUpdate(update); } }
+          : { label: "Releases 열기", class: "primary", action: (close) => { api().open_release_page(); close(); } },
     ],
   });
 }
@@ -1660,6 +1710,7 @@ function applyState(state) {
   S.config = state.config;
   S.dataDir = state.data_dir;
   S.version = state.version || "";
+  S.distribution = state.distribution || "github";
   S.models = state.models || [];
   S.responsesModels = state.responses_models || [];
   S.modelsSource = state.models_source || "builtin";

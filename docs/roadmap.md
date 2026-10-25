@@ -19,6 +19,12 @@
 
 ## 지금 할 일
 
+### 0. Microsoft Store 제출 (EXE 방식, 개인 계정 — 사용자 결정 2026-10-25)
+- 앱 쪽 준비는 했다(1.18 작업 브랜치): Store 설치 파일 `POSCHAT-Store-Setup.exe`(Store판은 스스로 업데이트하지 않고 Store를 엶),
+  모든 PE 파일 서명(`build_installer.sign_tree`), 부적절한 응답 신고(GitHub 이슈 `ai-report`), 개인정보 처리방침, 제출 안내 [microsoft-store.md](microsoft-store.md).
+- 사용자가 할 일: 개발자 계정(개인)·이름 예약 → Store ID를 `updates.STORE_PRODUCT_ID`에, 코드 서명 인증서를 Secrets에,
+  `ai-report` 라벨·Immutable releases → 서명된 릴리스 → 파트너 센터 제출. 인증서가 하드웨어 토큰·클라우드 HSM 방식이면 CI 서명 단계를 바꾼다.
+
 ### 1. 손익분기 실험으로 결정 함수 맞추기 (진행 중)
 - 도구: `tools/breakeven_experiment.py`(방법은 [adaptive-ai-evaluation.md](adaptive-ai-evaluation.md#손익분기-실험-toolsbreakeven_experimentpy-117-뒤)).
 - 사용자가 이 클라우드 환경에 API 키(`ANTHROPIC_API_KEY`, 선택 `POSTECH_GENAI_API_KEY`)를 넣으면 새 세션에서 1차(시범, 호출 약 900번)를 돌린다.

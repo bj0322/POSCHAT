@@ -169,10 +169,12 @@ SLASH_HELP = [
     ("/keep", "격리 작업을 브랜치로 남긴다(커밋해 두고 Git으로 합치기)"),
     ("/discard", "격리 작업 공간을 버린다"),
     ("/delete", "이 작업 기록을 지운다(파일은 그대로)"),
+    ("/report", "마지막 답변을 부적절한 응답으로 신고한다(GitHub 이슈)"),
 ]
 # 화면(web/code-agent.js)이 처리하는 명령. 백엔드로 오면 오류
 FRONT_COMMANDS = {"/help", "/clear", "/new", "/reset", "/resume", "/compact", "/undo", "/rewind", "/diff", "/revert", "/todos",
-                  "/mode", "/permissions", "/status", "/memory", "/apply", "/keep", "/discard", "/delete", "/worktree"}
+                  "/mode", "/permissions", "/status", "/memory", "/apply", "/keep", "/discard", "/delete", "/worktree",
+                  "/report"}
 BUILTIN_COMMANDS = FRONT_COMMANDS | {"/init", "/review", "/test", "/plan"}
 COMMAND_DIRS = (".poschat/commands", ".claude/commands")
 MAX_COMMAND_CHARS = 20000
