@@ -347,9 +347,13 @@ class CodeUiTests(unittest.TestCase):
         home = Path(tempfile.mkdtemp()) / "server-home"
         (home / "chip").mkdir(parents=True)
         (home / "chip" / "alu.sv").write_text("module alu; endmodule\n", encoding="utf-8")
-        env = patch.dict(os.environ, {"HOME": str(home), "SSH_AUTH_SOCK": ""})
+        # HOME은 바꾸지 않는다(Playwright가 HOME 아래에서 Chromium을 찾는다). '서버'의 홈만 시험 폴더로
+        env = patch.dict(os.environ, {"SSH_AUTH_SOCK": ""})
         env.start()
+        self.addCleanup(env.stop)
         srv = fake_ssh.FakeSSH(home=str(home), allowed=("keyboard-interactive",)).__enter__()
+        self.addCleanup(srv.stop)
+        srv.env["HOME"] = str(home)
         target = f"student@127.0.0.1:{srv.port}"
         with sync_playwright() as p:
             browser, page, errors = self.open(p)
@@ -410,8 +414,6 @@ class CodeUiTests(unittest.TestCase):
                 browser.close()
                 self.bridge.code_ssh_local()
                 self.bridge._ssh_shutdown()
-                srv.stop()
-                env.stop()
 
     def test_code_pane_fits_a_phone_screen(self):
         from playwright.sync_api import sync_playwright
