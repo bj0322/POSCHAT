@@ -7,7 +7,8 @@
   안드로이드는 Chaquopy(Python 3.11) + Kotlin `MainActivity.kt`. 화면은 `web/`(바닐라 JS, 빌드 도구 없음).
 - 진입점 `main.py`의 `Bridge`가 화면 API(js_api)다. 기능별 화면 API는 믹스인으로 나눈다:
   `workspace_api.WorkspaceApi`, `browser_api.BrowserApi`(1.13), `paper_api.PaperApi`(1.14), `code_api.CodeApi`(1.15),
-  `code_agent.CodeAgentApi`(1.16 Code 에이전트), `lab_api.LabApi`(1.16 Lab), `adaptive_api.AdaptiveApi`(1.17 AI 실행 정책·로컬 AI).
+  `code_agent.CodeAgentApi`(1.16 Code 에이전트, 1.17.1 권한 모드·슬래시 명령·worktree — 도우미 `code_project.py`), `lab_api.LabApi`(1.16 Lab),
+  `adaptive_api.AdaptiveApi`(1.17 AI 실행 정책·로컬 AI).
   브라우저 에이전트는 `browser_agent.py` + agent의 `browser_*` 단계.
 - 1.17 Adaptive AI: 모델 호출은 `Agent._ask(prompt, purpose=…)` → `adaptive_engine.AdaptiveEngine`(대화 모델이 `auto`·`local:…`일 때) 또는 `api.ask`.
   라우터 `adaptive_router.py`, 검증 `quality_gate.py`, 로컬 실행기 `local_ai.py`(Ollama). Local Only는 `api.cloud_guard`가 마지막으로 막는다.

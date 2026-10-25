@@ -25,6 +25,8 @@ class Script:
 
     def __call__(self, api_key, prompt, **kwargs):
         step = self.queue.pop(0) if self.queue else {"action": "done", "answer": "끝"}
+        if callable(step):
+            step = step()
         return json.dumps(step, ensure_ascii=False)
 
 
@@ -117,7 +119,7 @@ class CodeAgentUiTests(unittest.TestCase):
                 confirm.wait_for(timeout=20000)
                 self.assertIn("test_calc.py", confirm.inner_text())
                 self.assertEqual(confirm.locator("button:has-text('이번 실행 동안')").count(), 0)
-                confirm.locator("button:has-text('허용')").click()
+                confirm.locator("button.primary:has-text('허용')").click()
                 page.wait_for_selector(".ca-answer:has-text('통과했습니다')", timeout=30000)
                 self.assertIn("return a + b", (self.ws / "calc.py").read_text())
                 log = page.inner_text("#ca-log")
@@ -145,6 +147,93 @@ class CodeAgentUiTests(unittest.TestCase):
                 page.wait_for_selector(".ca-answer:has-text('되돌린 상태')", timeout=20000)
                 self.assertEqual(page.locator(".ca-user").count(), 2)
                 self.assertEqual(page.locator(".ca-pick option").count(), 2)  # 새 작업 + 이 작업
+                self.assertEqual([e for e in errors if "favicon" not in e], [])
+            finally:
+                browser.close()
+
+    def test_plan_mode_approve_remember_steer_and_undo(self):
+        """1.17.1: 계획 모드 → '이 계획으로 진행' → 명령 '다시 묻지 않기' → 작업 중 추가 지시 → /undo."""
+        import time
+
+        from playwright.sync_api import sync_playwright
+
+        self.script.queue[:] = [{"action": "read", "path": "calc.py", "note": "add 함수를 먼저 봅니다"},
+                                {"action": "done", "answer": "계획: 1) calc.py의 add를 a + b로 2) test_calc.py로 확인"}]
+        with sync_playwright() as p:
+            browser, page, errors = self.open(p)
+            try:
+                page.wait_for_selector(".code-tab.agent.active")
+                page.wait_for_selector(".ca-project")                       # 이 작업 폴더의 지침·명령 안내
+                page.select_option(".ca-approval", "plan")
+                page.fill("#ca-input", "/")
+                page.dispatch_event("#ca-input", "input")
+                page.wait_for_selector("#ca-slash:not([hidden]) .ca-slash-item:has-text('/review')")
+                page.fill("#ca-input", "/plan calc 고치기")
+                page.keyboard.press("Control+Enter")
+                page.wait_for_selector(".ca-answer.proposal:has-text('계획: 1)')", timeout=20000)
+                self.assertIn("add 함수를 먼저 봅니다", page.inner_text("#ca-log"))
+                self.assertIn("return a - b", (self.ws / "calc.py").read_text())  # 계획 모드는 고치지 않는다
+                self.shot(page, "code-agent-plan")
+                # 이 계획으로 진행 → 수정 자동, 명령은 '다시 묻지 않기'
+                self.script.queue[:] = [
+                    {"action": "edit", "path": "calc.py", "old": "return a - b", "new": "return a + b"},
+                    {"action": "run", "command": f"{PY} test_calc.py"},
+                    {"action": "done", "answer": "고치고 확인했습니다."}]
+                page.click("#ca-approve")
+                confirm = page.locator(".modal:has-text('명령 실행')")
+                confirm.wait_for(timeout=20000)
+                confirm.locator("button:has-text('다시 묻지 않기')").click()
+                page.wait_for_selector(".ca-answer:has-text('고치고 확인했습니다')", timeout=30000)
+                self.assertEqual(page.input_value(".ca-approval"), "auto_edit")   # 계획을 승인하면 계획 모드를 벗어난다
+                self.assertIn("calc 고치기", page.inner_text(".ca-pick option:checked"))
+                self.assertIn("return a + b", (self.ws / "calc.py").read_text())
+                self.assertTrue(self.bridge.code_agent_rules()["rules"])
+                # 작업 중 추가 지시: 모델이 다음 단계를 고르기 전에 지시가 들어온다
+                waited = {}
+
+                def wait_for_steer():
+                    end = time.time() + 15
+                    while time.time() < end and not (self.bridge._ca_running or {}).get("steer"):
+                        time.sleep(0.05)
+                    waited["ok"] = bool((self.bridge._ca_running or {}).get("steer"))
+                    return {"action": "read", "path": "calc.py"}
+                self.script.queue[:] = [wait_for_steer, {"action": "done", "answer": "추가 지시도 반영했습니다."}]
+                page.fill("#ca-input", "테스트 파일도 한 번 읽어 줘")
+                page.click("#ca-send")
+                page.wait_for_selector("#ca-steer", timeout=10000)
+                page.fill("#ca-input", "주석은 한국어로")
+                page.click("#ca-steer")
+                page.wait_for_selector(".ca-answer:has-text('추가 지시도 반영')", timeout=30000)
+                self.assertTrue(waited.get("ok"))
+                page.wait_for_selector(".ca-user.steer:has-text('주석은 한국어로')")
+                # 이 명령은 다시 묻지 않으니 승인 창 없이 지나간다 → /undo로 마지막 수정 지시를 되돌린다
+                page.fill("#ca-input", "/undo")
+                page.keyboard.press("Control+Enter")
+                page.wait_for_selector("#toast:has-text('지시를 되돌렸습니다')")
+                self.assertIn("return a - b", (self.ws / "calc.py").read_text())
+                self.shot(page, "code-agent-steer-undo")
+                self.assertEqual([e for e in errors if "favicon" not in e], [])
+            finally:
+                for r in self.bridge.code_agent_rules().get("rules", []):
+                    self.bridge.code_agent_rule_delete(r)
+                self.bridge.code_agent_set_approval("auto_edit")
+                browser.close()
+
+    def test_worktree_panel(self):
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser, page, errors = self.open(p)
+            try:
+                page.wait_for_selector(".code-tab.agent.active")
+                text = page.evaluate("""() => {
+                  const live = caSide({ id: 't', worktree: '/x', branch: 'poschat/task-1', plan: [], changes: {}, turns: [] }, false);
+                  const done = caSide({ id: 't', worktree: '/x', worktree_removed: true, applied_at: 1, plan: [], changes: {}, turns: [] }, false);
+                  return live.innerText + ' --- ' + done.innerText; }""")
+                self.assertIn("poschat/task-1", text)
+                self.assertIn("원래 폴더에 적용", text)
+                self.assertIn("버리기", text)
+                self.assertIn("적용하고 정리했습니다", text.split("---")[1])
                 self.assertEqual([e for e in errors if "favicon" not in e], [])
             finally:
                 browser.close()

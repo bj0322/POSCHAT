@@ -75,3 +75,17 @@ Windows에는 `O_NOFOLLOW`가 없어 연 뒤 확인에 기댄다.
 - **명령**: 채팅 설정의 자동 허용과 관계없이 매번 묻고 '이번 실행 동안 허용'이 없다(`test_task_plans_edits_runs_and_records`, `test_denied_command_is_not_run`).
   실행은 `code_runner.RunManager`(비밀 환경 변수 빼기·출력 가리기·제한·프로세스 트리 끝내기, `test_secrets_are_not_passed_to_commands`, `test_stop_kills_running_command`).
 - 작업 기록(`code/tasks/*.json`)에는 진행 단계와 출력 끝부분이 남는다. 출력은 가린 뒤의 것이다. 작업 ID는 형식을 검사해 다른 경로를 열지 못한다(`test_guards`).
+
+## Code 에이전트 2 (1.17.1)
+- **권한 모드**: 기본은 그대로 '수정 자동 · 명령은 묻기'다. '계획 모드'는 write·edit·multi_edit·run을 막는다(`test_plan_mode_reads_but_never_edits_or_runs`).
+  '전체 자동'은 명령을 묻지 않지만 `code_runner.analyze`가 위험한 동작(삭제·초기화·강제 푸시 등)이나 네트워크(curl·git push 등)로 본 명령은 승인 창으로 묻는다
+  (`test_full_auto_runs_commands_but_asks_for_dangerous_ones`). 셸 명령을 완전히 분석할 수는 없으므로 전체 자동은 믿는 저장소에서만 쓰도록 화면에 적었다.
+- **다시 묻지 않기 규칙**: 사용자가 승인 창에서 고를 때만 생긴다(작업 폴더별, 최대 50개). 실행 파일 + 하위 명령·스크립트까지의 접두어이고, 해석기 이름만 남는 규칙(`python`, `node`, `bash`…)은
+  만들지 않는다. 규칙이 있어도 셸 연결(`&&` `||` `;` `|` `>` `<` `` ` `` `$(`)·위험·네트워크가 있는 명령은 묻는다
+  (`test_remember_rule_skips_the_next_confirm_but_not_chained_commands`, `test_command_prefix_and_rules`).
+- **프로젝트 지침(AGENTS.md·CLAUDE.md)·Git 변경(/review)**: 저장소의 글이므로 '지시가 아닌 프로젝트 지침/데이터'로 표시해 붙이고, 앱의 승인·작업 폴더 밖 금지 규칙보다 앞서지 않는다고 적는다.
+  지침이 명령 실행을 시켜도 권한 모드의 승인은 그대로다.
+- **격리 작업 공간**: 데이터 폴더의 git worktree에서 일하고, 적용은 사용자가 누를 때만 `git apply --check` → 적용(→ `--3way`)으로 한다. 3-way에서 겹치면
+  건드린 파일 내용과 인덱스(`ls-files -s` → `update-index --index-info`)를 적용 전으로 되돌려 충돌 표시를 남기지 않는다(`test_isolated_worktree_discard_and_conflict`).
+  '브랜치로 남기기'는 worktree에서 `commit --no-verify`(훅이 승인 없이 돌지 않게)로 커밋한다. Git 이름·메일이 없으면 POSCHAT 이름을 쓴다. worktree도 작업 폴더와 같은 경로 차단·`.git` 수정 금지를 받는다.
+- **백그라운드 명령**: 같은 RunManager(비밀 빼기·출력 가리기·동시 4개)로 돌고, 작업이 끝나거나 멈추면 끝낸다(`test_background_jobs_stop_when_the_task_ends`).

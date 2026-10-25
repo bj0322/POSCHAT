@@ -218,6 +218,32 @@ details.ca-step[open] > summary::after { content: "▾"; }
 .ca-actions { display: flex; align-items: center; gap: 8px; }
 .ca-status { flex: 1; min-width: 0; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn.small { padding: 3px 12px; font-size: 12.5px; }
+/* 1.17.1: 권한 모드·슬래시 명령·작업 중 지시·계획 승인·격리 작업 공간 */
+.ca-foot { position: relative; }
+.ca-slash { position: absolute; left: 8px; right: 8px; bottom: calc(100% - 4px); background: var(--bg); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: 0 6px 20px rgba(0, 0, 0, .12); padding: 4px; display: flex; flex-direction: column; z-index: 5; max-height: 260px; overflow-y: auto; }
+.ca-slash[hidden] { display: none; }
+.ca-slash-item { display: flex; gap: 10px; align-items: baseline; text-align: left; border: 0; background: none; color: var(--text);
+  padding: 5px 8px; border-radius: 6px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.ca-slash-item:hover, .ca-slash-item:focus { background: var(--hover); outline: none; }
+.ca-slash-item code { min-width: 92px; }
+.ca-isolate { display: flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+.ca-isolate input { width: auto; margin: 0; }
+.ca-user.steer { border: 1px dashed var(--border); background: transparent; }
+.ca-user.compacted { opacity: .7; }
+.ca-user small.block, .ca-answer small.block { display: block; margin-bottom: 2px; }
+.ca-answer.proposal { border-left-color: var(--accent, #4f7cff); }
+.ca-proposal-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ca-step.note { border-style: dashed; }
+.ca-step.note .ca-step-title { font-family: inherit; font-size: 12.5px; color: var(--text); }
+.ca-step.steer .ca-step-title { color: var(--text); }
+.ca-project { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
+.ca-project h4 { margin: 0 0 4px; color: var(--text); font-size: 13px; }
+.ca-project p { margin: 4px 0; }
+.ca-rules { list-style: none; padding: 0; margin: 2px 0; display: flex; flex-direction: column; gap: 2px; }
+.ca-rules li { display: flex; gap: 8px; align-items: baseline; }
+.ca-worktree code { overflow-wrap: anywhere; }
+.ca-worktree .btn { margin-right: 4px; }
 @media (max-width: 900px) {
   .ca-main { flex-direction: column; }
   .ca-side { width: auto; border-left: 0; border-top: 1px solid var(--border); max-height: 35%; }

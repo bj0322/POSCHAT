@@ -1,6 +1,6 @@
 # POSCHAT
 
-버전 1.17.0 — **AI 실행 정책(Adaptive Hybrid AI)**: 켜면 요청의 종류·난이도·개인정보·비용을 보고 **로컬 AI(Ollama)**, **경량 Cloud 모델**(Haiku·GPT-5 mini 등), **프런티어 모델** 중 하나를 자동으로 고르고, 로컬·경량 답을 규칙으로 검증해 필요하면 위 단계로 다시 답합니다. 경량 모델이 대화를 이끌며 필요한 부분만 프런티어에 짧게 상담하는 3단계(실험, 켜야 씀), 단가 비율로 요청마다 계산하는 손익분기·프롬프트 캐싱, Economy·Balanced·Quality·Local Only 정책, 답변 아래 '왜 이 모델인지' 표시, 비용·통계, 개발자 모드(실측 토큰·손익분기 원자료). 기본은 꺼짐. [릴리스 노트](docs/release-notes/v1.17.0.md) · [설정](docs/adaptive-ai-setup.md) · [보안](docs/adaptive-ai-security.md) · [벤치마크](docs/adaptive-ai-benchmark-results.md) · [이전 버전 기록](#버전-기록)
+버전 1.17.1 — **Code 에이전트가 Claude Code·Codex처럼**: 권한 모드 4가지(**계획 모드**로 먼저 계획을 받고 승인하면 진행, 매번 묻기, 수정 자동, **전체 자동**), 명령 승인 창의 **다시 묻지 않기**, 일하는 중에 보내는 **추가 지시**, 슬래시 명령(`/init` `/review` `/test` `/plan` `/undo` `/compact`), **마지막 지시 되돌리기**, 프로젝트 지침 **AGENTS.md·CLAUDE.md**와 테스트·빌드 명령 자동 파악, **격리 작업 공간(git worktree)**에서 고친 뒤 적용·버리기, 줄 번호 읽기·파일 찾기(glob)·여러 곳 한 번에 고치기·백그라운드 명령. [릴리스 노트](docs/release-notes/v1.17.1.md) · [사용법](docs/code-editor-guide.md#code-에이전트-2-claude-codecodex처럼-1171) · [이전 버전 기록](#버전-기록)
 
 POSTECH GenAI API(기본) 또는 본인의 Claude API 키를 쓰는 Windows·macOS 데스크톱·안드로이드 챗봇 POSCHAT입니다(1.10까지의 이름은 POSTECH GenAI Chat). PIDS Tech. 팀이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 소프트웨어 라이선스(AGPL-3.0-only, 과거 버전은 MIT)는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
 
@@ -68,7 +68,7 @@ Releases의 `POSCHAT.apk`를 휴대폰에서 받아 설치합니다(Android 7.0 
 | 메모리(memory.md) | 왼쪽 아래 **메모리**, `/remember 내용`, `/memory` |
 | MCP 서버 켜기·끄기, 외부 서버 추가 | 왼쪽 아래 **연결·도구** → MCP 서버 |
 | AI 실행 정책·로컬 AI | **설정 → AI 실행 정책**. 자동 모델 선택(Economy·Balanced·Quality·Local Only), Ollama 연결·모델 받기, 3단계(경량 Cloud 모델과 프런티어 상담)·단가·손익분기·프롬프트 캐싱, 대화 위 모델 목록의 **자동**·**로컬**, **설정 → 개발자 모드** ([설정](docs/adaptive-ai-setup.md), 1.17) |
-| Code 에이전트(작업 맡기기) | **코드** → 맨 앞 **작업** 탭. 할 일을 적고 Ctrl+Enter. 계획·diff·실행 출력, 이어서 지시, 바뀐 파일 되돌리기 ([사용법](docs/code-editor-guide.md#code-에이전트-작업-맡기기-116), 1.16) |
+| Code 에이전트(작업 맡기기) | **코드** → 맨 앞 **작업** 탭. 할 일을 적고 Ctrl+Enter. 계획·diff·실행 출력, 이어서 지시, 바뀐 파일 되돌리기 ([사용법](docs/code-editor-guide.md#code-에이전트-작업-맡기기-116), 1.16). 권한 모드(계획·전체 자동), 다시 묻지 않기, 작업 중 추가 지시, `/init` `/review` `/test` `/plan` `/undo` `/compact`, AGENTS.md, 격리 작업 공간(git worktree) (1.17.1) |
 | Lab(실험 기록·비교·AI 분석) | 왼쪽 위 **Lab**. 실험·Run, 승인 실행, 재현성 기록, 결과 가져오기, 지표·그래프·비교, AI 분석 ([사용법](docs/lab-guide.md), 1.16) |
 | 브라우저 에이전트 | 브라우저를 연 채 에이전트에게 웹 작업을 맡기면 페이지를 직접 조작합니다. 브라우저 막대에서 일시정지·멈춤 ([보안](docs/browser-agent-security.md), 1.16) |
 | 코드(채팅 옆 편집기) | 왼쪽 위 **코드**. 파일 트리·편집·저장(Ctrl+S), 선택한 코드 AI에게 묻기, 에이전트 변경 덩어리별 검토, Git 상태·차이·스테이지·커밋, 명령 실행(승인) ([사용법](docs/code-editor-guide.md), 1.15) |
@@ -421,6 +421,8 @@ py -3 -m venv .venv
 ## 버전 기록
 
 각 버전의 자세한 내용은 [docs/release-notes](docs/release-notes)에 있습니다.
+
+- 1.17.0 — **AI 실행 정책(Adaptive Hybrid AI)**: 켜면 요청의 종류·난이도·개인정보·비용을 보고 **로컬 AI(Ollama)**, **경량 Cloud 모델**(Haiku·GPT-5 mini 등), **프런티어 모델** 중 하나를 자동으로 고르고, 로컬·경량 답을 규칙으로 검증해 필요하면 위 단계로 다시 답합니다. 경량 모델이 대화를 이끌며 필요한 부분만 프런티어에 짧게 상담하는 3단계(실험, 켜야 씀), 단가 비율로 요청마다 계산하는 손익분기·프롬프트 캐싱, Economy·Balanced·Quality·Local Only 정책, 답변 아래 '왜 이 모델인지' 표시, 비용·통계, 개발자 모드(실측 토큰·손익분기 원자료). 기본은 꺼짐. [릴리스 노트](docs/release-notes/v1.17.0.md) · [설정](docs/adaptive-ai-setup.md) · [보안](docs/adaptive-ai-security.md) · [벤치마크](docs/adaptive-ai-benchmark-results.md)
 
 - 1.16.0 — **Code 에이전트**: 코드 화면의 **작업** 탭에서 할 일을 맡기면 Codex·Claude Code처럼 에이전트가 계획을 세우고, 코드를 읽고·고치고·테스트를 실행해 확인합니다(수정은 바로 적용하고 되돌리기 가능, 명령은 매번 승인). **POSCHAT Lab**: 실험 조건·코드 버전(Git)·실행 환경·결과를 Run마다 기록하고, 결과 파일에서 고른 지표를 뽑아 그래프·비교표로 보고, 고른 Run만 AI에게 해석을 묻습니다. **AI 브라우저 에이전트**: 에이전트가 옆 브라우저를 직접 조작합니다(제출·삭제·로그인·결제·다운로드 등은 언제나 승인). 사이드바의 채팅 목록이 더 길어졌습니다. [릴리스 노트](docs/release-notes/v1.16.0.md) · [Lab 사용법](docs/lab-guide.md) · [브라우저 에이전트 보안](docs/browser-agent-security.md)
 
