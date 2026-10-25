@@ -75,6 +75,7 @@ const PAGES = {
 
 function pageOpen(id) {
   if (!PAGES[id]) return;
+  if (window.codeLeave) codeLeave();  // 코드도 하나의 화면이라 다른 화면을 열면 닫는다(탭은 그대로)
   if (window.poLeave) poLeave();
   if (PAGE.id && PAGE.id !== id) $(PAGES[PAGE.id].button)?.classList.remove("active");
   PAGE.id = id;
