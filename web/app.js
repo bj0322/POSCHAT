@@ -262,16 +262,22 @@ async function refreshThreads() {
 }
 
 /* ---------- 대화 ---------- */
-async function openThread(id) {
-  leaveViews();
+// leave=false: 앱을 시작할 때처럼 사용자가 고른 것이 아니면 열어 둔 화면(코드·Lab 등)을 닫지 않는다
+async function openThread(id, leave = true) {
+  if (leave) leaveViews();
   const thread = await api().load_thread(id);
   if (!thread) return refreshThreads();
   S.currentId = id;
   S.thread = thread;
-  $("#chat-title").textContent = thread.title;
+  // 다른 화면이 열려 있으면(leave=false) 대화는 뒤에서 준비만 하고, 제목·대화 선택 표시·초점은 그 화면을 닫을 때 돌아온다
+  const inView = !leave && ((typeof PAGE !== "undefined" && PAGE.id) || (typeof PO !== "undefined" && PO.open)
+    || (typeof CODE !== "undefined" && CODE.open));
+  if (!inView) $("#chat-title").textContent = thread.title;
   renderThreadModel();
   renderSidebar();
+  if (inView) document.querySelectorAll(".thread.active").forEach((t) => t.classList.remove("active"));
   renderMessages();
+  if (inView) return;
   if (isNarrow()) setCollapsed(true);
   else $("#input").focus();  // 휴대폰에서는 키보드가 화면을 가리지 않게 자동으로 띄우지 않는다
 }
@@ -313,16 +319,16 @@ function leaveViews() {
   if (window.pageLeave) pageLeave();
 }
 
-async function newThread() {
+async function newThread(leave = true) {
   // 이미 비어 있는 새 대화가 열려 있으면 그대로 쓴다
   if (S.thread && !S.thread.messages.length) {
-    leaveViews();
+    if (leave) leaveViews();
     $("#input").focus();
     return;
   }
   const thread = await api().new_thread();
   S.threads.unshift({ id: thread.id, title: thread.title, updated: thread.updated });
-  await openThread(thread.id);
+  await openThread(thread.id, leave);
 }
 
 /* 부적절한 AI 응답 신고(1.18, Microsoft Store 정책 11.16 '생성형 AI 콘텐츠'): GitHub 이슈 양식(.github/ISSUE_TEMPLATE/ai-report.yml)을
@@ -1841,8 +1847,9 @@ async function init() {
   const state = await api().get_state();
   applyState(state);
   S.busy = state.busy;
-  if (S.threads.length) await openThread(S.threads[0].id);
-  else await newThread();
+  // 시작할 때 첫 대화를 여는 동안 사용자가 이미 코드·Lab 등을 열었으면 그대로 둔다(닫으면 화면이 저절로 사라진다)
+  if (S.threads.length) await openThread(S.threads[0].id, false);
+  else await newThread(false);
   updateSend();
   if (!state.config.has_key) showSettings();
   // 새 버전 확인(설정에서 끌 수 있고 6시간에 한 번). 실패해도 사용에 지장이 없으므로 알리지 않는다.

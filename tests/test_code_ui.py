@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -242,6 +243,35 @@ class CodeUiTests(unittest.TestCase):
                 page.click("#code-run")
                 page.wait_for_selector(".modal:has-text('위험할 수 있는 동작')")
                 page.click(".modal button:has-text('취소')")
+                self.assertEqual(errors, [])
+            finally:
+                browser.close()
+
+    def test_code_opened_while_the_app_starts_stays_open(self):
+        """1.18 회귀: 앱이 시작하는 동안(느린 get_state → 첫 대화 열기) 코드를 열면, 첫 대화가 열린 뒤에도 코드 화면이 닫히지 않아야 한다.
+        CI에서 시작이 느리면 test_code_agent_ui가 연 코드 화면이 저절로 닫혔다."""
+        import time
+
+        from playwright.sync_api import sync_playwright
+
+        self.bridge.new_thread()   # 시작할 때 열 대화가 있게
+        real = self.bridge.get_state
+
+        def slow():
+            time.sleep(1.5)
+            return real()
+        with patch.object(self.bridge, "get_state", slow), sync_playwright() as p:
+            browser, page, errors = self.open(p)
+            try:
+                page.click("#btn-code")
+                page.wait_for_selector("#code-pane:not([hidden])")
+                page.wait_for_function("() => typeof S !== 'undefined' && !!S.thread", timeout=10000)   # 첫 대화가 열렸다
+                page.wait_for_timeout(300)
+                self.assertTrue(page.is_visible("#code-pane"))
+                self.assertTrue(page.is_hidden("#main"))
+                self.assertEqual(page.locator(".thread.active").count(), 0)
+                page.click("#btn-new")                                            # 사용자가 고르면 채팅으로 간다
+                page.wait_for_selector("#code-pane", state="hidden")
                 self.assertEqual(errors, [])
             finally:
                 browser.close()
