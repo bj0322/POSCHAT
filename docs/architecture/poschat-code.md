@@ -129,3 +129,26 @@ Agent._tool_write/_tool_edit → Agent._save(p, old, new, enc, title, reason)
   `on_tool`·`on_plan`·`on_run`·`review`가 작업 JSON을 고치고 `{"type": "code", "kind": "agent_*"}` 이벤트를 보낸다 → 끝나면 답을 대화에 넣고 `agent_done`.
 - 파일 수정: `Agent._save` → `review` 콜백(`_ca_review`). '수정 자동'이면 원본 백업 → 원자적 쓰기 → `{"status": "applied", "diff"}`. '모두 묻기'면 None → 예전 승인 창.
 - 한 번에 하나의 작업만 돈다. 채팅 응답을 기다리는 중에는 시작하지 않는다. 앱이 닫히면 `_ca_shutdown`이 멈춘다.
+
+## Code 에이전트 2 (1.17.1) — Claude Code·Codex처럼
+| 파일 | 하는 일 |
+|---|---|
+| `code_project.py` | 프로젝트 지침(AGENTS.md·CLAUDE.md·.claude/CLAUDE.md), 테스트·빌드·린트 명령 짐작, Git 요약, 슬래시 명령 풀기(`expand_slash`), '다시 묻지 않기' 규칙(`command_prefix`·`rule_allows`·`auto_run_ok`), git worktree 만들기·패치·적용·지우기 |
+| `code_agent.py` | `CodeAgent`: 권한 모드, 도구(`read` offset·limit·줄 번호, `glob`, `edit` replace_all, `multi_edit`, `run` background·`job_output`·`job_stop`, 모든 단계의 `note`), 작업 중 지시(`_steer_messages`). `CodeAgentApi`: 아래 API |
+| `web/code-agent.js` | 권한 모드 메뉴, 슬래시 명령 목록, 계획 승인 단추, 추가 지시, 마지막 지시 되돌리기, 격리 작업 공간 적용·버리기, 프로젝트 안내·규칙 |
+
+- **권한 모드**(`config["code"]["agent_approval"]`, 지시마다 `options.mode`로 바꿀 수 있음): `plan`(write·edit·multi_edit·run이 `ToolError`로 막히고,
+  답은 `plan_proposal`로 남는다 → 화면의 '이 계획으로 진행'이 같은 작업에 `mode`를 바꿔 이어서 지시), `ask`(수정·명령 승인 창), `auto_edit`(기본),
+  `full_auto`(수정 자동 + 명령 자동, `code_runner.analyze`가 위험·네트워크로 본 명령은 승인 창).
+- **명령 규칙**: 승인 창에 `remember`(접두어)를 보내고, 사용자가 '다시 묻지 않기'를 고르면 `config["code"]["allow_commands"][작업 폴더]`에 남긴다.
+  접두어는 실행 파일 + 하위 명령·스크립트(1~3낱말)이고, 해석기 이름만 남는 넓은 규칙(`python`)은 만들지 않는다. 셸 연결·위험·네트워크가 있는 명령은 규칙이 있어도 묻는다.
+- **지시(turn)별 되돌리기**: `task["turn_no"]`, 바뀐 파일마다 `change["turns"][n] = {backup, created, before_sha}`(그 지시에서 처음 고치기 전 상태).
+  `code_agent_undo`는 마지막 지시의 파일만, 에이전트가 쓴 그대로일 때만 되돌린다.
+- **작업 중 지시**: `code_agent_steer` → `running["steer"]` 큐 → 에이전트 루프가 다음 단계 전에 진행 기록에 '사용자가 작업 중에 보낸 추가 지시'로 넣는다.
+- **대화 줄이기**: `code_agent_compact`가 지난 지시·답을 모델 요약 하나로 바꾼다(바뀐 파일·백업은 그대로).
+- **격리 작업 공간**: 새 작업의 `options.isolate` → `git worktree add -b poschat/<작업> <데이터 폴더>/code/worktrees/<작업> HEAD`.
+  에이전트·명령은 worktree에서 돈다. `code_agent_apply`: worktree에서 `git add -A` → `git diff --cached --binary <기준>` → 원래 폴더에 `git apply --check` 후 적용,
+  안 맞으면 `--3way`, 겹치면 건드린 파일·인덱스를 되돌리고 오류(원래 폴더는 '다 적용' 아니면 '그대로'). 적용 뒤 worktree·브랜치를 지운다.
+  `code_agent_keep_branch`는 worktree를 브랜치에 커밋(`--no-verify`)하고 worktree만 지운다. `code_agent_discard`는 지우기만.
+- **백그라운드 명령**: `RunManager`로 시작하고 기다리지 않는다(동시 4개 상한 그대로). `RunRecord.output_tail`은 도는 동안에도 갱신한다. 작업이 끝나면 멈춘다.
+

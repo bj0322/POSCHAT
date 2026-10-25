@@ -650,6 +650,8 @@ class Agent:
         for step in range(self.max_steps):
             if self.cancelled():
                 return "(작업을 중지했습니다.)"
+            for msg in self._steer_messages():  # 1.17.1: 작업 중에 사용자가 보낸 추가 지시(Code 에이전트)
+                log.append(("사용자가 작업 중에 보낸 추가 지시(지금부터 반영하세요)", msg))
             self.on_status(f"생각하는 중... ({step + 1}단계)")
             self.steps = step + 1
             prompt = static + self._format_log(log) + "\n\n다음 단계 JSON:"
@@ -691,6 +693,10 @@ class Agent:
         if action and action.get("action") == "done":
             return str(action.get("answer") or "")
         return reply
+
+    def _steer_messages(self):
+        """작업 중에 들어온 사용자 지시. 기본 Agent에는 없다(CodeAgent가 바꾼다)."""
+        return []
 
     def _mentioned_files(self, text):
         """text에 경로나 파일 이름이 나오는, 실제로 있는 작업 폴더 파일(상대 경로)."""

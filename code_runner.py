@@ -330,6 +330,7 @@ class RunManager:
             joined = "".join(tail)
             if len(joined) > MAX_TAIL * 2:
                 tail[:] = [joined[-MAX_TAIL:]]
+            rec.output_tail = joined[-MAX_TAIL:]  # 1.17.1: 도는 동안에도 최근 출력(백그라운드 명령 확인)
             rec.output_chars += len(text)
             if sent < MAX_STREAM:
                 chunk = text[:MAX_STREAM - sent]

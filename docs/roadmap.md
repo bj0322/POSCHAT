@@ -1,6 +1,6 @@
 # POSCHAT 로드맵과 다음 작업 (v1.16부터)
 
-마지막 갱신: 2026-10-24, v1.17.0 릴리스 시점. 작업 지침은 저장소 최상위 [CLAUDE.md](../CLAUDE.md).
+마지막 갱신: 2026-10-25, v1.17.1 릴리스 시점. 작업 지침은 저장소 최상위 [CLAUDE.md](../CLAUDE.md).
 
 **플랫폼 정책(2026-10, 사용자 지시)**: 안드로이드 앱은 따로 요청하지 않으면 기능을 맞추지 않는다. 데스크톱(Windows·macOS)만 손본다.
 공유 Python·화면 코드는 안드로이드 빌드에도 들어가므로 새 모듈은 계속 공유 목록에 넣고, 안드로이드에서 안 되는 기능은 '쓸 수 없음'으로 막는다. CI의 android 작업과 APK 자산은 그대로 둔다.
@@ -14,10 +14,17 @@
 | 1.15 | B1 수정(ui_events 큐) + POSCHAT Code(편집기·변경 검토·Git·실행) | 릴리스 |
 | 1.16 | Code 에이전트(작업 탭), POSCHAT Lab, AI 브라우저 에이전트, 사이드바 정리, 보안 검토 반영(사이트 승인 kind `site`, `.git` 수정 금지) | 릴리스 |
 | 1.17 | Adaptive Hybrid AI Engine: 로컬 AI(Ollama)·자동 모델 선택(4정책)·3단계(경량 Cloud·프런티어 상담)·품질 검증·승격·비용 통계·벤치마크 | 릴리스(3단계·캐싱은 기본 꺼짐, 실제 모델 측정은 남음) |
+| 1.17.1 | Code 에이전트 2(Claude Code·Codex처럼): 권한 모드 4가지·다시 묻지 않기 규칙·작업 중 지시·슬래시 명령·지시별 되돌리기·AGENTS.md·격리 작업 공간(git worktree)·새 도구, 손익분기 실험 도구 | 릴리스 |
 
 ## 지금 할 일
 
-### 1. v1.17 뒤: 실제 모델 측정
+### 1. 손익분기 실험으로 결정 함수 맞추기 (진행 중)
+- 도구: `tools/breakeven_experiment.py`(방법은 [adaptive-ai-evaluation.md](adaptive-ai-evaluation.md#손익분기-실험-toolsbreakeven_experimentpy-117-뒤)).
+- 사용자가 이 클라우드 환경에 API 키(`ANTHROPIC_API_KEY`, 선택 `POSTECH_GENAI_API_KEY`)를 넣으면 새 세션에서 1차(시범, 호출 약 900번)를 돌린다.
+  모델 짝은 Claude Haiku 5.5 → Opus 5.5 먼저(캐싱까지 잼), 다음 Haiku → Sonnet, POSTECH GPT-5 mini → GPT-5.1.
+- 분석 결과로 `adaptive_cost`의 기본 프로필·승격 확률·상담 비율(지금은 '언제나 상담'으로 봄)을 고치고, 표 정책이 이기면 엔진에 옮긴다.
+
+### 2. v1.17 뒤: 실제 모델 측정
 v1.17(Adaptive Hybrid AI Engine)은 릴리스했다(사용자 승인, 2026-10-24). 3단계·프롬프트 캐싱은 기본 꺼짐, 단가를 넣으면 손익분기(`adaptive_cost`)로 경로를 고른다. 구조 [architecture/adaptive-ai.md](architecture/adaptive-ai.md), 결과 [adaptive-ai-benchmark-results.md](adaptive-ai-benchmark-results.md).
 - 사용자 PC에서 `tools/local_ai_check.py`와 `tools/adaptive_benchmark.py --run`(A·B·E·F·G, Cloud 호출 상한)으로 실제 품질·비용을 재고 결과 문서에 적는다.
   성공률 하락이 2%p를 넘는 작업 유형은 `LOCAL_ELIGIBLE`·`LIGHT_DIRECT`에서 뺀다.
@@ -25,8 +32,9 @@ v1.17(Adaptive Hybrid AI Engine)은 릴리스했다(사용자 승인, 2026-10-24
 - 개발자 모드(설정)의 실측 토큰·캐시 적중률로 상담·캐싱의 실제 이득을 확인하고, 손익분기 프로필의 기본값(O·C·A·승격 확률)을 실측으로 고친다.
 - 1.16 실제 앱 손 확인(아래 '알려진 한계')은 계속 남아 있다.
 
-### 2. 다음 후보(v1.18 이후)
-- Code 에이전트: 작업마다 git worktree/브랜치로 격리, 하위 작업(서브에이전트), 테스트 명령 자동 찾기, 긴 출력 요약, 이미지(스크린숏) 입력.
+### 3. 다음 후보(v1.18 이후)
+- Code 에이전트: 하위 작업(서브에이전트), 긴 출력 요약, 이미지(스크린숏) 입력, MCP 도구, 훅(편집 뒤 포맷·린트 자동 실행), 실제 앱에서 worktree·백그라운드 명령 손 확인.
+  (1.17.1에서 worktree 격리·테스트 명령 찾기·권한 모드·슬래시 명령은 했다)
 - 대화형 터미널(ConPTY/PTY, SSH 세션), SystemVerilog 문법 트리.
 - Lab: papermill식 노트북 파라미터, 원격(SSH) 실행 기록, 실험 보고서 내보내기(Markdown·PDF), 지표 단위 변환 규칙.
 - 브라우저 에이전트: iframe·shadow DOM 요소, 드래그·호버, 탭 여러 개, 사이트별 허용 목록 설정.
