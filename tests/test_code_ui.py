@@ -179,7 +179,7 @@ class CodeUiTests(unittest.TestCase):
                 page.wait_for_selector(".code-review .code-hunk", timeout=10000)
                 self.assertEqual(page.locator(".code-hunk").count(), 2)
                 self.assertIn("이유: 값 조정", page.inner_text(".code-review-head"))
-                self.assertIn("변경 검토 (1)", page.inner_text("#code-btab-review"))
+                self.assertIn("변경 검토 (1)", page.inner_text("#code-side-review"))   # 1.18: 왼쪽 패널의 탭
                 self.assertEqual((self.ws / "sim" / "review.py").read_text(), BASE)  # 승인 전에는 그대로
                 self.shot(page, "code-review")
                 page.uncheck(".code-hunk[data-hunk='0'] input[type=checkbox]")
@@ -201,13 +201,14 @@ class CodeUiTests(unittest.TestCase):
                 t.join(10)
                 self.assertIn("거부", box["obs"])
                 self.assertIn("value_1 = 1\n", (self.ws / "sim" / "review.py").read_text())
-                page.click("#code-btab-review")
-                self.assertEqual(page.locator(".code-item").count(), 2)
+                page.click("#code-side-review")
+                self.assertEqual(page.locator("#code-side-body .code-item").count(), 2)
                 self.assertEqual(errors, [])
             finally:
                 browser.close()
 
-    def test_git_panel_and_run_panel(self):
+    def test_git_panel_and_terminal(self):
+        """1.18: Git은 왼쪽 패널의 탭, 아래 패널은 진짜 터미널(셸). 입력·출력·AI에게 묻기·새 터미널·닫기·끝남."""
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as p:
@@ -218,8 +219,8 @@ class CodeUiTests(unittest.TestCase):
                 self.open_code(page)
                 if self.git:
                     page.wait_for_selector(".code-row[data-path='main.c'] .code-git-mark")
-                    page.click("#code-btab-git")
-                    page.wait_for_selector(".code-git-row:has-text('main.c')")
+                    page.click("#code-side-git")
+                    page.wait_for_selector("#code-side-body .code-git-row:has-text('main.c')")
                     page.click(".code-git-file:has-text('main.c')")
                     page.wait_for_selector(".code-tabpane:not([hidden]) pre.diff .add")
                     self.assertIn("return 1", page.inner_text(".code-tabpane:not([hidden]) pre.diff"))
@@ -227,22 +228,39 @@ class CodeUiTests(unittest.TestCase):
                     page.click("button:has-text('고른 파일 스테이지')")
                     page.wait_for_selector("h4:has-text('스테이지됨')")
                     self.shot(page, "code-git")
-                # 실행: 승인 창 → 출력
-                page.click("#code-btab-run")
-                page.wait_for_selector("#code-cmd")
-                page.fill("#code-cmd", f'"{sys.executable}" -c "print(6 * 7)"')
-                page.click("#code-run")
-                page.wait_for_selector(".modal:has-text('명령 실행 승인')")
-                self.assertIn("격리가 아닙니다", page.inner_text(".modal"))
-                page.click(".modal button:has-text('실행')")
-                page.wait_for_function("document.querySelector('#code-run-out') && document.querySelector('#code-run-out').textContent.includes('42')", timeout=15000)
-                page.wait_for_selector(".code-run-chip .run-done", timeout=15000)
-                self.shot(page, "code-run")
-                # 위험한 명령은 경고를 보인다(취소)
-                page.fill("#code-cmd", "git reset --hard")
-                page.click("#code-run")
-                page.wait_for_selector(".modal:has-text('위험할 수 있는 동작')")
-                page.click(".modal button:has-text('취소')")
+                    page.click("#code-side-files")
+                    page.wait_for_selector("#code-tree")
+                # 아래 패널: 코드 화면을 열면 터미널이 작업 폴더에서 바로 열린다(승인 창 없음 — 사용자가 직접 치는 셸)
+                page.wait_for_selector(".code-term:not([hidden]) .xterm", timeout=15000)
+                self.assertEqual(page.locator(".code-ttab").count(), 1)
+                page.click(".code-term:not([hidden]) .xterm")
+                page.keyboard.type('echo "답=$((6*7))"; pwd')
+                page.keyboard.press("Enter")
+                screen = "() => TERM.sessions.find((s) => s.id === TERM.active).term.buffer.active"
+                text = f"() => {{ const b = ({screen})(); let t = ''; for (let i = 0; i < b.length; i++) t += b.getLine(i).translateToString(true) + '\\n'; return t; }}"
+                page.wait_for_function(f"({text})().includes('답=42')", timeout=15000)
+                self.assertIn(str(self.ws), page.evaluate(text))      # 작업 폴더에서 시작
+                self.assertEqual(page.locator(".modal").count(), 0)
+                self.shot(page, "code-terminal")
+                # 새 터미널 → 탭 2개, 닫기 → 1개
+                page.click("#code-term-new")
+                page.wait_for_function("TERM.sessions.length === 2")
+                page.click(".code-ttab.active .code-ttab-close")
+                page.wait_for_function("TERM.sessions.length === 1")
+                # AI에게 묻기: 끝부분을 채팅에 첨부하고 채팅으로 돌아간다
+                page.click("#code-term-ask")
+                page.wait_for_selector("#code-pane", state="hidden")
+                page.wait_for_selector("#attach-tray:has-text('터미널 출력')")
+                self.assertIn("터미널 출력", page.input_value("#input"))
+                # 다시 열면 같은 터미널이 그대로 있다. exit로 끝내면 알린다
+                page.click("#btn-code")
+                page.wait_for_selector(".code-term:not([hidden]) .xterm")
+                self.assertEqual(page.evaluate("TERM.sessions.length"), 1)
+                page.click(".code-term:not([hidden]) .xterm")
+                page.keyboard.type("exit 3")
+                page.keyboard.press("Enter")
+                page.wait_for_function(f"({text})().includes('종료 코드 3')", timeout=15000)
+                page.wait_for_selector(".code-ttab.dead")
                 self.assertEqual(errors, [])
             finally:
                 browser.close()

@@ -1383,6 +1383,8 @@ def selftest():
     import secret_store
     lines.append(f"secrets: {secret_store.backend_name()}")
     lines.append(f"stt: {stt.selfcheck()}")
+    import terminal
+    lines.append(f"terminal: {terminal.selfcheck()}")
     import tempfile
     import rag
     import sync

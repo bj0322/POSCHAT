@@ -152,6 +152,18 @@ Agent._tool_write/_tool_edit → Agent._save(p, old, new, enc, title, reason)
   `code_agent_keep_branch`는 worktree를 브랜치에 커밋(`--no-verify`)하고 worktree만 지운다. `code_agent_discard`는 지우기만.
 - **백그라운드 명령**: `RunManager`로 시작하고 기다리지 않는다(동시 4개 상한 그대로). `RunRecord.output_tail`은 도는 동안에도 갱신한다. 작업이 끝나면 멈춘다.
 
+## 터미널 (1.18)
+| 파일 | 하는 일 |
+|---|---|
+| `terminal.py` | `TerminalManager`: 셸 열기(작업 폴더, 비밀 환경 변수 빼기)·쓰기·크기·닫기(프로세스 트리)·끝부분 200KB. `_PosixPty`(pty·select, 새 세션) / `_WinPty`(pywinpty의 낮은 수준 `winpty.PTY`, ConPTY). `selfcheck()`(설치본 진단) |
+| `code_api.py` | `code_term_open/write/resize/close`, `code_terms`(다시 붙이기), `code_term_ask`(채팅 첨부), 이벤트 `term_output`·`term_exit` |
+| `web/code-term.js` | xterm.js 6(`web/vendor/xterm`, fit 애드온)로 아래 패널의 터미널 탭들. 키 입력은 차례대로 하나씩 보낸다(js_api 호출은 순서를 보장하지 않음). 열기 응답보다 먼저 온 출력은 모아 두었다가 붙인다 |
+| `web/code.js` | 아래 패널 = 터미널, 왼쪽 패널 = 파일·Git·변경 검토 탭(`CODE.side`, `codeSide`). 예전 실행 패널(`codeRunPanel`)은 없앴다 |
+
+- 출력은 읽는 스레드가 약 30ms마다(조용해지면 바로) 모아 `_push`로 보낸다. ui_events 큐를 거치므로 UI 스레드를 막지 않는다(B1).
+- 자동으로 열 때는 초점을 가져가지 않는다(작업 탭 입력 칸이 먼저). 터미널을 누르거나 Ctrl+`·+ 로 열면 초점을 옮긴다.
+- Windows 배포본은 `--collect-all winpty`로 `_winpty.pyd`·`conpty.dll`·`OpenConsole.exe`를 싣는다. CI는 설치본 selftest의 `terminal: OK`(실제 셸 한 줄)를 본다.
+
 ## Code 에이전트 3 (1.17.2) — 터미널처럼
 | 파일 | 하는 일 |
 |---|---|

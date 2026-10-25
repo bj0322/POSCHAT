@@ -15,7 +15,7 @@
 .code-ws { flex: 1; min-width: 0; color: var(--text-3); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .code-body { flex: 1; min-height: 0; display: flex; }
-.code-files { flex: none; width: 220px; border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; background: var(--sidebar); }
+.code-files { flex: none; width: 240px; border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; background: var(--sidebar); }
 .code-files[hidden] { display: none; }
 .code-files-bar { display: flex; gap: 2px; padding: 4px 6px; }
 .code-search-row { display: flex; gap: 4px; padding: 0 6px 6px; }
@@ -298,3 +298,30 @@ textarea.code-input { resize: vertical; }
 .ca-mi.cur b { color: var(--t-accent); }
 .ca-keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 0 18px; color: var(--t-dim); font-size: 12px; padding: 2px 4px; }
 .ca-keys b { color: var(--t-fg); font-weight: 400; }
+
+/* ---------- 1.18 왼쪽 패널 탭(파일 · Git · 변경 검토)과 아래 터미널(web/code-term.js) ---------- */
+.code-side-tabs { display: flex; gap: 2px; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+.code-stab { border: 0; background: transparent; color: var(--text-2); padding: 3px 9px; border-radius: 6px; font: inherit; font-size: 12.5px; white-space: nowrap; }
+.code-stab.active { background: var(--active); color: var(--text); }
+.code-stab[hidden] { display: none; }
+.code-side-body { flex: 1; min-height: 0; overflow: auto; font-size: 13px; }
+.code-side-body .code-git-actions { flex-wrap: wrap; }
+.code-side-body .code-commit { flex-direction: column; align-items: stretch; }
+.code-bottom-title { border: 0; background: transparent; color: var(--text); font: inherit; font-size: 12.5px; font-weight: 600; padding: 4px 8px; }
+.code-term-tabs { display: flex; gap: 2px; min-width: 0; overflow-x: auto; }
+.code-ttab { display: inline-flex; align-items: center; border-radius: 6px; color: var(--text-2); }
+.code-ttab.active { background: var(--active); color: var(--text); }
+.code-ttab.dead .code-ttab-name { text-decoration: line-through; }
+.code-ttab-name { border: 0; background: transparent; color: inherit; font: 12px var(--mono); padding: 3px 4px 3px 9px; white-space: nowrap; }
+.code-ttab-close { border: 0; background: transparent; color: inherit; width: 20px; height: 20px; padding: 3px; border-radius: 4px; opacity: .6; }
+.code-ttab-close:hover { opacity: 1; background: var(--hover); }
+.code-ttab-close svg { width: 12px; height: 12px; }
+.code-bottom-tabs .btn.small { padding: 1px 10px; font-size: 12px; }
+#code-bottom-body { overflow: hidden; position: relative; }
+.code-term { position: absolute; inset: 4px 0 0 8px; background: #fbfaf8; }
+.code-term[hidden] { display: none; }
+.code-term .xterm { height: 100%; }
+.code-term-empty { padding: 12px; display: flex; gap: 10px; align-items: center; font-size: 13px; }
+@media (prefers-color-scheme: dark) { .code-term { background: #151515; } }
+.code-term .xterm-viewport { background-color: transparent !important; }   /* 터미널 아래 남는 줄이 검게 보이지 않게(바탕은 .code-term) */
+.code-side-body .code-git-actions .btn { padding: 3px 9px; font-size: 12px; }

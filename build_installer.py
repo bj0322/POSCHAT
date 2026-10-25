@@ -152,6 +152,7 @@ def main():
     print("[1/3] 앱 빌드")
     pyinstaller(
         "--windowed", "--onedir", "--name", "PostechChat", "--icon", str(ICON), *APP_DATA, *dependency_licenses(),
+        "--collect-all", "winpty",  # 1.18 터미널: ConPTY 확장 모듈·conpty.dll·OpenConsole.exe(terminal.py가 필요할 때 가져온다)
         "--version-file", version_file("PostechChat.exe", APP_NAME),
         "--distpath", str(WORK / "app"),
         str(ROOT / "main.py"),
