@@ -498,6 +498,8 @@ function codeActivate(id) {
   for (const t of CODE.tabs) t.el.hidden = t.id !== id;
   codeRenderTabs();
   codeRenderActive();
+  const t = CODE.tabs.find((x) => x.id === id);
+  if (t && t.kind === "agent" && window.caFocus) setTimeout(() => caFocus(), 0);  // 1.17.2: 작업 탭(터미널)을 열면 바로 입력
 }
 
 function codeRenderActive() {
@@ -1262,7 +1264,9 @@ function codeEvent(ev) {
       if (CODE.open && CODE.bottom === "run" && (CODE.runShown === r.id || !CODE.runShown)) codeRunPanel($("#code-bottom-body"));
       setTimeout(() => codeRunLocations(r), 0);
       codeGitRefresh(true);
-      if (!CODE.open || CODE.bottom !== "run") toast(`명령이 끝났습니다: ${codeRunLabel(r)}`);
+      // 1.17.2: 에이전트·! 명령의 결과는 작업 탭(터미널)에 보이므로, 그 탭을 보고 있으면 알리지 않는다
+      const inTerminal = String(r.purpose || "").startsWith("Code 에이전트") && window.caVisible && caVisible();
+      if ((!CODE.open || CODE.bottom !== "run") && !inTerminal) toast(`명령이 끝났습니다: ${codeRunLabel(r)}`);
     }
   } else if (ev.kind === "run_output") {
     let text = (CODE.runOut.get(ev.id) || "") + ev.text;

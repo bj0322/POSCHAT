@@ -535,10 +535,7 @@ class CodeApi:
         def go():
             ws = self._code_run_ready()
             cmd = str(command or "").strip()
-            entry = (self._code_tokens or {}).pop(str(token or ""), None)
-            if not entry or entry[0] != hashlib.sha256(cmd.encode("utf-8")).hexdigest() or \
-                    time.time() - entry[1] > TOKEN_SECONDS:
-                raise code_runner.RunnerError("승인한 명령과 다르거나 승인이 만료되었습니다. 다시 실행을 누르세요.")
+            self._code_take_token(cmd, token)
             rec = self._code_runner().start(ws, cmd, self._code_settings()["timeout"], purpose)
             conf = self._code_conf()
             history = [c for c in conf.get("history") or [] if c != rec.command]
@@ -546,6 +543,13 @@ class CodeApi:
             self._code_save_conf()
             return {"run": rec.to_dict(tail=False)}
         return self._code_call(go)
+
+    def _code_take_token(self, cmd, token):
+        """code_run_check가 준 한 번 쓰는 승인 토큰을 확인하고 없앤다(명령이 같고 5분 안일 때만)."""
+        entry = (self._code_tokens or {}).pop(str(token or ""), None)
+        if not entry or entry[0] != hashlib.sha256(str(cmd).encode("utf-8")).hexdigest() or \
+                time.time() - entry[1] > TOKEN_SECONDS:
+            raise code_runner.RunnerError("승인한 명령과 다르거나 승인이 만료되었습니다. 다시 실행을 누르세요.")
 
     def code_run_stop(self, run_id):
         return self._code_call(lambda: {"run": self._code_runner().stop(str(run_id)).to_dict(tail=False)})

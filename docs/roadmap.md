@@ -15,6 +15,7 @@
 | 1.16 | Code 에이전트(작업 탭), POSCHAT Lab, AI 브라우저 에이전트, 사이드바 정리, 보안 검토 반영(사이트 승인 kind `site`, `.git` 수정 금지) | 릴리스 |
 | 1.17 | Adaptive Hybrid AI Engine: 로컬 AI(Ollama)·자동 모델 선택(4정책)·3단계(경량 Cloud·프런티어 상담)·품질 검증·승격·비용 통계·벤치마크 | 릴리스(3단계·캐싱은 기본 꺼짐, 실제 모델 측정은 남음) |
 | 1.17.1 | Code 에이전트 2(Claude Code·Codex처럼): 권한 모드 4가지·다시 묻지 않기 규칙·작업 중 지시·슬래시 명령·지시별 되돌리기·AGENTS.md·격리 작업 공간(git worktree)·새 도구, 손익분기 실험 도구 | 릴리스 |
+| 1.17.2 | Code 에이전트 3(터미널처럼, 사용자 요청 '완벽히 CLI처럼'): 작업 탭 전체를 Claude Code 같은 터미널로 — `● Read(…) ⎿` 기록·줄 번호 diff·접힌 출력(Ctrl+O), 기록 안의 승인 선택지(1·2·3·Esc, 거부하며 다르게 하라고 알리기), Shift+Tab 모드(작업 중에도), Esc 멈춤·Esc 두 번 되돌리기, ↑↓ 지난 입력, `/`·`@` 자동 완성, `!명령`·`#메모`·`@파일`, 프로젝트 명령(.poschat/.claude commands), /clear /resume /status /diff /revert /todos /permissions /memory /worktree /apply /keep /discard /delete | 작업 브랜치(릴리스 전) |
 
 ## 지금 할 일
 
@@ -50,4 +51,5 @@ v1.17(Adaptive Hybrid AI Engine)은 릴리스했다(사용자 승인, 2026-10-24
 - 1.15 Code 화면은 Chromium 화면 시험과 CI 빌드만 통과했다. WebView2·WKWebView·안드로이드 WebView에서의 편집기 입력·IME·키보드는 손으로 확인해야 한다.
 - macOS WKWebView 백엔드는 제목·주소가 바뀌어도(SPA의 pushState 등) 페이지가 다 열릴 때만 알린다(KVO 없음).
 - 1.16 브라우저 에이전트·Lab·Code 에이전트 화면은 Chromium 화면 시험과 CI로 확인했다. 실제 앱에서 손으로 확인하는 일이 남았다.
+- 1.17.2 터미널 작업 탭은 Chromium 화면 시험으로만 확인했다. 실제 WebView2·WKWebView에서 Shift+Tab·Esc·Ctrl+O·Ctrl+L이 앱(창) 단축키와 겹치지 않는지, 한글 IME 조합 중 Enter·↑↓, macOS의 Ctrl/Cmd 차이를 손으로 확인해야 한다.
 - 1.17 로컬 AI는 가짜 Ollama(시험)로만 확인했다. 개발 환경에서 실제 Ollama 실행 파일을 돌릴 수 없었고 Cloud 키도 없었다. 라우터의 test 세트 오류(paper-15 등)는 일부러 고치지 않았다.
