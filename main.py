@@ -194,10 +194,14 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
         return ws if ws and os.path.isdir(ws) else ""
 
     def _api_key(self):
-        """지금 API 방식이 쓰는 키. 일반 AI 모델(Claude)을 고르면 Claude(Anthropic) 키, 아니면(기본) POSTECH GenAI 키.
-
-        대화·에이전트·PO노트 노트 만들기·요약·평가 같은 모델 호출은 모두 이 키를 쓴다."""
-        return self._anthropic_key() if self._mode() == api.ANTHROPIC_MODE else self._postech_key()
+        """지금 API 방식이 쓰는 키. 일반 AI 모델(Claude)이면 Claude(Anthropic) 키, 일반 AI 모델(GPT)이면 OpenAI 키,
+        아니면(기본) POSTECH GenAI 키. 대화·에이전트·PO노트 노트 만들기·요약·평가 같은 모델 호출은 모두 이 키를 쓴다."""
+        mode = self._mode()
+        if mode == api.ANTHROPIC_MODE:
+            return self._anthropic_key()
+        if mode == api.OPENAI_MODE:
+            return self._openai_key()
+        return self._postech_key()
 
     def _postech_key(self):
         """POSTECH GenAI 키. 크레딧 확인과 PO노트의 서버 음성 인식은 API 방식과 관계없이 이 키를 쓴다."""
@@ -206,9 +210,14 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
     def _anthropic_key(self):
         return self._config.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
 
+    def _openai_key(self):
+        return self._config.get("openai_api_key") or os.environ.get("OPENAI_API_KEY", "")
+
     def _missing_key_error(self):
         if self._mode() == api.ANTHROPIC_MODE:
             return "Claude API 키가 없습니다. 설정 → API 방식 '일반 AI 모델 (Claude)'에서 키를 입력하세요."
+        if self._mode() == api.OPENAI_MODE:
+            return "OpenAI API 키가 없습니다. 설정 → API 방식 '일반 AI 모델 (GPT)'에서 키를 입력하세요."
         return "API 키가 없습니다. 설정에서 입력하세요."
 
     def _add(self, thread_id, role, content, **extra):
@@ -240,6 +249,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
         key_source = "settings" if self._config.get("api_key") else ("env" if os.environ.get("POSTECH_GENAI_API_KEY") else None)
         anthropic_source = "settings" if self._config.get("anthropic_api_key") else (
             "env" if os.environ.get("ANTHROPIC_API_KEY") else None)
+        openai_source = "settings" if self._config.get("openai_api_key") else ("env" if os.environ.get("OPENAI_API_KEY") else None)
         return {
             "threads": storage.list_threads(),
             "workspace": self._workspace_info(),
@@ -253,12 +263,14 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
                 "share_threads": self._config.get("share_threads", True),
                 "key_source": key_source,
                 "anthropic_key_source": anthropic_source,
+                "openai_key_source": openai_source,
                 "has_key": bool(self._api_key()),
                 "api_mode": self._mode(),
                 "responses_url": self._config.get("responses_url", ""),
                 "chat_completions_url": self._config.get("chat_completions_url", ""),
                 "model": self._config.get("model", DEFAULT_MODEL),
                 "anthropic_model": self._config.get("anthropic_model", api.DEFAULT_ANTHROPIC_MODEL),
+                "openai_model": self._config.get("openai_model", api.DEFAULT_OPENAI_MODEL),
                 "stream": self._config.get("stream", True),
                 "update_check": self._config.get("update_check", True),
                 "developer_mode": bool(self._config.get("developer_mode")),
@@ -275,6 +287,8 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
             "models_source": "server" if self._config.get("server_models") else "builtin",
             "anthropic_models": [{"id": m, "label": label} for m, label in self._models(api.ANTHROPIC_MODE)],
             "anthropic_models_source": "server" if self._config.get("anthropic_server_models") else "builtin",
+            "openai_models": [{"id": m, "label": label} for m, label in self._models(api.OPENAI_MODE)],
+            "openai_models_source": "server" if self._config.get("openai_server_models") else "builtin",
             "memory": storage.load_memory(),
             "attach_limits": {"max_bytes": attachments.MAX_BYTES, "max_files": attachments.MAX_FILES},
             "default_chat_completions_url": api.DEFAULT_CHAT_COMPLETIONS_URL,
@@ -314,6 +328,9 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
         if mode == api.ANTHROPIC_MODE:
             server = [m for m in self._config.get("anthropic_server_models") or [] if isinstance(m, str) and m]
             return [(m, api.model_label(m)) for m in server] if server else api.ANTHROPIC_MODELS
+        if mode == api.OPENAI_MODE:
+            server = [m for m in self._config.get("openai_server_models") or [] if isinstance(m, str) and m]
+            return [(m, api.model_label(m)) for m in server] if server else api.OPENAI_MODELS
         server = [m for m in self._config.get("server_models") or [] if isinstance(m, str) and m]
         return [(m, api.model_label(m)) for m in server] if server else MODELS
 
@@ -323,8 +340,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
     def _default_model(self):
         mode = self._mode()
         allowed = self._models(mode)
-        configured = self._config.get(api.model_config_key(mode)) or (
-            api.DEFAULT_ANTHROPIC_MODEL if mode == api.ANTHROPIC_MODE else DEFAULT_MODEL)
+        configured = self._config.get(api.model_config_key(mode)) or api.default_model(mode)
         return configured if configured in {model_id for model_id, _ in allowed} else allowed[0][0]
 
     def rename_thread(self, thread_id, title):
@@ -375,6 +391,10 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
                 self._config["anthropic_api_key"] = settings["anthropic_api_key"].strip()
             if settings.get("clear_anthropic_key"):
                 self._config["anthropic_api_key"] = ""
+            if settings.get("openai_api_key"):
+                self._config["openai_api_key"] = settings["openai_api_key"].strip()
+            if settings.get("clear_openai_key"):
+                self._config["openai_api_key"] = ""
             if settings.get("notion_token"):
                 self._config["notion_token"] = settings["notion_token"].strip()
             if settings.get("clear_notion"):
@@ -408,6 +428,9 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
             anthropic_models = self._clean_models(settings.get("anthropic_server_models"))
             if anthropic_models:
                 self._config["anthropic_server_models"] = anthropic_models
+            openai_models = self._clean_models(settings.get("openai_server_models"))
+            if openai_models:
+                self._config["openai_server_models"] = openai_models
             if settings.get("model") in self._model_ids(self._mode()):
                 self._config[api.model_config_key(self._mode())] = settings["model"]
             if "stream" in settings:
@@ -446,6 +469,15 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
                 return {"ok": False, "error": "Claude API 키를 먼저 입력하세요."}
             try:
                 ids = api.list_anthropic_models(key)
+            except ApiError as e:
+                return {"ok": False, "error": f"모델 목록을 불러오지 못했습니다: {e}"}
+            return {"ok": True, "models": [{"id": m, "label": api.model_label(m)} for m in ids]}
+        if settings.get("api_mode") == api.OPENAI_MODE:
+            key = str(settings.get("openai_api_key") or "").strip() or self._openai_key()
+            if not key:
+                return {"ok": False, "error": "OpenAI API 키를 먼저 입력하세요."}
+            try:
+                ids = api.list_openai_models(key)
             except ApiError as e:
                 return {"ok": False, "error": f"모델 목록을 불러오지 못했습니다: {e}"}
             return {"ok": True, "models": [{"id": m, "label": api.model_label(m)} for m in ids]}
@@ -1308,6 +1340,8 @@ def selftest():
     config = storage.load_config()
     if config.get("api_mode") == api.ANTHROPIC_MODE:
         key = config.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
+    elif config.get("api_mode") == api.OPENAI_MODE:
+        key = config.get("openai_api_key") or os.environ.get("OPENAI_API_KEY", "")
     else:
         key = config.get("api_key") or os.environ.get("POSTECH_GENAI_API_KEY", "")
     lines = [f"version: {APP_VERSION}", f"distribution: {version.distribution()}",
@@ -1375,7 +1409,7 @@ def selftest():
             manager.shutdown()  # 서버가 임시 폴더를 쓰고 있으면 지울 수 없으므로 먼저 끈다
     try:
         settings = ApiSettings.from_config(config)
-        lines.append(f"api mode: {settings.mode}" + (f" ({settings.model})" if settings.mode in ("responses", api.ANTHROPIC_MODE) else ""))
+        lines.append(f"api mode: {settings.mode}" + (f" ({settings.model})" if settings.mode in ("responses", api.ANTHROPIC_MODE, api.OPENAI_MODE) else ""))
         reply = ask(key, "'정상'이라고 한 단어로만 답하세요.", settings=settings) if key else "(API 키 없음)"
         lines.append(f"api: OK {reply[:80]!r}")
     except ApiError as e:

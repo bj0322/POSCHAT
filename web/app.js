@@ -286,14 +286,15 @@ async function openThread(id, leave = true) {
 function modeModels() {
   const mode = S.config.api_mode || "chat_completions";
   const base = mode === "responses" ? (S.responsesModels || [])
-    : mode === "anthropic" ? (S.anthropicModels || []) : (S.models || []);
+    : mode === "anthropic" ? (S.anthropicModels || []) : mode === "openai" ? (S.openaiModels || []) : (S.models || []);
   // 1.17: 자동 선택을 켰으면 '자동'과 로컬 모델을 앞에 더한다(adaptive.js)
   return window.adaptiveModelOptions ? adaptiveModelOptions(base) : base;
 }
 
 function modeDefaultModel() {
   const models = modeModels();
-  const configured = (S.config.api_mode === "anthropic") ? S.config.anthropic_model : S.config.model;
+  const configured = S.config.api_mode === "anthropic" ? S.config.anthropic_model
+    : S.config.api_mode === "openai" ? S.config.openai_model : S.config.model;
   return models.some((m) => m.id === configured) ? configured : ((models[0] || {}).id || "");
 }
 
@@ -1007,6 +1008,7 @@ function showSettings() {
   const mode = h("select", {},
     h("option", { value: "chat_completions" }, "POSTECH GenAI — OpenAI 호환 API, GPT·Claude·Gemini (권장)"),
     h("option", { value: "anthropic" }, "일반 AI 모델 (Claude) — 내 Claude API 키로 연결"),
+    h("option", { value: "openai" }, "일반 AI 모델 (GPT) — 내 OpenAI API 키로 연결"),
     h("option", { value: "responses" }, "POSTECH GenAI — OpenAI Responses API, GPT-5 계열"),
     h("option", { value: "a1" }, "POSTECH GenAI — a1/gpt 단일 호출 (예전 기본값, 모델은 서버가 정함)"),
   );
@@ -1086,6 +1088,47 @@ function showSettings() {
       h("small", {}, "Claude Opus 5.5를 권장합니다. 비용을 줄이려면 Sonnet 5.5나 Haiku 5.5를 고르세요. ",
         "PO노트의 서버 음성 보정과 크레딧 확인은 POSTECH GenAI 키가 있을 때만 씁니다(Claude API는 음성을 받지 않습니다).")),
   );
+  // 1.18 일반 AI 모델(GPT, 개인 OpenAI API 키): Claude와 같은 꼴. 모델 목록은 OpenAI가 알려 주는 대로, 저장해야 반영한다.
+  const openaiHint = c.openai_key_source === "settings" ? "저장된 키가 있습니다. 바꾸려면 새 키를 입력하세요."
+    : c.openai_key_source === "env" ? "환경 변수 OPENAI_API_KEY의 키를 쓰고 있습니다."
+    : "platform.openai.com → API keys에서 만든 본인 키(sk-...)를 넣으세요.";
+  const openaiKey = h("input", { type: "password", id: "openai-key", placeholder: c.openai_key_source ? "••••••••••••" : "sk-...",
+    autocomplete: "off" });
+  const clearOpenai = h("input", { type: "checkbox", style: "width:auto;margin:0 6px 0 0" });
+  const gptModel = h("select", { id: "openai-model" });
+  const fillGpt = (models, selected) => {
+    gptModel.replaceChildren(...models.map((m) => h("option", { value: m.id }, m.label)));
+    gptModel.value = models.some((m) => m.id === selected) ? selected : ((models[0] || {}).id || "");
+  };
+  fillGpt(S.openaiModels || [], c.openai_model);
+  const gptHint = h("small", {}, S.openaiModelsSource === "server"
+    ? "OpenAI에서 받은 모델 목록입니다." : "기본 목록입니다. '모델 목록 불러오기'로 이 키로 쓸 수 있는 모델을 모두 받아 옵니다.");
+  let openaiModels = null;
+  const loadGpt = h("button", { class: "btn", type: "button", id: "openai-load", style: "margin-top:8px", onclick: async () => {
+    loadGpt.disabled = true;
+    try {
+      const result = await api().refresh_models({ api_mode: "openai", openai_api_key: openaiKey.value.trim() });
+      if (result.ok === false) return toast(result.error);
+      openaiModels = result.models.map((m) => m.id);
+      fillGpt(result.models, gptModel.value);
+      gptHint.textContent = `OpenAI에서 받은 모델 목록입니다 (${result.models.length}개). 저장하면 반영됩니다.`;
+    } catch (error) {
+      toast(`모델 목록을 불러오지 못했습니다: ${error.message || error}`);
+    } finally {
+      loadGpt.disabled = false;
+    }
+  } }, "모델 목록 불러오기");
+  const openaiBox = h("div", { id: "openai-box" },
+    h("div", { class: "field" }, h("label", {}, "OpenAI API 키"), openaiKey,
+      h("small", {}, openaiHint, h("br"),
+        "요금은 이 키의 OpenAI 계정으로 청구되고 POSTECH 크레딧은 쓰지 않습니다. 키는 이 기기의 사용자 데이터 폴더(config.json)에 저장되며 동기화되지 않습니다."),
+      c.openai_key_source === "settings"
+        ? h("label", { style: "display:flex;align-items:center;font-size:13px;margin-top:4px;cursor:pointer" }, clearOpenai, "저장된 키 지우기")
+        : null),
+    h("div", { class: "field" }, h("label", {}, "기본 모델"), gptModel, gptHint, loadGpt,
+      h("small", {}, "GPT-5.1을 권장합니다. 비용을 줄이려면 GPT-5 mini를 고르세요. ",
+        "PO노트의 서버 음성 보정과 크레딧 확인은 POSTECH GenAI 키가 있을 때만 씁니다.")),
+  );
   const stream = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
   stream.checked = c.stream !== false;
   const autoUpdate = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
@@ -1108,16 +1151,18 @@ function showSettings() {
   const postechLabel = h("label", {}, "POSTECH GenAI API 키");
   const postechField = h("div", { class: "field" }, postechLabel, key,
     h("small", {}, keyHint, h("br"), "키는 이 PC의 사용자 데이터 폴더(config.json)에 저장됩니다. ",
-      "일반 AI 모델(Claude)을 쓸 때도 PO노트 서버 음성 보정·크레딧 확인에 쓰므로 있으면 넣어 두세요(선택)."));
+      "일반 AI 모델(Claude·GPT)을 쓸 때도 PO노트 서버 음성 보정·크레딧 확인에 쓰므로 있으면 넣어 두세요(선택)."));
   const syncMode = () => {
-    // Claude 방식에서는 Claude 키를 먼저 보이고, POSTECH 키는 선택 항목으로 그 아래에 둔다
-    const claude = mode.value === "anthropic";
-    postechLabel.textContent = claude ? "POSTECH GenAI API 키 (선택)" : "POSTECH GenAI API 키";
-    if (claude) anthropicBox.after(postechField);
+    // Claude·GPT 방식에서는 그 키를 먼저 보이고, POSTECH 키는 선택 항목으로 그 아래에 둔다
+    const own = mode.value === "anthropic" || mode.value === "openai";
+    postechLabel.textContent = own ? "POSTECH GenAI API 키 (선택)" : "POSTECH GenAI API 키";
+    if (mode.value === "anthropic") anthropicBox.after(postechField);
+    else if (mode.value === "openai") openaiBox.after(postechField);
     else if (mode.parentNode) mode.parentNode.after(postechField);
     responsesBox.hidden = mode.value !== "responses";
     compatibleBox.hidden = mode.value !== "chat_completions";
     anthropicBox.hidden = mode.value !== "anthropic";
+    openaiBox.hidden = mode.value !== "openai";
     url.required = mode.value === "responses";
   };
   mode.addEventListener("change", syncMode);
@@ -1131,6 +1176,7 @@ function showSettings() {
     responsesBox,
     compatibleBox,
     anthropicBox,
+    openaiBox,
     window.adaptiveSettingsField ? adaptiveSettingsField() : null,
     h("div", { class: "field" },
       h("label", { style: "display:flex;align-items:center;font-weight:600;cursor:pointer" }, stream, "답변을 받는 대로 표시 (스트리밍)"),
@@ -1204,15 +1250,22 @@ function showSettings() {
             anthropicKey.focus();
             return toast("일반 AI 모델(Claude)을 쓰려면 Claude API 키를 입력하세요.");
           }
+          if (mode.value === "openai" && !openaiKey.value.trim()
+              && (!c.openai_key_source || clearOpenai.checked)) {
+            openaiKey.focus();
+            return toast("일반 AI 모델(GPT)을 쓰려면 OpenAI API 키를 입력하세요.");
+          }
           const state = await api().save_settings({
             api_key: key.value.trim(), history_messages: hist.value, max_steps: steps.value, permission: perm.value,
             api_mode: mode.value, responses_url: url.value.trim(),
             chat_completions_url: compatibleUrl.value.trim(), server_models: serverModels,
             model: mode.value === "responses" ? responsesModel.value
-              : mode.value === "anthropic" ? claudeModel.value : compatibleModel.value,
+              : mode.value === "anthropic" ? claudeModel.value : mode.value === "openai" ? gptModel.value : compatibleModel.value,
             stream: stream.checked,
             anthropic_api_key: anthropicKey.value.trim(), anthropic_server_models: anthropicModels,
             clear_anthropic_key: clearAnthropic.checked && !anthropicKey.value.trim(),
+            openai_api_key: openaiKey.value.trim(), openai_server_models: openaiModels,
+            clear_openai_key: clearOpenai.checked && !openaiKey.value.trim(),
             update_check: autoUpdate.checked, developer_mode: devMode.checked,
             notion_token: notion.value.trim(), clear_notion: clearNotion.checked && !notion.value.trim(),
             firecrawl_key: firecrawl.value.trim(), clear_firecrawl: clearFirecrawl.checked && !firecrawl.value.trim(),
@@ -1225,7 +1278,7 @@ function showSettings() {
       },
     ],
   });
-  setTimeout(() => (mode.value === "anthropic" ? anthropicKey : key).focus(), 50);
+  setTimeout(() => (mode.value === "anthropic" ? anthropicKey : mode.value === "openai" ? openaiKey : key).focus(), 50);
 }
 
 /* ---------- 업데이트 ---------- */
@@ -1453,7 +1506,8 @@ const GUIDE = [
 - **OpenAI Responses API**: 콘솔의 \`.../a번호/openai/responses\` 주소를 넣고 GPT-5 계열 모델을 고릅니다.
 - **a1/gpt 단일 호출**: 예전 기본값입니다. 모델은 서버가 정합니다.
 - **일반 AI 모델 (Claude)** (1.11): 본인이 [Anthropic 콘솔](https://console.anthropic.com)에서 발급한 Claude API 키로 대화·에이전트·PO노트 노트 만들기 등 모든 모델 호출을 합니다. 요금은 그 키의 Anthropic 계정으로 청구되고 POSTECH 크레딧은 쓰지 않습니다. Claude Opus 5.5(권장)·Sonnet 5.5·Haiku 5.5·Fable 5.1 중에서 고르고, '모델 목록 불러오기'로 그 키로 쓸 수 있는 모델을 모두 받아 옵니다. PO노트의 서버 음성 보정과 크레딧 확인은 POSTECH 키가 있을 때만 씁니다.
-- OpenAI 호환·Responses·Claude 방식에서는 화면 위쪽 메뉴에서 대화별 모델을 지정합니다.
+- **일반 AI 모델 (GPT)** (1.18): 본인이 [OpenAI 플랫폼](https://platform.openai.com/api-keys)에서 발급한 OpenAI API 키로 모든 모델 호출을 합니다(OpenAI Responses API). 요금은 그 키의 OpenAI 계정으로 청구되고 POSTECH 크레딧은 쓰지 않습니다. **모델 목록 불러오기**로 그 키로 쓸 수 있는 GPT 모델을 받아 옵니다.
+- OpenAI 호환·Responses·Claude·GPT 방식에서는 화면 위쪽 메뉴에서 대화별 모델을 지정합니다.
 
 **답변을 받는 대로 표시(스트리밍)**를 켜면 일반 대화의 답변이 글자가 오는 대로 나옵니다. 표시가 이상하면 끄세요.`],
   ["크레딧 확인", `
@@ -1722,6 +1776,8 @@ function applyState(state) {
   S.modelsSource = state.models_source || "builtin";
   S.anthropicModels = state.anthropic_models || [];
   S.anthropicModelsSource = state.anthropic_models_source || "builtin";
+  S.openaiModels = state.openai_models || [];
+  S.openaiModelsSource = state.openai_models_source || "builtin";
   S.memory = state.memory || [];
   S.defaultChatUrl = state.default_chat_completions_url || "";
   if (state.credit) S.credit = state.credit;

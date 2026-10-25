@@ -2,7 +2,7 @@
 
 버전 1.17.2 — **Code 에이전트가 터미널처럼, 코드는 전체 화면으로**: 코드는 채팅 옆에 나누지 않고 하나의 화면으로 열리고, 작업 탭은 Claude Code 같은 터미널입니다 — `● Read(…) ⎿` 진행 기록과 줄 번호 diff, 기록 안에서 고르는 승인(1·2·3·Esc, 거부하며 다르게 하라고 알리기), **Shift+Tab** 권한 모드, **Esc** 멈춤·두 번 되돌리기, ↑↓ 지난 입력, `!명령` 바로 실행·`#메모`·`@파일` 붙이기, `/resume` `/status` `/diff` `/worktree` 같은 명령과 프로젝트 명령(`.poschat/commands`). [릴리스 노트](docs/release-notes/v1.17.2.md) · [사용법](docs/code-editor-guide.md#code-에이전트-3-터미널처럼-쓰기-1172) · [이전 버전 기록](#버전-기록)
 
-POSTECH GenAI API(기본) 또는 본인의 Claude API 키를 쓰는 Windows·macOS 데스크톱·안드로이드 챗봇 POSCHAT입니다(1.10까지의 이름은 POSTECH GenAI Chat). PIDS Tech. 팀이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 소프트웨어 라이선스(AGPL-3.0-only, 과거 버전은 MIT)는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
+POSTECH GenAI API(기본) 또는 본인의 Claude·OpenAI(GPT) API 키를 쓰는 Windows·macOS 데스크톱·안드로이드 챗봇 POSCHAT입니다(1.10까지의 이름은 POSTECH GenAI Chat). PIDS Tech. 팀이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 소프트웨어 라이선스(AGPL-3.0-only, 과거 버전은 MIT)는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
 
 ## 문의
 
@@ -19,7 +19,7 @@ POSTECH GenAI API(기본) 또는 본인의 Claude API 키를 쓰는 Windows·mac
 3. **설치**를 누릅니다. 관리자 권한은 필요 없습니다.
    - 설치 위치: `%LOCALAPPDATA%\Programs\PostechChat` (이전 버전에서 그대로 업데이트되도록 폴더·실행 파일·데이터 폴더 이름은 1.10과 같습니다)
    - 시작 메뉴와 바탕화면에 바로가기가 생깁니다.
-4. 처음 실행하면 설정 창이 열립니다. POSTECH GenAI API 키를 입력하세요. 본인 Claude API 키로 쓰려면 API 방식에서 **일반 AI 모델 (Claude)**를 고르고 Claude API 키를 넣습니다.
+4. 처음 실행하면 설정 창이 열립니다. POSTECH GenAI API 키를 입력하세요. 본인 Claude API 키로 쓰려면 API 방식에서 **일반 AI 모델 (Claude)**를, 본인 OpenAI API 키로 GPT를 쓰려면 **일반 AI 모델 (GPT)**를 고르고 키를 넣습니다.
 
 제거는 **설정 → 앱 → 설치된 앱 → POSCHAT → 제거**에서 합니다. 대화 기록과 설정(`%APPDATA%\PostechChat`)은 지우지 않고 남겨 둡니다.
 
@@ -77,8 +77,9 @@ Releases의 `POSCHAT.apk`를 휴대폰에서 받아 설치합니다(Android 7.0 
 | 플러그인(직무별 스킬 묶음) | 왼쪽 위 **플러그인**에서 설치·켜기·끄기. 입력창에 `/플러그인:스킬` (1.12) |
 | 연구 라이브러리·에이전트 자동화 | 왼쪽 위 **연구 라이브러리**·**에이전트 자동화** (1.11부터 PO노트처럼 본문 화면) |
 | 본인 Claude API 키로 쓰기 | **설정 → API 방식 → 일반 AI 모델 (Claude)** ([아래](#모델과-스트리밍)) |
+| 본인 OpenAI API 키로 GPT 쓰기 | **설정 → API 방식 → 일반 AI 모델 (GPT)** (1.18) |
 | PO노트(강의 녹음·전사·필기 노트) | 왼쪽 위 **PO노트** ([아래](#po노트)) |
-| 대화별 모델 선택 | OpenAI 호환·Responses API·일반 AI 모델(Claude)에서 위쪽 **대화 모델** 메뉴로 고릅니다. 각 대화의 선택은 따로 저장됩니다. |
+| 대화별 모델 선택 | OpenAI 호환·Responses API·일반 AI 모델(Claude·GPT)에서 위쪽 **대화 모델** 메뉴로 고릅니다. 각 대화의 선택은 따로 저장됩니다. |
 | 크레딧 확인 | 왼쪽 아래 **설정** → POSTECH GenAI 크레딧(PO노트 화면에도 표시). 이 키의 이번 주 사용량·한도·남은 양. 확인 자체는 크레딧을 쓰지 않습니다. |
 | 모델 API 사용량 보기 | 왼쪽 아래 **설정** → 모델 API 사용량. 이 앱에서 보낸 요청의 오늘·이번 달·최근 30일 호출 수와(서버가 알려 주면) 토큰 수. |
 
@@ -177,6 +178,7 @@ Releases의 `POSCHAT.apk`를 휴대폰에서 받아 설치합니다(Android 7.0 
 | Responses | 콘솔에서 확인한 `.../a<번호>/openai/responses` | GPT-5 계열 | OpenAI Responses API, 표준 SSE 스트리밍 |
 | a1/gpt (예전 기본값) | `agent/api/a1/gpt` | 서버가 정함 | 2026년 10월 현재 서버가 답변 대신 오류 코드 10000만 돌려줍니다. 1.9는 a1을 쓰던 설정을 한 번 OpenAI 호환으로 옮깁니다. |
 | 일반 AI 모델 (Claude) (1.11) | `api.anthropic.com` (Claude Messages API) | Claude Opus 5.5(권장)·Sonnet 5.5·Haiku 5.5·Fable 5.1, 또는 키로 쓸 수 있는 모델 전체 | 본인 Claude API 키. 공식 Anthropic SDK(데스크톱)·같은 HTTP 요청(안드로이드), SSE 스트리밍, 이미지 첨부 |
+| 일반 AI 모델 (GPT) (1.18) | `api.openai.com/v1/responses` (OpenAI Responses API) | GPT-5.1(권장)·GPT-5.2·GPT-5 mini·GPT-4.1 mini, 또는 키로 쓸 수 있는 대화 모델 전체 | 본인 OpenAI API 키(Bearer). HTTP 요청(데스크톱·안드로이드 같음), SSE 스트리밍, 이미지 첨부, GPT-5 계열은 추론 낮음 |
 
 모델 선택 방식에서 고를 수 있는 GPT 모델은 POSTECH 게이트웨이가 허용하는 목록입니다. 가격은 OpenAI 공개 가격(입력/출력 100만 토큰당, USD)이며, 학교 계정의 실제 과금·한도는 POSTECH GenAI 콘솔에서 확인하세요.
 
@@ -196,6 +198,8 @@ Releases의 `POSCHAT.apk`를 휴대폰에서 받아 설치합니다(Android 7.0 
 표의 10개 모델은 모두 OpenAI 호환 API에서 응답하는 것을 확인했습니다(2026년 10월). Claude 모델 ID는 점이 아니라 `-`를 씁니다(`claude-opus-5-5`, `claude-sonnet-5-5`). POSTECH 서버는 모델 목록(`GET .../models`)을 알려 주지 않으므로 기본 목록을 씁니다. 다른 OpenAI 호환 서버는 **모델 목록 불러오기**로 그 서버의 모델을 받아 저장할 때 반영합니다. GPT-5 계열은 Responses API에서도 계속 사용할 수 있습니다.
 
 **일반 AI 모델 (Claude)** (1.11): [Anthropic 콘솔](https://console.anthropic.com)에서 발급한 본인 Claude API 키(`sk-ant-...`, 또는 환경 변수 `ANTHROPIC_API_KEY`)로 대화·에이전트·PO노트 노트 만들기·대화 요약·모델 평가를 모두 Claude API로 보냅니다. 요금은 그 키의 Anthropic 계정으로 청구되고 POSTECH 크레딧은 쓰지 않습니다. 키와 기본 모델은 POSTECH 쪽과 따로 저장되므로 방식만 바꿔 오갈 수 있고, 동기화되지 않습니다. Claude API는 음성을 받지 않으므로 PO노트의 서버 음성 보정과 크레딧 확인은 POSTECH 키가 있을 때만 씁니다(없으면 로컬 AI로만 받아 적습니다). Opus 5.5·Sonnet 5.5·Fable 5.1은 안전 정책으로 답하지 않으면 Anthropic이 권하는 다른 모델로 다시 답하게 합니다(server-side fallback).
+
+**일반 AI 모델 (GPT)** (1.18): [OpenAI 플랫폼](https://platform.openai.com/api-keys)에서 발급한 본인 OpenAI API 키(`sk-...`, 또는 환경 변수 `OPENAI_API_KEY`)로 모든 모델 호출을 OpenAI Responses API로 보냅니다(`store: false`). 요금은 그 키의 OpenAI 계정으로 청구되고 POSTECH 크레딧은 쓰지 않습니다. 키와 기본 모델은 따로 저장되고 동기화되지 않습니다. **모델 목록 불러오기**는 그 키로 쓸 수 있는 대화 모델만(음성·이미지·임베딩 전용 제외) 최근 것부터 보입니다. PO노트의 서버 음성 보정과 크레딧 확인은 POSTECH 키가 있을 때만 씁니다.
 
 **크레딧**: POSTECH GenAI는 모든 응답 헤더(`x-role-ratelimit-credit-usage`, `-limit`, `-interval`)에 이 키의 이번 주 크레딧 사용량과 한도를 담아 줍니다. 앱은 이 값을 설정 창과 PO노트에 보여 주고, **확인**을 누르면 크레딧을 쓰지 않는 요청(404가 나는 `GET .../models`)으로 새로 받습니다. 직접 잰 값(Claude Sonnet 5.5): 1크레딧 ≈ 입력 약 250토큰 또는 출력 약 75토큰이고, 짧은 질문도 호출마다 약 24크레딧이 듭니다. Claude Opus 5.5는 모두 두 배입니다. 에이전트 모드는 단계마다 모델을 한 번씩 부르므로 단계 수만큼 이 기본 비용이 붙습니다.
 
