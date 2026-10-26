@@ -1,6 +1,6 @@
 # POSCHAT 로드맵과 다음 작업 (v1.16부터)
 
-마지막 갱신: 2026-10-26, v1.18.0 릴리스 시점. 작업 지침은 저장소 최상위 [CLAUDE.md](../CLAUDE.md).
+마지막 갱신: 2026-10-26, v1.18.1 릴리스 시점. 작업 지침은 저장소 최상위 [CLAUDE.md](../CLAUDE.md).
 
 **플랫폼 정책(2026-10, 사용자 지시)**: 안드로이드 앱은 따로 요청하지 않으면 기능을 맞추지 않는다. 데스크톱(Windows·macOS)만 손본다.
 공유 Python·화면 코드는 안드로이드 빌드에도 들어가므로 새 모듈은 계속 공유 목록에 넣고, 안드로이드에서 안 되는 기능은 '쓸 수 없음'으로 막는다. CI의 android 작업과 APK 자산은 그대로 둔다.
@@ -16,6 +16,7 @@
 | 1.17 | Adaptive Hybrid AI Engine: 로컬 AI(Ollama)·자동 모델 선택(4정책)·3단계(경량 Cloud·프런티어 상담)·품질 검증·승격·비용 통계·벤치마크 | 릴리스(3단계·캐싱은 기본 꺼짐, 실제 모델 측정은 남음) |
 | 1.17.1 | Code 에이전트 2(Claude Code·Codex처럼): 권한 모드 4가지·다시 묻지 않기 규칙·작업 중 지시·슬래시 명령·지시별 되돌리기·AGENTS.md·격리 작업 공간(git worktree)·새 도구, 손익분기 실험 도구 | 릴리스 |
 | 1.17.2 | Code 에이전트 3(터미널처럼, 사용자 요청 '완벽히 CLI처럼'): 작업 탭 전체를 Claude Code 같은 터미널로 — `● Read(…) ⎿` 기록·줄 번호 diff·접힌 출력(Ctrl+O), 기록 안의 승인 선택지(1·2·3·Esc, 거부하며 다르게 하라고 알리기), Shift+Tab 모드(작업 중에도), Esc 멈춤·Esc 두 번 되돌리기, ↑↓ 지난 입력, `/`·`@` 자동 완성, `!명령`·`#메모`·`@파일`, 프로젝트 명령(.poschat/.claude commands), /clear /resume /status /diff /revert /todos /permissions /memory /worktree /apply /keep /discard /delete. 코드는 채팅과 나누지 않는 하나의 전체 화면 | 릴리스 |
+| 1.18.1 | 에이전트 인터넷 도구(web_search·web_fetch·paper_search 저자별·web_download, `web_research.py`, 에이전트가 만든 주소는 승인·내부망 차단), `/usage`(채팅·작업 탭), 작업 탭 아래 회색 띠 없앰 | 릴리스 |
 | 1.18.0 | 일반 AI 모델(GPT, 본인 OpenAI API 키·Responses API), 코드 화면 아래 패널을 진짜 터미널로(ConPTY·pty, xterm.js, Git·변경 검토는 왼쪽 탭), SSH 원격 작업 폴더(paramiko + 원격 도우미, 파일·Git·터미널·에이전트가 서버에서), 부적절한 응답 신고, Store 제출 준비 | 릴리스 |
 
 ## 지금 할 일
@@ -59,4 +60,6 @@ v1.17(Adaptive Hybrid AI Engine)은 릴리스했다(사용자 승인, 2026-10-24
 - macOS WKWebView 백엔드는 제목·주소가 바뀌어도(SPA의 pushState 등) 페이지가 다 열릴 때만 알린다(KVO 없음).
 - 1.16 브라우저 에이전트·Lab·Code 에이전트 화면은 Chromium 화면 시험과 CI로 확인했다. 실제 앱에서 손으로 확인하는 일이 남았다.
 - 1.17.2 터미널 작업 탭은 Chromium 화면 시험으로만 확인했다. 실제 WebView2·WKWebView에서 Shift+Tab·Esc·Ctrl+O·Ctrl+L이 앱(창) 단축키와 겹치지 않는지, 한글 IME 조합 중 Enter·↑↓, macOS의 Ctrl/Cmd 차이를 손으로 확인해야 한다.
+- 1.18.1 인터넷 도구는 가짜 응답 시험만 했다(개발 환경에서 DuckDuckGo·OpenAlex·Semantic Scholar가 요청 한도로 거절). 실제 앱에서 조사 작업(예: 회사 창업자 논문 전수조사)을 손으로 돌려 검색 품질·한도를 확인할 것.
+  키 없는 검색이 자주 막히면 검색 API 키(예: Brave Search) 설정을 더하는 것을 검토한다.
 - 1.17 로컬 AI는 가짜 Ollama(시험)로만 확인했다. 개발 환경에서 실제 Ollama 실행 파일을 돌릴 수 없었고 Cloud 키도 없었다. 라우터의 test 세트 오류(paper-15 등)는 일부러 고치지 않았다.

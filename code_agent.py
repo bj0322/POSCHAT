@@ -27,6 +27,7 @@ import adaptive_engine
 import code_project
 import code_runner
 import code_workspace as cw
+import connectors
 import documents
 import remote_fs
 import storage
@@ -178,13 +179,14 @@ def step_kind(summary):
 # 화면에 '도구(인자)'로 보일 인자 이름(Claude Code의 ● Read(calc.py)처럼)
 TOOL_ARG = {"read": "path", "write": "path", "edit": "path", "multi_edit": "path", "list": "path", "glob": "pattern",
             "search": "pattern", "run": "command", "job_output": "job", "job_stop": "job", "skill": "name", "recall": "query",
-            "mcp": "tool", "browser_open": "url", "paper_read": "pages"}
+            "mcp": "tool", "browser_open": "url", "paper_read": "pages", "web_search": "query", "web_fetch": "url",
+            "web_download": "url", "paper_search": "query"}
 
 
 def tool_view(action):
     """에이전트 단계 → {"name": 도구, "arg": 대표 인자}(화면 표시용)."""
     name = str(action.get("action") or "")
-    key = TOOL_ARG.get(name)
+    key = "author" if name == "paper_search" and action.get("author") else TOOL_ARG.get(name)
     arg = action.get(key) if key else ""
     return {"name": name[:40], "arg": str("" if arg is None else arg)[:300]}
 
@@ -260,6 +262,12 @@ class CodeAgent(Agent):
     def _read_only(self, what):
         if self.mode == "plan":
             raise ToolError(f"계획 모드라 {what}하지 않습니다. 읽기·검색으로 조사한 뒤 done의 answer에 계획(바꿀 파일·방법·확인 방법)을 쓰세요.")
+
+    def _confirm_download(self, rel, url, size):
+        self._read_only("파일을 받")
+        if self.mode in ("auto_edit", "full_auto"):   # 수정 자동: 새 파일 받기는 묻지 않는다(작업 폴더 안, 덮어쓰지 않음)
+            return True
+        return super()._confirm_download(rel, url, size)
 
     def _check_text_target(self, p):
         self._read_only("파일을 고치")
@@ -877,6 +885,8 @@ class CodeAgentApi:
             # 1.17: 자동 선택을 켰으면 엔진을 거친다. 코드 수정 단계는 '중요·위험'이라 Cloud 먼저, Local Only면 로컬 모델로
             engine=self._make_engine({"model": "auto"}, api_key, lambda: not alive(), area="code_agent"),
             prompt_cache=adaptive_engine.settings(self._config)["prompt_cache"],
+            web=connectors.feature_enabled(self._config, "web") and not (
+                adaptive_engine.local_only(self._config) and adaptive_engine.settings(self._config)["local_only_tools"] == "block"),
             mode=mode, allowed=lambda command: code_project.rule_allows(self._ca_rules(ws), command), steer=steer,
             project_note=("격리 작업 공간(git worktree)에서 일합니다. 원래 작업 폴더는 사용자가 '적용'할 때 바뀝니다. "
                           "설치하지 않은 의존성(node_modules·가상환경)은 없을 수 있습니다." if os.path.normcase(str(root)) != os.path.normcase(str(ws))

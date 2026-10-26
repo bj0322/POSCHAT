@@ -34,7 +34,8 @@ const CA_MODES = [
 // 화면에 보일 도구 이름(Claude Code처럼)
 const CA_TOOL = { read: "Read", write: "Write", edit: "Update", multi_edit: "Update", list: "List", glob: "Glob", search: "Search",
   run: "Bash", job_output: "BashOutput", job_stop: "KillBash", skill: "Skill", recall: "Recall", mcp: "MCP", plan: "Update Todos",
-  browser_read: "Browser", paper_read: "Paper", attach: "Attach", memory: "Memory", shell: "!" };
+  browser_read: "Browser", paper_read: "Paper", attach: "Attach", memory: "Memory", shell: "!",
+  web_search: "WebSearch", web_fetch: "WebFetch", paper_search: "PaperSearch", web_download: "Download" };
 const CA_SPIN = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"];
 const CA_HIST_KEY = "poschat.caHistory";
 const CA_PREVIEW = 4;      // 접힌 출력에 보이는 줄 수
@@ -413,7 +414,8 @@ function caConfirm(ev) {
     const note = (x) => /^(위험할 수 있는 동작:|이 명령은 인터넷|\(백그라운드로)/.test(x);
     const cmd = rest.filter((x) => !note(x)).join("\n").trim();
     body = h("div", {}, h("pre", {}, cmd), ...rest.filter(note).map((x) => h("pre", { class: "ca-warn" }, x)), h("div", { class: "ca-dim" }, where));
-  } else body = caDiffNode(detail, 60);
+  } else if (ev.kind === "site" || /^파일 받기/.test(ev.title || "")) body = h("pre", {}, detail);   // 1.18.1: 웹 주소 확인·파일 받기
+  else body = caDiffNode(detail, 60);
   const options = [{ label: "예", value: "allow", id: "ca-yes" }];
   if (run && ev.remember) options.push({ label: `예, 이 작업 폴더에서 '${ev.remember}' 명령은 다시 묻지 않기`, value: "remember", id: "ca-remember" });
   if (ev.kind === "edit") options.push({ label: "예, 이 작업 동안 수정은 묻지 않기 (shift+tab)", value: "always", id: "ca-always" });
@@ -423,7 +425,7 @@ function caConfirm(ev) {
     api().resolve_confirm(ev.id, v);
   };
   caAsk({ kind: "confirm", cid: ev.id, title: run ? "Bash 명령" : ev.title || "파일 수정", body,
-    question: run ? "이 명령을 실행할까요?" : ev.kind === "edit" ? "이렇게 고칠까요?" : "허용할까요?", options, onPick: answer,
+    question: run ? "이 명령을 실행할까요?" : ev.kind === "edit" ? (/^파일 받기/.test(ev.title || "") ? "받을까요?" : "이렇게 고칠까요?") : "허용할까요?", options, onPick: answer,
     escLabel: "거부",
     onCancel: () => { if (CA.feedback) caFeedback(""); else { CA.select.index = options.length - 1; caPick(); } } });
   return true;
@@ -865,6 +867,7 @@ async function caLocalSlash(text) {
       return true;
     case "/resume": caResume(arg); return true;
     case "/status": caStatus(); return true;
+    case "/usage": caUsage(); return true;
     case "/todos": {
       if (need()) return true;
       const plan = task.plan || [];
@@ -969,6 +972,23 @@ function caStatus() {
   ];
   if (task && task.worktree) rows.push(["격리 작업 공간", task.worktree_removed ? (task.kept_branch ? `브랜치 ${task.kept_branch}에 남김` : "정리함") : `브랜치 ${task.branch}`]);
   caPrint(h("div", {}, h("h4", {}, "POSCHAT Code 상태"), h("table", {}, ...rows.map(([k, v]) => h("tr", {}, h("td", { class: "ca-dim" }, k), h("td", {}, v))))));
+}
+
+/* /usage(1.18.1): 이 앱의 AI 호출·토큰(app.js usageRows·usageText)과 POSTECH GenAI 크레딧 */
+async function caUsage() {
+  let u;
+  try { u = await api().get_usage(); } catch { return caPrint("사용량을 불러오지 못했습니다.", "error"); }
+  const rows = usageRows(u).map(([k, v]) => [k, usageText(v)]);
+  const task = CA.task;
+  if (task) rows.push(["이 작업", `지시 ${(task.turns || []).filter((x) => x.role === "user").length}번 · 단계 ${(task.steps || []).length}개`]);
+  const cfg = S.config || {};
+  if (cfg.key_source) {
+    let c = S.credit;
+    try { const r = await api().get_credit(); if (r && r.ok !== false) c = S.credit = r; } catch { /* 지난 값 */ }
+    rows.push(["POSTECH GenAI 크레딧", creditText(c)]);
+  }
+  caPrint(h("div", {}, h("h4", {}, "사용량"), h("table", {}, ...rows.map(([k, v]) => h("tr", {}, h("td", { class: "ca-dim" }, k), h("td", {}, v)))),
+    h("div", { class: "ca-dim" }, "이 기기에서 이 앱이 보낸 호출입니다(채팅·에이전트·Code 포함). 토큰은 서버가 알려 줄 때만 셉니다.")));
 }
 
 function caResume(arg) {

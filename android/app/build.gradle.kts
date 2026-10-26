@@ -47,6 +47,8 @@ val syncSharedPython by tasks.registering(Sync::class) {
             "lab_store.py", "lab_results.py", "lab_api.py", "code_agent.py", "code_project.py", "browser_agent.py",
             // 1.17: Adaptive AI(라우터·검증기·엔진은 안드로이드에서도 돈다. 로컬 AI 실행기는 PC 전용이라 '쓸 수 없음')
             "local_ai.py", "adaptive_router.py", "quality_gate.py", "adaptive_engine.py", "adaptive_api.py", "adaptive_cost.py",
+            // 1.18.1: 에이전트의 인터넷 도구(웹 검색·읽기·저자별 논문)
+            "web_research.py",
         )
     }
     into(sharedPythonDir)
