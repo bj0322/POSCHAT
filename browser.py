@@ -210,6 +210,20 @@ class Browser:
             backend.open(url)
         return url
 
+    def ensure(self):
+        """웹 뷰를 만들되 화면에는 붙이지 않는다(PLMS 숨은 로그인·조회용)."""
+        with self._lock:
+            self._ensure()
+
+    def open_background(self, text):
+        """화면에 보이지 않게 주소를 연다. 이미 보이는 브라우저면 그대로 보인 채 이동한다."""
+        url = normalize(text)
+        with self._lock:
+            backend = self._ensure()
+            self._emit(url=url, loading=True)
+            backend.open(url)
+        return url
+
     def show(self):
         with self._lock:
             if self.visible:
@@ -254,9 +268,9 @@ class Browser:
         return page
 
     def run_script(self, script, url_ok):
-        """PLMS 자동 로그인 전용: 지금 열린 주소가 url_ok일 때만 스크립트를 돌리고 결과 글자를 돌려준다."""
+        """PLMS 자동 로그인 전용(숨은 웹 뷰 포함): 지금 열린 주소가 url_ok일 때만 스크립트를 돌리고 결과 글자를 돌려준다."""
         with self._lock:
-            if self._backend is None or not self.visible:
+            if self._backend is None:
                 raise BrowserError("열린 웹페이지가 없습니다.")
             if not url_ok(self.state.get("url", "")):
                 return "blocked"

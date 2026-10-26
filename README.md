@@ -1,6 +1,6 @@
 # POSCHAT
 
-버전 1.18.5 — **PLMS 이번 학기 수업만 먼저 보기, 저장된 계정으로 자동 입력, 새 수업 화면**. [릴리스 노트](docs/release-notes/v1.18.5.md) · [이전 버전 기록](#버전-기록)
+버전 1.18.6 — **PLMS를 브라우저 없이 백그라운드에서 로그인·조회**, 채팅 에이전트가 바로 PLMS 조회. [릴리스 노트](docs/release-notes/v1.18.6.md) · [이전 버전 기록](#버전-기록)
 
 POSTECH GenAI API(기본) 또는 본인의 Claude·OpenAI(GPT) API 키를 쓰는 Windows·macOS 데스크톱 챗봇 POSCHAT입니다(1.10까지의 이름은 POSTECH GenAI Chat). PIDS Tech. 팀이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 소프트웨어 라이선스(AGPL-3.0-only, 과거 버전은 MIT)는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
 
@@ -443,6 +443,7 @@ py -3 -m venv .venv
 
 각 버전의 자세한 내용은 [docs/release-notes](docs/release-notes)에 있습니다.
 
+- 1.18.6 — **PLMS 백그라운드 접근**: 저장된 계정으로 화면에 브라우저를 붙이지 않고 로그인·조회하고, 채팅의 에이전트도 브라우저를 열지 않아도 PLMS 자료를 가져옴(StonePASS가 필요할 때만 브라우저를 보임). [릴리스 노트](docs/release-notes/v1.18.6.md)
 - 1.18.5 — **PLMS 개선**: 이번 학기 수업을 먼저 보이고 지난 학기는 접음, 설정에 PLMS 계정을 저장하면 SSO 로그인 창을 자동으로 채움(StonePASS는 직접), 수업 화면을 종류 칩·주차별 묶음으로 정리. [릴리스 노트](docs/release-notes/v1.18.5.md)
 - 1.18.4 — **PLMS 연결**: 내장 브라우저 SSO 로그인 후 참여 수업·공지·강의자료 조회, 에이전트 도구. **여러 세션 동시 실행**, ponytail·graphify 내장 스킬, Windows·macOS 전용 빌드. [릴리스 노트](docs/release-notes/v1.18.4.md)
 - 1.18.3 — **업데이트 서버를 HTTPS 도메인으로**: `https://pidstech.com`(IP 주소는 1.18.2 앱을 위해 유지). [릴리스 노트](docs/release-notes/v1.18.3.md)

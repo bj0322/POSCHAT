@@ -221,16 +221,16 @@ function plmsPanel() {
   const saved = S.config && S.config.plms_username;
   const content = h("div", { id: "plms-content", role: "status", "aria-live": "polite" },
     h("p", {}, saved
-      ? `저장된 계정(${saved})으로 ‘SSO 로그인’을 누르면 로그인 창을 자동으로 채웁니다. StonePASS 인증은 직접 진행한 뒤 ‘내 수업 불러오기’를 누르세요.`
-      : "내장 브라우저에서 POSTECH SSO·StonePASS 인증을 직접 마친 뒤 ‘내 수업 불러오기’를 누르세요. 설정에 계정을 저장해 두면 아이디·비밀번호는 자동으로 입력됩니다."),
+      ? `저장된 계정(${saved})으로 브라우저를 열지 않고 알아서 로그인합니다. ‘내 수업 불러오기’만 누르세요. StonePASS 같은 추가 인증이 필요할 때만 오른쪽에 브라우저가 열립니다. 채팅의 에이전트도 같은 방식으로 PLMS를 조회합니다.`
+      : "내장 브라우저에서 POSTECH SSO·StonePASS 인증을 직접 마친 뒤 ‘내 수업 불러오기’를 누르세요. 설정에 계정을 저장해 두면 브라우저를 열지 않고 자동으로 로그인합니다."),
     h("p", { class: "plms-note" }, "요청한 공지·자료는 선택한 AI 서비스로 전송될 수 있습니다. 비밀번호·인증 코드·쿠키는 AI에 보내지 않습니다."));
   let generation = 0, closed = false, courses = null;
   // replaceChildren은 null을 "null" 글자로 넣는다: 빈 칸은 걸러서 넣는다
   const put = (...nodes) => content.replaceChildren(...nodes.flat().filter((n) => n != null && n !== false));
   const showError = (message) => put(h("p", { role: "alert" }, message));
-  const call = async (fn, render) => {
+  const call = async (fn, render, busy = "PLMS에서 읽는 중…") => {
     const current = ++generation;
-    put(h("p", {}, "PLMS에서 읽는 중…"));
+    put(h("p", {}, busy));
     try {
       const res = await fn();
       if (closed || current !== generation) return;
@@ -327,15 +327,18 @@ function plmsPanel() {
   });
   const { close } = modal({ title: "PLMS 수업·공지·자료", wide: true, body: content,
     onClose: () => { closed = true; ++generation; }, buttons: [
-      { label: "SSO 로그인", action: async (dismiss) => {
+      { label: saved ? "로그인" : "SSO 로그인", action: async (dismiss) => {
+        if (saved) {  // 저장된 계정: 화면에 브라우저를 붙이지 않고 로그인한다
+          return call(() => api().plms_login(), () => call(() => api().plms_courses(), (res) => showCourses(res.courses)),
+            "PLMS에 로그인하는 중… (추가 인증이 필요하면 브라우저가 열립니다)");
+        }
         dismiss(); leaveViews();
         if (window.paperLeave) paperLeave();
         if (window.codeLeave) codeLeave();
         const res = await browserCall(api().plms_login());
         if (res) {
           BR.open = true; BR.url = res.url; renderBrowserBar();
-          toast(res.auto ? "저장된 계정을 입력하는 중입니다. StonePASS 인증은 직접 진행한 뒤 PLMS → 내 수업 불러오기를 누르세요."
-            : "SSO 인증 후 PLMS → 내 수업 불러오기를 누르세요.");
+          toast("SSO 인증 후 PLMS → 내 수업 불러오기를 누르세요.");
         }
       } },
       { label: "내 수업 불러오기", class: "primary", action: () => call(() => api().plms_courses(), (res) => showCourses(res.courses)) },
