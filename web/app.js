@@ -720,6 +720,12 @@ async function send() {
     updateSend();
     return showMemory();
   }
+  if (/^\/usage\s*$/i.test(text)) {
+    input.value = "";
+    autoresize();
+    updateSend();
+    return showUsage();
+  }
   const remember = text.match(/^\/remember\s+([\s\S]+)/i);
   if (remember) {
     const res = await api().add_memory(remember[1]);
@@ -761,6 +767,7 @@ function slashItems(query) {
     { name: "user", description: "지금까지의 대화로 내 정보(USER.md) 작성·업데이트" },
     { name: "remember", description: "모든 대화에서 기억할 내용 저장 (/remember 내용)" },
     { name: "memory", description: "기억 목록 보기·지우기" },
+    { name: "usage", description: "사용량(AI 호출·토큰·크레딧) 보기" },
     { name: "help", description: "도움말" },
     ...S.skills.map((s) => ({ name: s.name, description: s.description })),
   ];
@@ -864,6 +871,37 @@ function creditText(c) {
   return `${when} ${used} / ${Math.round(c.limit).toLocaleString()} 크레딧 사용 · 남은 ${left} (${Math.round(c.usage / c.limit * 100)}%)`;
 }
 
+/* 이 앱이 보낸 AI 호출 수·토큰(storage.usage_summary). 설정 창과 /usage(채팅·Code 작업 탭)가 함께 쓴다 */
+function usageText(u) {
+  const fmt = (n) => n >= 10000 ? (n / 10000).toFixed(n >= 100000 ? 0 : 1) + "만" : n.toLocaleString();
+  return `${u.calls.toLocaleString()}회` + (u.token_calls
+    ? ` · 토큰 입력 ${fmt(u.input_tokens)} / 출력 ${fmt(u.output_tokens)}` + (u.token_calls < u.calls ? ` (${u.token_calls}회분)` : "")
+    : "");
+}
+
+function usageRows(u) {
+  return [["오늘", u.today], [`이번 달 (${u.month_name})`, u.month], ["최근 30일", u.last30]];
+}
+
+function usageView() {
+  const box = h("div", {}, h("small", {}, "불러오는 중..."));
+  api().get_usage().then((u) => {
+    box.replaceChildren(...usageRows(u).map(([label, v]) => h("div", { class: "row", style: "justify-content:space-between;font-size:13px;margin:2px 0" },
+      h("span", {}, label), h("span", {}, usageText(v)))));
+  }).catch(() => box.replaceChildren(h("small", {}, "사용량을 불러오지 못했습니다.")));
+  return box;
+}
+
+/* /usage: 사용량 창(1.18.1) */
+function showUsage() {
+  const body = h("div", {},
+    h("h3", { style: "margin:0 0 6px;font-size:15px" }, "AI 호출"), usageView(),
+    h("p", { class: "muted", style: "font-size:12.5px;margin:6px 0 0" },
+      "이 기기에서 이 앱이 보낸 호출을 셉니다(채팅·에이전트·Code 포함). 토큰 수는 서버가 알려 줄 때만 더합니다."),
+    S.config.key_source ? h("div", {}, h("h3", { style: "margin:16px 0 6px;font-size:15px" }, "POSTECH GenAI 크레딧"), creditLine()) : null);
+  modal({ title: "사용량", body, buttons: [{ label: "닫기", class: "primary" }] });
+}
+
 /* 크레딧 표시 줄. 처음 그릴 때와 '확인'을 누를 때 크레딧을 쓰지 않는 요청으로 새로 받는다. */
 function creditLine(auto = true) {
   const text = h("span", { "data-credit": "", style: "flex:1" }, creditText(S.credit));
@@ -931,7 +969,7 @@ const CONFIRM_TEXT = {
   destructive: ["에이전트가 지우거나 덮어쓰는 작업을 하려고 합니다. 되돌릴 수 없을 수 있습니다.", ""],
   exec: ["에이전트가 코드 또는 원격 명령을 실행하려고 합니다. 실행 대상과 내용을 확인하세요.", ""],
   browser: ["에이전트가 옆 브라우저에서 다음 동작을 하려고 합니다. 주소와 대상을 확인하세요.", "이번 실행 동안 이런 브라우저 동작 허용"],
-  site: ["에이전트가 옆 브라우저에서 이 사이트로 가거나 이 사이트를 조작하려고 합니다. 주소 전체를 확인하세요.", ""],
+  site: ["에이전트가 이 주소를 열거나(옆 브라우저·웹 읽기) 이 사이트를 조작하려고 합니다. 주소 전체를 확인하세요.", ""],
 };
 
 function showConfirm(ev) {
@@ -980,17 +1018,7 @@ function showSettings() {
     : "firecrawl MCP 서버를 쓸 때만 필요합니다.";
   const firecrawl = h("input", { type: "password", placeholder: c.firecrawl_source ? "••••••••••••" : "fc-... (선택)", autocomplete: "off" });
   const clearFirecrawl = h("input", { type: "checkbox", style: "width:auto;margin:0 6px 0 0" });
-  const fmt = (n) => n >= 10000 ? (n / 10000).toFixed(n >= 100000 ? 0 : 1) + "만" : n.toLocaleString();
-  const usageLine = (label, u) => h("div", { class: "row", style: "justify-content:space-between;font-size:13px;margin:2px 0" },
-    h("span", {}, label),
-    h("span", {}, `${u.calls.toLocaleString()}회` + (u.token_calls
-      ? ` · 토큰 입력 ${fmt(u.input_tokens)} / 출력 ${fmt(u.output_tokens)}` + (u.token_calls < u.calls ? ` (${u.token_calls}회분)` : "")
-      : "")));
-  const usageBox = h("div", {}, h("small", {}, "불러오는 중..."));
-  api().get_usage().then((u) => {
-    usageBox.replaceChildren(usageLine("오늘", u.today), usageLine(`이번 달 (${u.month_name})`, u.month),
-      usageLine("최근 30일", u.last30));
-  }).catch(() => usageBox.replaceChildren(h("small", {}, "사용량을 불러오지 못했습니다.")));
+  const usageBox = usageView();
   const hist = h("input", { type: "number", min: 0, max: 200, value: c.history_messages });
   const steps = h("input", { type: "number", min: 1, max: 100, value: c.max_steps });
   const perm = h("select", {},
@@ -1514,6 +1542,15 @@ const GUIDE = [
 **설정 → POSTECH GenAI 크레딧**에서 이 키의 이번 주 크레딧 사용량·한도·남은 양을 봅니다. **확인**을 눌러도 크레딧은 줄지 않습니다. PO노트 화면 위쪽에도 같은 내용이 나옵니다.
 
 Claude Sonnet 5.5 기준으로 1크레딧은 입력 약 250토큰, 출력 약 75토큰이고, 짧은 질문도 호출마다 약 24크레딧이 듭니다. Opus 5.5는 두 배입니다. 에이전트 모드는 단계마다 한 번씩 호출하므로 단계가 많을수록 크레딧을 많이 씁니다.`],
+  ["에이전트의 인터넷 조사 (1.18.1)", `
+에이전트(채팅의 에이전트 모드, 코드의 **작업** 탭)는 인터넷에서 직접 찾아 읽습니다. "TetraMem 창업자들의 논문을 전수조사해 줘"처럼 맡기면 계획 → 웹 검색 → 페이지·논문 읽기 → 빠진 것 다시 찾기 → 출처와 함께 정리(많으면 작업 폴더에 Markdown·CSV)까지 스스로 합니다.
+
+- **web_search**: 웹 검색(설정에 Firecrawl 키가 있으면 Firecrawl, 없으면 DuckDuckGo, 안 되면 위키백과).
+- **web_fetch**: 웹페이지·PDF 주소의 글을 읽습니다. 긴 글은 필요한 부분만, 이어서 읽기도 합니다.
+- **paper_search**: 주제로 arXiv·Semantic Scholar·Crossref·OpenAlex를 찾고, **저자 이름**을 주면 그 저자의 논문을 최신순으로 모두(최대 200편) 가져옵니다.
+- **web_download**: PDF 같은 파일을 작업 폴더에 받습니다(수정 자동·전체 자동이면 묻지 않음, 덮어쓰지 않음).
+- 검색 결과·읽은 페이지에 나온 주소와 내가 쓴 주소는 바로 읽고, 에이전트가 만들어 낸 주소는 주소 전체를 보여 주고 묻습니다(웹페이지의 지시로 정보를 실어 보내는 일을 막음). 이 PC·내부망 주소는 읽지 않습니다.
+- 끄려면 **연결·도구 → 기능**에서 '에이전트의 인터넷 도구'를 끕니다. AI 실행 정책이 Local Only이고 외부 도구를 막으면 쓰지 않습니다.`],
   ["Code 에이전트: 터미널처럼 쓰기 (1.17.2)", `
 **코드**를 열면 맨 앞 **작업** 탭이 Claude Code 같은 터미널입니다. 맨 아래 \`>\` 줄에 할 일을 쓰고 **Enter**를 누르면 에이전트가 작업 폴더에서 계획 → 코드 읽기 → 고치기 → 테스트·빌드 실행 → 정리를 스스로 합니다.
 
@@ -1525,7 +1562,7 @@ Claude Sonnet 5.5 기준으로 1크레딧은 입력 약 250토큰, 출력 약 75
 - 그 밖의 키: Shift+Enter(또는 \`\\\` 다음 Enter) 줄 바꿈 · ↑↓ 지난 입력 · Ctrl+L 화면 비우기 · Ctrl+C 입력 지우기(비었으면 멈춤) · \`?\` 단축키.
 - 수정하기 전에 원래 내용을 보관하므로 \`/undo\`(마지막 지시)·\`/revert 파일\`(작업 전으로)로 되돌립니다(그 뒤 사람이 고친 파일은 건너뜀). 커밋은 하지 않으니 끝난 뒤 Git 패널에서 확인하고 커밋하세요.`],
   ["Code 에이전트: 명령·프로젝트 지침·격리 작업 공간", `
-- **슬래시 명령**: \`/init\`(AGENTS.md 만들기) · \`/review\`(Git 변경 코드 리뷰, 고치지 않음) · \`/test\`(테스트 실행·고치기) · \`/plan 할 일\`(이번만 계획 모드, 비우면 계획 모드로) · \`/worktree 할 일\`(격리 작업 공간에서 새 작업) · \`/clear\`(새 작업) · \`/resume\`(지난 작업 고르기) · \`/compact\`(지난 대화 요약) · \`/undo\` · \`/diff\` · \`/revert [파일]\` · \`/todos\` · \`/mode\` · \`/permissions\`(다시 묻지 않는 명령 지우기) · \`/status\` · \`/memory\` · \`/apply\` \`/keep\` \`/discard\`(격리 작업) · \`/delete\` · \`/help\`.
+- **슬래시 명령**: \`/init\`(AGENTS.md 만들기) · \`/review\`(Git 변경 코드 리뷰, 고치지 않음) · \`/test\`(테스트 실행·고치기) · \`/plan 할 일\`(이번만 계획 모드, 비우면 계획 모드로) · \`/worktree 할 일\`(격리 작업 공간에서 새 작업) · \`/clear\`(새 작업) · \`/resume\`(지난 작업 고르기) · \`/compact\`(지난 대화 요약) · \`/undo\` · \`/diff\` · \`/revert [파일]\` · \`/todos\` · \`/mode\` · \`/permissions\`(다시 묻지 않는 명령 지우기) · \`/status\` · \`/usage\`(사용량) · \`/memory\` · \`/apply\` \`/keep\` \`/discard\`(격리 작업) · \`/delete\` · \`/help\`.
 - **프로젝트 명령**: 작업 폴더의 \`.poschat/commands/이름.md\`(또는 \`.claude/commands/\`)가 \`/이름\` 명령이 됩니다. 본문의 \`$ARGUMENTS\`는 명령 뒤에 쓴 글로 바뀝니다.
 - **다시 묻지 않기**: 이 작업 폴더에서 같은 명령(앞 낱말)은 다시 묻지 않습니다. \`&&\`·\`|\` 같은 연결, 위험한 동작, 인터넷을 쓰는 명령은 그래도 묻습니다.
 - **프로젝트 지침**: 작업 폴더의 **AGENTS.md**·**CLAUDE.md**를 읽고 따릅니다. 테스트·빌드 명령(package.json·pyproject·Makefile 등)과 Git 상태도 에이전트에게 알려 줍니다.
@@ -1630,6 +1667,7 @@ PDF 안의 스크립트·링크·양식은 실행하지 않고, 논문 글은 '�
 | \`/user 요청\` | 대화 내용으로 내 정보(USER.md)를 작성·업데이트합니다 |
 | \`/remember 내용\` | 모든 대화에서 기억할 내용을 저장합니다 |
 | \`/memory\` | 기억 목록을 보고 지웁니다 |
+| \`/usage\` | 사용량(AI 호출·토큰·POSTECH GenAI 크레딧)을 봅니다 (1.18.1) |
 | \`/스킬이름 요청\` | 그 스킬의 지침대로 요청을 수행합니다 |
 | \`/help\` | 간단한 도움말 |`],
   ["기억: 메모리·내 정보·다른 대화", `
@@ -1732,6 +1770,7 @@ function showHelp() {
     ["/user 요청", "지금까지의 대화로 내 정보(USER.md)를 작성·업데이트합니다"],
     ["/remember 내용", "모든 대화에서 기억할 내용(memory.md)을 저장합니다"],
     ["/memory", "기억 목록을 보고 지웁니다"],
+    ["/usage", "사용량(AI 호출·토큰·POSTECH GenAI 크레딧)을 봅니다"],
     ["/스킬이름 요청", "해당 스킬 지침을 적용해 요청을 수행합니다"],
     ["/help", "이 도움말"],
     ["Enter / Shift+Enter", "보내기 / 줄바꿈"],

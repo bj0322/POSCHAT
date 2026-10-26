@@ -308,6 +308,10 @@ class CodeAgentUiTests(unittest.TestCase):
                 self.send(page, "/status")
                 page.wait_for_selector(".ca-sys:has-text('POSCHAT Code 상태')")
                 self.assertIn("AGENTS.md", page.inner_text(".ca-sys:has-text('POSCHAT Code 상태')"))
+                # 1.18.1 /usage: 이 앱의 AI 호출·토큰
+                self.send(page, "/usage")
+                page.wait_for_selector(".ca-sys:has-text('최근 30일')")
+                self.assertIn("오늘", page.inner_text(".ca-sys:has-text('최근 30일')"))
                 # 매번 묻기: 수정도 기록 안에서 묻는다 → 2. 이 작업 동안 수정은 묻지 않기 → 수정 자동
                 self.send(page, "/mode ask")
                 page.wait_for_selector("#ca-mode:has-text('매번 묻기')")
@@ -346,6 +350,30 @@ class CodeAgentUiTests(unittest.TestCase):
                 agents.unlink(missing_ok=True)
                 self.bridge.code_agent_set_approval("auto_edit")
                 (self.ws / "calc.py").write_text("def add(a, b):\n    return a - b\n")
+                browser.close()
+
+    def test_terminal_fills_tab_without_gray_strip(self):
+        """1.18.1(사용자 요청): 작업 탭 입력 줄 아래에 회색 상자(빈 상태 줄·탭 바탕)가 보이지 않는다."""
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser, page, errors = self.open(p, 1400, 900)
+            try:
+                page.wait_for_selector(".code-tab.agent.active")
+                page.wait_for_selector("#ca-line")
+                got = page.evaluate("""() => {
+                  const term = document.querySelector('#ca-term').getBoundingClientRect();
+                  const stack = document.querySelector('#code-stack').getBoundingClientRect();
+                  const bar = document.querySelector('#code-statusbar');
+                  const main = document.querySelector('.code-main').getBoundingClientRect();
+                  return { termBottom: term.bottom, stackBottom: stack.bottom, mainBottom: main.bottom,
+                           bar: getComputedStyle(bar).display }; }""")
+                self.assertEqual(got["bar"], "none", got)
+                self.assertAlmostEqual(got["termBottom"], got["stackBottom"], delta=1)
+                self.assertAlmostEqual(got["stackBottom"], got["mainBottom"], delta=1)
+                self.shot(page, "code-agent-no-gray-strip")
+                self.assertEqual([e for e in errors if "favicon" not in e], [])
+            finally:
                 browser.close()
 
     def test_worktree_hint(self):

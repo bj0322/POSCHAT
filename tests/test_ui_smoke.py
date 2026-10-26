@@ -64,6 +64,26 @@ class UiSmokeTests(unittest.TestCase):
         page.wait_for_selector("#btn-mcp")
         return browser, page, errors
 
+    def test_usage_slash_command(self):
+        """1.18.1: 채팅의 /usage — 슬래시 메뉴에 보이고, 보내면 사용량 창이 뜬다(대화로 보내지 않음)."""
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser, page, errors = self.open(p)
+            try:
+                page.fill("#input", "/us")
+                page.dispatch_event("#input", "input")
+                page.wait_for_selector("#slash-menu .slash-item:has-text('/usage')")
+                page.fill("#input", "/usage")
+                page.dispatch_event("#input", "input")
+                page.press("#input", "Enter")   # 메뉴에서 고르기 → "/usage "
+                page.press("#input", "Enter")   # 보내기
+                page.wait_for_selector(".modal:has-text('사용량') :text('최근 30일')")
+                self.assertEqual(page.input_value("#input"), "")
+                self.assertEqual([e for e in errors if "favicon" not in e], [])
+            finally:
+                browser.close()
+
     def test_hub_connectors_and_mcp_tabs(self):
         from playwright.sync_api import sync_playwright
 

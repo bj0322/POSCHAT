@@ -169,6 +169,7 @@ SLASH_HELP = [
     ("/mode [모드]", "권한 모드를 바꾼다(Shift+Tab): plan · ask · auto_edit · full_auto"),
     ("/permissions", "다시 묻지 않는 명령 규칙을 보고 지운다"),
     ("/status", "작업 폴더·Git·권한 모드·모델·작업 정보"),
+    ("/usage", "사용량(AI 호출·토큰·POSTECH GenAI 크레딧)을 본다"),
     ("/memory", "프로젝트 지침 파일(AGENTS.md)을 편집기에서 연다"),
     ("/apply", "격리 작업 공간의 변경을 원래 폴더에 적용한다"),
     ("/keep", "격리 작업을 브랜치로 남긴다(커밋해 두고 Git으로 합치기)"),
@@ -178,7 +179,7 @@ SLASH_HELP = [
 ]
 # 화면(web/code-agent.js)이 처리하는 명령. 백엔드로 오면 오류
 FRONT_COMMANDS = {"/help", "/clear", "/new", "/reset", "/resume", "/compact", "/undo", "/rewind", "/diff", "/revert", "/todos",
-                  "/mode", "/permissions", "/status", "/memory", "/apply", "/keep", "/discard", "/delete", "/worktree",
+                  "/mode", "/permissions", "/status", "/usage", "/memory", "/apply", "/keep", "/discard", "/delete", "/worktree",
                   "/report"}
 BUILTIN_COMMANDS = FRONT_COMMANDS | {"/init", "/review", "/test", "/plan"}
 COMMAND_DIRS = (".poschat/commands", ".claude/commands")

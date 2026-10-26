@@ -1233,6 +1233,8 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
             browser_paused=self._browser_pause_event(),
             engine=engine,
             prompt_cache=adaptive_engine.settings(self._config)["prompt_cache"],
+            # 1.18.1: 웹 검색·읽기·논문 찾기(기능 끄기 또는 Local Only의 외부 도구 막기면 없음)
+            web=connectors.feature_enabled(self._config, "web") and not block_tools,
         )
         started, outcome = time.monotonic(), "done"
         try:

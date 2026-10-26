@@ -52,6 +52,7 @@ FEATURES = {
     "sync": ("클라우드 동기화", False),
     "automation": ("에이전트 자동화", False),
     "observability": ("사용량·진단 기록(이 기기에만, 내용 없이)", True),
+    "web": ("에이전트의 인터넷 도구(웹 검색·웹페이지 읽기·논문 찾기)", True),
 }
 
 

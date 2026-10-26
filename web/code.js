@@ -478,7 +478,7 @@ async function codeExcludes() {
 
 function codeNewTab(t) {
   t.id = "t" + (++CODE.seq);
-  t.el = h("div", { class: "code-tabpane", role: "tabpanel", "data-tab": t.id, hidden: true });
+  t.el = h("div", { class: "code-tabpane" + (t.kind === "agent" ? " agent" : ""), role: "tabpanel", "data-tab": t.id, hidden: true });
   $("#code-stack").append(t.el);
   CODE.tabs.push(t);
   return t;

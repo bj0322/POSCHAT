@@ -1,6 +1,6 @@
 # POSCHAT
 
-버전 1.18.0 — **GPT, 코드 화면 터미널, SSH 서버의 폴더**: 본인 OpenAI API 키로 GPT(GPT-5.1 등)를 쓰고, 코드 화면 아래 패널이 진짜 터미널(PowerShell·로그인 셸, vim·ssh 가능, **Ctrl+`**)이 되었고, 코드 화면 위 **SSH**로 서버의 폴더를 열면 파일·Git·터미널·Code 에이전트가 그 서버에서 돕니다(키·OTP·ProxyJump, 서버에는 python3만). [릴리스 노트](docs/release-notes/v1.18.0.md) · [사용법](docs/code-editor-guide.md#ssh-서버의-폴더에서-일하기-118) · [이전 버전 기록](#버전-기록)
+버전 1.18.1 — **에이전트가 인터넷에서 직접 조사**: 에이전트(채팅의 에이전트 모드·코드의 작업 탭)가 웹 검색·웹페이지와 PDF 읽기·저자별 논문 목록·파일 받기로 "논문 전수조사" 같은 일을 스스로 끝까지 합니다(에이전트가 만든 주소는 물음, 내부망은 막음). `/usage`로 사용량을 보고, 코드 작업 탭 아래 회색 띠를 없앴습니다. [릴리스 노트](docs/release-notes/v1.18.1.md) · [이전 버전 기록](#버전-기록)
 
 POSTECH GenAI API(기본) 또는 본인의 Claude·OpenAI(GPT) API 키를 쓰는 Windows·macOS 데스크톱·안드로이드 챗봇 POSCHAT입니다(1.10까지의 이름은 POSTECH GenAI Chat). PIDS Tech. 팀이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 소프트웨어 라이선스(AGPL-3.0-only, 과거 버전은 MIT)는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
 
@@ -68,6 +68,7 @@ Releases의 `POSCHAT.apk`를 휴대폰에서 받아 설치합니다(Android 7.0 
 | 메모리(memory.md) | 왼쪽 아래 **메모리**, `/remember 내용`, `/memory` |
 | MCP 서버 켜기·끄기, 외부 서버 추가 | 왼쪽 아래 **연결·도구** → MCP 서버 |
 | AI 실행 정책·로컬 AI | **설정 → AI 실행 정책**. 자동 모델 선택(Economy·Balanced·Quality·Local Only), Ollama 연결·모델 받기, 3단계(경량 Cloud 모델과 프런티어 상담)·단가·손익분기·프롬프트 캐싱, 대화 위 모델 목록의 **자동**·**로컬**, **설정 → 개발자 모드** ([설정](docs/adaptive-ai-setup.md), 1.17) |
+| 에이전트의 인터넷 조사 | 에이전트에게 조사를 맡기면 웹 검색(`web_search`)·웹페이지·PDF 읽기(`web_fetch`)·저자별 논문 목록(`paper_search`)·파일 받기(`web_download`)로 직접 찾습니다. 끄기는 **연결·도구 → 기능** ([릴리스 노트](docs/release-notes/v1.18.1.md), 1.18.1) |
 | Code 에이전트(작업 맡기기) | **코드** → 맨 앞 **작업** 탭(터미널). 할 일을 쓰고 Enter. 계획·diff·실행 출력, 이어서 지시, 바뀐 파일 되돌리기 ([사용법](docs/code-editor-guide.md#code-에이전트-작업-맡기기-116), 1.16). 권한 모드(계획·전체 자동), 다시 묻지 않기, 작업 중 추가 지시, `/init` `/review` `/test` `/plan` `/undo` `/compact`, AGENTS.md, 격리 작업 공간(git worktree) (1.17.1). 터미널 화면·기록 안 승인·Shift+Tab·Esc·`!` `#` `@`·`/resume` `/status` `/diff` 등·프로젝트 명령 ([사용법](docs/code-editor-guide.md#code-에이전트-3-터미널처럼-쓰기-1172), 1.17.2) |
 | Lab(실험 기록·비교·AI 분석) | 왼쪽 위 **Lab**. 실험·Run, 승인 실행, 재현성 기록, 결과 가져오기, 지표·그래프·비교, AI 분석 ([사용법](docs/lab-guide.md), 1.16) |
 | 브라우저 에이전트 | 브라우저를 연 채 에이전트에게 웹 작업을 맡기면 페이지를 직접 조작합니다. 브라우저 막대에서 일시정지·멈춤 ([보안](docs/browser-agent-security.md), 1.16) |
@@ -82,7 +83,7 @@ Releases의 `POSCHAT.apk`를 휴대폰에서 받아 설치합니다(Android 7.0 
 | PO노트(강의 녹음·전사·필기 노트) | 왼쪽 위 **PO노트** ([아래](#po노트)) |
 | 대화별 모델 선택 | OpenAI 호환·Responses API·일반 AI 모델(Claude·GPT)에서 위쪽 **대화 모델** 메뉴로 고릅니다. 각 대화의 선택은 따로 저장됩니다. |
 | 크레딧 확인 | 왼쪽 아래 **설정** → POSTECH GenAI 크레딧(PO노트 화면에도 표시). 이 키의 이번 주 사용량·한도·남은 양. 확인 자체는 크레딧을 쓰지 않습니다. |
-| 모델 API 사용량 보기 | 왼쪽 아래 **설정** → 모델 API 사용량. 이 앱에서 보낸 요청의 오늘·이번 달·최근 30일 호출 수와(서버가 알려 주면) 토큰 수. |
+| 모델 API 사용량 보기 | 입력창·코드 작업 탭에서 `/usage`(1.18.1), 또는 왼쪽 아래 **설정** → 모델 API 사용량. 이 앱에서 보낸 요청의 오늘·이번 달·최근 30일 호출 수와(서버가 알려 주면) 토큰 수. |
 
 ### 대화 간 정보 공유 (메모리 · 다른 대화 참고)
 
@@ -426,6 +427,8 @@ py -3 -m venv .venv
 ## 버전 기록
 
 각 버전의 자세한 내용은 [docs/release-notes](docs/release-notes)에 있습니다.
+
+- 1.18.0 — **GPT, 코드 화면 터미널, SSH 서버의 폴더**: 본인 OpenAI API 키로 GPT(GPT-5.1 등), 코드 화면 아래 패널이 진짜 터미널(PowerShell·로그인 셸, **Ctrl+`**), 코드 화면 위 **SSH**로 서버의 폴더에서 파일·Git·터미널·Code 에이전트. [릴리스 노트](docs/release-notes/v1.18.0.md)
 
 - 1.17.2 — **Code 에이전트가 터미널처럼, 코드는 전체 화면으로**: 코드는 채팅 옆에 나누지 않고 하나의 화면으로 열리고, 작업 탭은 Claude Code 같은 터미널입니다 — `● Read(…) ⎿` 진행 기록과 줄 번호 diff, 기록 안에서 고르는 승인(1·2·3·Esc, 거부하며 다르게 하라고 알리기), **Shift+Tab** 권한 모드, **Esc** 멈춤·두 번 되돌리기, ↑↓ 지난 입력, `!명령` 바로 실행·`#메모`·`@파일` 붙이기, `/resume` `/status` `/diff` `/worktree` 같은 명령과 프로젝트 명령(`.poschat/commands`).
 
