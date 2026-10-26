@@ -1,6 +1,6 @@
 # POSCHAT 로드맵과 다음 작업 (v1.16부터)
 
-마지막 갱신: 2026-10-25, v1.17.2 릴리스 시점. 작업 지침은 저장소 최상위 [CLAUDE.md](../CLAUDE.md).
+마지막 갱신: 2026-10-26, v1.18.0 릴리스 시점. 작업 지침은 저장소 최상위 [CLAUDE.md](../CLAUDE.md).
 
 **플랫폼 정책(2026-10, 사용자 지시)**: 안드로이드 앱은 따로 요청하지 않으면 기능을 맞추지 않는다. 데스크톱(Windows·macOS)만 손본다.
 공유 Python·화면 코드는 안드로이드 빌드에도 들어가므로 새 모듈은 계속 공유 목록에 넣고, 안드로이드에서 안 되는 기능은 '쓸 수 없음'으로 막는다. CI의 android 작업과 APK 자산은 그대로 둔다.
@@ -16,11 +16,12 @@
 | 1.17 | Adaptive Hybrid AI Engine: 로컬 AI(Ollama)·자동 모델 선택(4정책)·3단계(경량 Cloud·프런티어 상담)·품질 검증·승격·비용 통계·벤치마크 | 릴리스(3단계·캐싱은 기본 꺼짐, 실제 모델 측정은 남음) |
 | 1.17.1 | Code 에이전트 2(Claude Code·Codex처럼): 권한 모드 4가지·다시 묻지 않기 규칙·작업 중 지시·슬래시 명령·지시별 되돌리기·AGENTS.md·격리 작업 공간(git worktree)·새 도구, 손익분기 실험 도구 | 릴리스 |
 | 1.17.2 | Code 에이전트 3(터미널처럼, 사용자 요청 '완벽히 CLI처럼'): 작업 탭 전체를 Claude Code 같은 터미널로 — `● Read(…) ⎿` 기록·줄 번호 diff·접힌 출력(Ctrl+O), 기록 안의 승인 선택지(1·2·3·Esc, 거부하며 다르게 하라고 알리기), Shift+Tab 모드(작업 중에도), Esc 멈춤·Esc 두 번 되돌리기, ↑↓ 지난 입력, `/`·`@` 자동 완성, `!명령`·`#메모`·`@파일`, 프로젝트 명령(.poschat/.claude commands), /clear /resume /status /diff /revert /todos /permissions /memory /worktree /apply /keep /discard /delete. 코드는 채팅과 나누지 않는 하나의 전체 화면 | 릴리스 |
+| 1.18.0 | 일반 AI 모델(GPT, 본인 OpenAI API 키·Responses API), 코드 화면 아래 패널을 진짜 터미널로(ConPTY·pty, xterm.js, Git·변경 검토는 왼쪽 탭), SSH 원격 작업 폴더(paramiko + 원격 도우미, 파일·Git·터미널·에이전트가 서버에서), 부적절한 응답 신고, Store 제출 준비 | 릴리스 |
 
 ## 지금 할 일
 
 ### 0. Microsoft Store 제출 (EXE 방식, 개인 계정 — 사용자 결정 2026-10-25)
-- 앱 쪽 준비는 했다(1.18 작업 브랜치): Store 설치 파일 `POSCHAT-Store-Setup.exe`(Store판은 스스로 업데이트하지 않고 Store를 엶),
+- 앱 쪽 준비는 했다(1.18.0에 들어감): Store 설치 파일 `POSCHAT-Store-Setup.exe`(Store판은 스스로 업데이트하지 않고 Store를 엶),
   모든 PE 파일 서명(`build_installer.sign_tree`), 부적절한 응답 신고(GitHub 이슈 `ai-report`), 개인정보 처리방침, 제출 안내 [microsoft-store.md](microsoft-store.md).
 - 사용자가 할 일: 개발자 계정(개인)·이름 예약 → Store ID를 `updates.STORE_PRODUCT_ID`에, 코드 서명 인증서를 Secrets에,
   `ai-report` 라벨·Immutable releases → 서명된 릴리스 → 파트너 센터 제출. 인증서가 하드웨어 토큰·클라우드 HSM 방식이면 CI 서명 단계를 바꾼다.
@@ -42,7 +43,7 @@ v1.17(Adaptive Hybrid AI Engine)은 릴리스했다(사용자 승인, 2026-10-24
 ### 3. 다음 후보(v1.18 이후)
 - Code 에이전트: 하위 작업(서브에이전트), 긴 출력 요약, 이미지(스크린숏) 입력, MCP 도구, 훅(편집 뒤 포맷·린트 자동 실행), 실제 앱에서 worktree·백그라운드 명령 손 확인.
   (1.17.1에서 worktree 격리·테스트 명령 찾기·권한 모드·슬래시 명령은 했다)
-- SystemVerilog 문법 트리, 원격(SSH) 작업 폴더에서 격리 작업(git worktree). (대화형 터미널과 SSH 원격 작업 폴더는 1.18 작업 브랜치에서 했다)
+- SystemVerilog 문법 트리, 원격(SSH) 작업 폴더에서 격리 작업(git worktree). (대화형 터미널과 SSH 원격 작업 폴더는 1.18.0에 들어갔다)
 - Lab: papermill식 노트북 파라미터, 원격(SSH) 실행 기록, 실험 보고서 내보내기(Markdown·PDF), 지표 단위 변환 규칙.
 - 브라우저 에이전트: iframe·shadow DOM 요소, 드래그·호버, 탭 여러 개, 사이트별 허용 목록 설정.
 
