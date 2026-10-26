@@ -17,8 +17,8 @@ from pathlib import Path
 import requests
 
 REPOSITORY = "bj0322/POSCHAT"  # 소스 코드 주소(설정의 라이선스 정보)에만 쓴다. 업데이트는 아래 서버에서 받는다.
-# 업데이트 서버. 도메인과 HTTPS가 생기면 이 값만 바꾼다(설치 파일은 서명으로 확인하므로 http여도 변조되지 않는다).
-UPDATE_BASE_URL = "http://3.38.118.65"
+# 업데이트 서버(HTTPS). 설치 파일은 연결과 상관없이 아래 서명으로도 확인한다. 1.18.2 앱은 옛 주소 http://3.38.118.65를 쓰므로 서버는 그 주소도 계속 서비스한다.
+UPDATE_BASE_URL = "https://pidstech.com"
 # 서명 공개키(Ed25519 raw 32바이트의 base64). 여러 개를 두면 하나라도 맞을 때 받아들인다(키 교체: docs/security.md).
 UPDATE_PUBLIC_KEYS = ("Et1RfxsTZ4VAy/odq+idHpUVPwcvfoHkkp8fPwY4g/A=",)
 # Microsoft Store 제품 ID(파트너 센터의 'Store ID', 9N…로 시작). 비어 있으면 Store의 '다운로드 및 업데이트' 화면을 연다.

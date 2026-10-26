@@ -191,6 +191,9 @@ class ShippedKeyTests(unittest.TestCase):
         for key in updates.UPDATE_PUBLIC_KEYS:
             self.assertEqual(len(base64.b64decode(key, validate=True)), 32)
 
+    def test_update_server_uses_https(self):
+        self.assertTrue(updates.UPDATE_BASE_URL.startswith("https://"))
+
     def test_update_server_address_is_consistent(self):
         self.assertTrue(updates.DOWNLOAD_PREFIX.startswith(updates.UPDATE_BASE_URL))
         self.assertTrue(updates.RELEASE_URL.startswith(updates.UPDATE_BASE_URL))
