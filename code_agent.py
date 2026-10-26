@@ -916,6 +916,9 @@ class CodeAgentApi:
             on_tool=on_tool,
             confirm=confirm, cancelled=lambda: not alive(), thread_id=None, share_threads=False,
             mcp=None, api_settings=self._thread_api_settings({}), on_delta=None,
+            plms=bool(self._config.get("plms_enabled")) and not (
+                adaptive_engine.local_only(self._config) and adaptive_engine.settings(self._config)["local_only_tools"] == "block"),
+            plms_reader=lambda action, **kwargs: self._plms_read(action, cancelled=lambda: not alive(), **kwargs),
             policy=None, browser=None, paper=None, review=self._ca_review(task_id, lambda: running.get("mode") or mode, alive),
             runner=self._code_runner(), on_plan=on_plan, on_run=on_run,
             # 1.17: 자동 선택을 켰으면 엔진을 거친다. 코드 수정 단계는 '중요·위험'이라 Cloud 먼저, Local Only면 로컬 모델로

@@ -197,9 +197,82 @@ async function browserInit() {
   const st = await api().browser_state();
   BR.available = !!st.available;
   $("#btn-browser").hidden = !BR.available;
+  $("#btn-plms").hidden = !BR.available;
   browserEvent(st);
 }
 
 $("#btn-browser").addEventListener("click", browserToggle);
 if (window.pywebview && window.pywebview.api) browserInit();
 else window.addEventListener("pywebviewready", browserInit, { once: true });
+
+
+/* PLMS: 인증은 네이티브 웹 뷰에서, 조회 결과만 앱 화면에서 다룬다. */
+function plmsPanel() {
+  const content = h("div", { id: "plms-content", role: "status", "aria-live": "polite" },
+    h("p", {}, "내장 브라우저에서 POSTECH SSO·StonePASS 인증을 직접 마친 뒤 ‘내 수업 불러오기’를 누르세요."),
+    h("p", {}, "요청한 공지·자료는 선택한 AI 서비스로 전송될 수 있습니다. 비밀번호·인증 코드·쿠키는 AI에 보내지 않습니다."));
+  let generation = 0, closed = false;
+  const showError = (message) => content.replaceChildren(h("p", { role: "alert" }, message));
+  const call = async (fn, render) => {
+    const current = ++generation;
+    content.replaceChildren(h("p", {}, "PLMS에서 읽는 중…"));
+    try {
+      const res = await fn();
+      if (closed || current !== generation) return;
+      if (!res || res.ok === false) return showError(res?.error || "PLMS를 읽지 못했습니다.");
+      render(res);
+    } catch (_) {
+      if (!closed && current === generation) showError("PLMS 요청에 실패했습니다. 다시 시도하세요.");
+    }
+  };
+  const ask = (prompt) => {
+    close();
+    leaveViews();
+    S.config.agent_mode = true;
+    $("#agent-toggle").checked = true;
+    api().set_agent_mode(true);
+    $("#input").value = prompt;
+    autoresize(); updateSend(); $("#input").focus();
+  };
+  const list = (items, onclick) => h("div", { class: "plms-list" }, items.map((item) =>
+    h("button", { class: "btn", onclick: () => onclick(item) }, item.title)));
+  const read = (course, item, parents) => call(() => api().plms_read(course.id, item.url, "", 0, parents), (res) => {
+    const doc = res.document;
+    const renderDoc = (data) => {
+      content.replaceChildren(h("button", { class: "btn", onclick: () => openCourse(course) }, "수업으로 돌아가기"),
+        h("h3", {}, data.title), h("p", {}, data.url),
+        h("pre", { class: "plms-text" }, data.text),
+        h("button", { class: "btn primary", onclick: () => ask(`PLMS 수업 ${course.title} (course_id=${course.id})의 자료를 읽고 요약해 줘.\n주소: ${item.url}\nparent: ${JSON.stringify(parents)}`) }, "에이전트에게 이 자료 묻기"),
+        data.next_offset == null ? null : h("button", { class: "btn", onclick: () => call(
+          () => api().plms_read(course.id, item.url, "", data.next_offset, parents), (r) => renderDoc(r.document)) }, "이어서 읽기"),
+        list(data.items || [], (child) => read(course, child, [...parents, item.url])));
+    };
+    renderDoc(doc);
+  });
+  const openCourse = (course) => call(() => api().plms_course(course.id), (res) => {
+    const c = res.course;
+    content.replaceChildren(h("h3", {}, c.title),
+      h("button", { class: "btn primary", onclick: () => ask(`PLMS 수업 ${c.title} (course_id=${c.id})의 공지와 강의자료를 확인해서 정리해 줘. 원문 링크도 알려 줘.`) }, "에이전트에게 수업 정리 맡기기"),
+      h("pre", { class: "plms-text" }, c.text),
+      list(c.items, (item) => read(c, item, [])));
+  });
+  const { close } = modal({ title: "PLMS 수업·공지·자료", wide: true, body: content,
+    onClose: () => { closed = true; ++generation; }, buttons: [
+      { label: "SSO 로그인", action: async (dismiss) => {
+        dismiss(); leaveViews();
+        if (window.paperLeave) paperLeave();
+        if (window.codeLeave) codeLeave();
+        const res = await browserCall(api().plms_login());
+        if (res) { BR.open = true; BR.url = res.url; renderBrowserBar(); toast("SSO 인증 후 PLMS → 내 수업 불러오기를 누르세요."); }
+      } },
+      { label: "내 수업 불러오기", class: "primary", action: () => call(() => api().plms_courses(), (res) => {
+        content.replaceChildren(h("h3", {}, `참여 수업 ${res.courses.length}개`),
+          res.courses.length ? list(res.courses, openCourse) : h("p", {}, "표시할 수업이 없습니다. PLMS의 내 강좌 화면도 확인하세요."));
+      }) },
+      { label: "연결 해제", action: () => call(() => api().plms_disconnect(), () => {
+        content.replaceChildren(h("p", {}, "PLMS 조회 연결을 끄고 PLMS 전용 쿠키를 지웠습니다. 학교 공통 SSO 세션과 기존 대화 기록은 유지됩니다."));
+      }) },
+      { label: "닫기" }
+    ] });
+}
+$("#btn-plms").addEventListener("click", plmsPanel);

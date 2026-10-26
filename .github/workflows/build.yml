@@ -317,6 +317,9 @@ jobs:
             echo "Third-party components keep their own licenses (THIRD_PARTY_NOTICES.md, docs/license-audit.md)."
             echo
           } > notes.md
+          if [ -f "docs/release-notes/$TAG.md" ]; then
+            cat "docs/release-notes/$TAG.md" >> notes.md
+          fi
           # 1.9.1~1.10.0 앱의 자동 업데이트는 예전 파일 이름(PostechChat-*)을 찾으므로 같은 파일을 그 이름으로도 올린다
           cp dist/POSCHAT-Setup.exe dist/PostechChat-Setup.exe
           cp dist/POSCHAT-mac.dmg dist/PostechChat-mac.dmg

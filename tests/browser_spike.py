@@ -90,6 +90,30 @@ def message_probe(backend):
     return len(got)
 
 
+def seed_plms_cookie(backend):
+    """네트워크 없이 네이티브 저장소에 시험용 쿠키를 넣는다. 조회·삭제 시험 뒤 제거한다."""
+    if sys.platform == "win32":
+        def put():
+            manager = backend.view.CoreWebView2.CookieManager
+            cookie = manager.CreateCookie("poschat_plms_probe", "fixture-only", "plms.postech.ac.kr", "/")
+            cookie.IsSecure = True
+            cookie.IsHttpOnly = True
+            manager.AddOrUpdateCookie(cookie)
+        backend._invoke(put)
+    else:
+        import Foundation
+        done = threading.Event()
+        def put():
+            cookie = Foundation.NSHTTPCookie.cookieWithProperties_({
+                Foundation.NSHTTPCookieName: "poschat_plms_probe", Foundation.NSHTTPCookieValue: "fixture-only",
+                Foundation.NSHTTPCookieDomain: "plms.postech.ac.kr", Foundation.NSHTTPCookiePath: "/",
+                Foundation.NSHTTPCookieSecure: "TRUE"})
+            backend.view.configuration().websiteDataStore().httpCookieStore().setCookie_completionHandler_(cookie, done.set)
+        backend._run(put, wait=False)
+        if not done.wait(15):
+            raise RuntimeError("시험용 PLMS 쿠키를 준비하지 못했습니다.")
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -235,6 +259,13 @@ def main():
             loaded = wait_for(lambda: b.state["url"].startswith(url) and not b.state["loading"] and b.state["title"])
             step("navigation events", loaded, json.dumps(b.state))
             alive("after open")
+            seed_plms_cookie(b._backend)
+            cookies = b.plms_cookies()
+            step("PLMS cookie API", any(c["name"] == "poschat_plms_probe" and c["value"] == "fixture-only" for c in cookies),
+                 "native cookie read; values omitted")
+            b.plms_cookies(clear=True)
+            step("PLMS cookie removal", not any(c["name"] == "poschat_plms_probe" for c in b.plms_cookies()), "probe removed")
+            alive("after PLMS cookie API")
             pump.flush(10)
             got = js_value(window.evaluate_js("JSON.stringify(window.__events.slice(-1))"))
             last = got[-1] if isinstance(got, list) and got else {}

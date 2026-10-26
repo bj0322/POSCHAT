@@ -253,6 +253,18 @@ class Browser:
             raise BrowserError("이 페이지는 읽을 수 없습니다.")
         return page
 
+    def plms_cookies(self, clear=False):
+        """PLMS 모듈 전용. 쿠키는 화면 API·모델에 반환하지 않는다."""
+        from plms import ORIGIN
+
+        with self._lock:
+            if self._backend is None:
+                raise BrowserError("PLMS 브라우저에서 먼저 로그인하세요.")
+            fn = getattr(self._backend, "plms_cookies", None)
+            if fn is None:
+                raise BrowserError("PLMS 연결에는 Windows·macOS 네이티브 브라우저가 필요합니다.")
+        return fn(ORIGIN, clear)
+
     def close(self):
         with self._lock:
             if self._backend is not None:

@@ -753,3 +753,8 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
   padding: 6px 8px; background: var(--bg); color: var(--text); }
 .report-form textarea { resize: vertical; }
 .report-form input[type=checkbox] { width: auto; margin: 0; }
+
+/* PLMS 강좌·자료 목록 */
+.plms-list { display: grid; gap: 8px; margin-top: 12px; }
+.plms-list .btn { text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.plms-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 45vh; overflow: auto; font: inherit; }
