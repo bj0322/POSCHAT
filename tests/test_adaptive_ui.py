@@ -149,7 +149,7 @@ class AdaptiveUiTests(unittest.TestCase):
                 # 승격: 로컬 답이 검증 실패 → Cloud 답, 임시 답은 접혀 남는다
                 self.fake.replies.append("English only answer that should fail the Korean language check for sure.")
                 self.send(page, "이 회의록을 다시 요약해 줘")
-                page.wait_for_function("() => document.querySelectorAll('.msg.assistant').length >= 2", timeout=30000)
+                page.wait_for_function("() => document.querySelectorAll('.msg.assistant .route-badge').length >= 2", timeout=30000)
                 badge = page.locator(".msg.assistant .route-badge").last
                 badge.wait_for()
                 self.assertEqual(badge.inner_text(), "Local → Cloud · 요약")
