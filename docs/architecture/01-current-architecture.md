@@ -18,7 +18,7 @@ POSCHAT은 **하나의 Python 코드베이스**를 세 플랫폼이 공유한다
 | 외부 에이전트 연동 | `ai_memory.py` | ai-memory MCP 서버와 인계(handoff)·최근 기억 |
 | 문서·첨부 | `documents.py`, `attachments.py` | PDF·Office·HWP 텍스트 추출, 첨부 업로드 |
 | PO노트 | `po_note.py`, `stt.py` | 강의 녹음 전사(sherpa-onnx 로컬 + 서버 보정), 필기 노트 생성 |
-| 업데이트 | `updates.py` | GitHub Releases에서 새 버전 확인·다운로드·SHA-256 검증 |
+| 업데이트 | `updates.py` | 업데이트 서버에서 새 버전 확인·다운로드·SHA-256·Ed25519 서명 검증 |
 | 인증서 | `certs.py` | 중간 인증서를 보내지 않는 genai.postech.ac.kr용 AIA 처리(안드로이드) |
 | 안드로이드 | `android/…/MainActivity.kt`, `android_main.py` | Chaquopy로 같은 `main.Bridge`를 실행. WebView가 pywebview를 대신한다 |
 
