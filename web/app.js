@@ -1286,7 +1286,7 @@ function showSettings() {
   body.append(h("p", { style: "margin:14px 0 0;color:var(--text-3);font-size:12px" }, `POSCHAT 버전 ${S.version}`),
     h("p", { style: "margin:2px 0 0;color:var(--text-3);font-size:12px" }, "서비스 대표자: 김범준"),
     h("p", { style: "margin:2px 0 0;color:var(--text-3);font-size:12px" }, "문의사항은 ",
-      h("a", { href: REPO_URL, target: "_blank", style: "color:inherit" }, REPO_URL), "의 문의 메일로 보내 주세요."),
+      h("a", { href: "https://pidstech.com", target: "_blank", style: "color:inherit" }, "PIDS Tech. 홈페이지"), "의 문의 메일로 보내 주세요."),
     licenseBlock());
   syncMode();
   modal({
