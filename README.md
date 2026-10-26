@@ -1,6 +1,6 @@
 # POSCHAT
 
-버전 1.18.1 — **에이전트가 인터넷에서 직접 조사**: 에이전트(채팅의 에이전트 모드·코드의 작업 탭)가 웹 검색·웹페이지와 PDF 읽기·저자별 논문 목록·파일 받기로 "논문 전수조사" 같은 일을 스스로 끝까지 합니다(에이전트가 만든 주소는 물음, 내부망은 막음). `/usage`로 사용량을 보고, 코드 작업 탭 아래 회색 띠를 없앴습니다. [릴리스 노트](docs/release-notes/v1.18.1.md) · [이전 버전 기록](#버전-기록)
+버전 1.18.2 — **자체 업데이트 서버**: 저장소를 비공개로 바꿔도 자동 업데이트가 되도록 새 버전 확인·설치 파일 받기를 PIDS Tech. 업데이트 서버로 옮기고, 설치 파일은 Ed25519 서명을 확인한 뒤에만 설치합니다. [릴리스 노트](docs/release-notes/v1.18.2.md) · [이전 버전 기록](#버전-기록)
 
 POSTECH GenAI API(기본) 또는 본인의 Claude·OpenAI(GPT) API 키를 쓰는 Windows·macOS 데스크톱·안드로이드 챗봇 POSCHAT입니다(1.10까지의 이름은 POSTECH GenAI Chat). PIDS Tech. 팀이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 소프트웨어 라이선스(AGPL-3.0-only, 과거 버전은 MIT)는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
 
@@ -338,7 +338,7 @@ POSTECH GenAI 서버의 모델은 자체 시스템 프롬프트 때문에 "사�
 | `paper_mcp.py` · `notion_mcp.py` · `firecrawl_mcp.py` | 내장 MCP 서버 paper(arXiv·Semantic Scholar), notion(Notion API), firecrawl(Firecrawl API) |
 | `api.py` | POSTECH GenAI API 호출(OpenAI 호환 Chat Completions / OpenAI Responses / a1), 스트리밍 해석, 이미지·음성 입력, 사용량·크레딧 기록 |
 | `po_note.py` | PO노트 저장(전사·노트·메모·강의 자료)과 필기 노트 프롬프트·생성(긴 전사는 나눠 정리 후 합치기) |
-| `updates.py` | 자동 업데이트: GitHub Releases 확인, 이 기기용 설치 파일 내려받기(크기·SHA-256 확인) |
+| `updates.py` | 자동 업데이트: 업데이트 서버 확인, 이 기기용 설치 파일 내려받기(크기·SHA-256·Ed25519 서명 확인) |
 | `stt.py` | PO노트 음성 인식: 마이크(sounddevice) → 음성 구간 검출(Silero VAD) → 로컬 AI(sherpa-onnx) 또는 POSTECH 서버, 모델 내려받기 |
 | `attachments.py` | 채팅창 첨부 파일: 조각 업로드, 종류 확인, 문서·텍스트 내용 뽑기, 이미지 |
 | `storage.py` | 대화·설정 저장(`%APPDATA%\PostechChat`), memory.md·USER.md, 첨부 파일 폴더, 모델 API 사용량, 다른 대화 검색 |
@@ -396,12 +396,12 @@ py -3 -m venv .venv
   ```
 
   태그를 직접 push하지 않고 Actions에서 **Build installer → Run workflow**의 `release` 칸에 `v1.2.0`을 넣어 실행해도 됩니다. 이 경우 실행한 커밋에 태그와 Release가 만들어집니다.
-- 사용자에게는 항상 최신 버전을 가리키는 링크 `https://github.com/bj0322/POSCHAT/releases/latest/download/POSCHAT-Setup.exe`를 안내하면 됩니다. 저장소가 비공개이면 저장소 권한이 있는 사용자만 받을 수 있습니다.
-- **자동 업데이트**(1.9.1부터): 앱이 시작할 때(6시간에 한 번) `https://api.github.com/repos/bj0322/POSCHAT/releases/latest`로 최신 정식 릴리스를 확인합니다. 새 버전이 있으면 릴리스 노트와 함께 알리고, **업데이트**를 누르면 이 기기용 파일(`POSCHAT-Setup.exe`·`POSCHAT-mac.dmg`·`POSCHAT.apk`, 1.11부터의 이름. 릴리스에는 1.9.1~1.10.0 앱을 위해 예전 이름 `PostechChat-*`도 함께 올립니다)을 받아 Releases가 알려 준 크기와 SHA-256(digest)을 확인합니다.
+- 사용자에게는 항상 최신 버전을 가리키는 업데이트 서버 링크 `http://3.38.118.65/releases/download/latest/POSCHAT-Setup.exe`(맥은 `POSCHAT-mac.dmg`, 안드로이드는 `POSCHAT.apk`)를 안내하면 됩니다. 저장소가 비공개여도 받을 수 있습니다. 서버가 GitHub 릴리스를 10분마다 가져옵니다([운영 안내](docs/update-server.md)).
+- **자동 업데이트**(1.9.1부터): 앱이 시작할 때(6시간에 한 번) 업데이트 서버(`updates.UPDATE_BASE_URL`)의 `/api/releases/latest`로 최신 정식 릴리스를 확인합니다. 1.18.1 이하 앱은 GitHub를 확인하므로, 저장소를 비공개로 바꾸기 전에 1.18.2를 공개 저장소에서 릴리스해 한 번 받게 합니다. 새 버전이 있으면 릴리스 노트와 함께 알리고, **업데이트**를 누르면 이 기기용 파일(`POSCHAT-Setup.exe`·`POSCHAT-mac.dmg`·`POSCHAT.apk`, 1.11부터의 이름. 릴리스에는 1.9.1~1.10.0 앱을 위해 예전 이름 `PostechChat-*`도 함께 올립니다)을 받아 서버가 알려 준 크기·SHA-256(digest)과, 릴리스 CI가 만든 Ed25519 서명(`<파일>.sig`)을 앱에 들어 있는 공개키로 확인합니다. 서버 주소가 http이므로 서명이 없거나 맞지 않으면 설치하지 않습니다([보안](docs/security.md#업데이트-신뢰-모델)).
   - Windows: 설치 프로그램을 지금 설치 폴더로 열고 앱이 스스로 닫힙니다. 설치 프로그램에서 **설치**를 누르면 앱이 완전히 닫히기를 기다렸다가(1.11부터, 한 번만 누르면 됨) 대화·설정을 유지한 채 바뀝니다. 30초가 지나도 닫히지 않으면 강제로 종료할지 묻습니다.
   - macOS: 디스크 이미지를 엽니다. 앱을 끝낸 뒤 응용 프로그램 폴더로 끌어다 놓아 바꿉니다.
   - Android: 설치 화면을 엽니다(처음 한 번 "이 출처 허용"이 필요합니다).
-  - 토큰 없이 공개 API를 쓰므로 **저장소가 공개일 때만** 동작합니다. 비공개인 동안은 확인하지 못했다고만 알리고(시작할 때는 알리지 않음) 사용에는 지장이 없습니다.
+  - 업데이트 서버가 응답하지 않으면 확인하지 못했다고만 알리고(시작할 때는 알리지 않음) 사용에는 지장이 없습니다.
   - **설정 → 업데이트**에서 시작할 때 확인을 끄거나 지금 확인할 수 있고, 알림 창에서 **이 버전 건너뛰기**를 고를 수 있습니다.
 
 - 설치 파일에는 코드 서명이 없어서 처음 실행할 때 Windows SmartScreen 경고가 뜰 수 있습니다. 경고는 코드 서명 인증서로 서명해야만 없앨 수 있습니다. 인증서(.pfx)를 base64로 바꿔 저장소 Secrets의 `WINDOWS_SIGN_PFX_BASE64`에, 비밀번호를 `WINDOWS_SIGN_PASSWORD`에 넣으면 빌드가 앱 exe와 설치 파일에 서명합니다(로컬 빌드는 `WINDOWS_SIGN_PFX`·`WINDOWS_SIGN_PASSWORD` 환경 변수). 서명한 파일도 다운로드가 쌓여 평판이 생길 때까지는 경고가 남을 수 있습니다.
@@ -428,6 +428,8 @@ py -3 -m venv .venv
 
 각 버전의 자세한 내용은 [docs/release-notes](docs/release-notes)에 있습니다.
 
+- 1.18.2 — **자체 업데이트 서버**: 새 버전 확인과 설치 파일 받기를 업데이트 서버로 옮기고 Ed25519 서명 확인을 더했습니다(저장소 비공개 전환 준비). [릴리스 노트](docs/release-notes/v1.18.2.md)
+- 1.18.1 — **에이전트 인터넷 조사**: 웹 검색·페이지와 PDF 읽기·저자별 논문 목록·파일 받기, `/usage`. [릴리스 노트](docs/release-notes/v1.18.1.md)
 - 1.18.0 — **GPT, 코드 화면 터미널, SSH 서버의 폴더**: 본인 OpenAI API 키로 GPT(GPT-5.1 등), 코드 화면 아래 패널이 진짜 터미널(PowerShell·로그인 셸, **Ctrl+`**), 코드 화면 위 **SSH**로 서버의 폴더에서 파일·Git·터미널·Code 에이전트. [릴리스 노트](docs/release-notes/v1.18.0.md)
 
 - 1.17.2 — **Code 에이전트가 터미널처럼, 코드는 전체 화면으로**: 코드는 채팅 옆에 나누지 않고 하나의 화면으로 열리고, 작업 탭은 Claude Code 같은 터미널입니다 — `● Read(…) ⎿` 진행 기록과 줄 번호 diff, 기록 안에서 고르는 승인(1·2·3·Esc, 거부하며 다르게 하라고 알리기), **Shift+Tab** 권한 모드, **Esc** 멈춤·두 번 되돌리기, ↑↓ 지난 입력, `!명령` 바로 실행·`#메모`·`@파일` 붙이기, `/resume` `/status` `/diff` `/worktree` 같은 명령과 프로젝트 명령(`.poschat/commands`).

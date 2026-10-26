@@ -347,10 +347,26 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release != '')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 1.18.2: 업데이트 서버는 http라서 앱이 설치 파일의 Ed25519 서명(<파일>.sig)을 확인한다. 개인키는 시크릿에만 있다.
+      # 앱에 들어 있는 공개키와 맞지 않으면 서명 단계에서 실패해 릴리스가 만들어지지 않는다.
+      - name: Sign update files
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          TAG: ${{ inputs.release || github.ref_name }}
+        run: |
+          python -m pip install requests cryptography
+          python tools/update_sign.py sign --tag "$TAG" dist/POSCHAT-Setup.exe dist/POSCHAT-mac.dmg dist/POSCHAT.apk
 
       - name: Publish release
         env:
@@ -371,6 +387,7 @@ jobs:
           cp dist/POSCHAT.apk dist/PostechChat.apk
           # 1.18: POSCHAT-Store-Setup.exe는 Microsoft Store 제출용(파트너 센터에 이 버전의 주소를 넣는다). 앱의 자동 업데이트는 받지 않는다
           gh release create "$TAG" dist/POSCHAT-Setup.exe dist/POSCHAT-Store-Setup.exe dist/POSCHAT-mac.dmg dist/POSCHAT.apk \
+            dist/POSCHAT-Setup.exe.sig dist/POSCHAT-mac.dmg.sig dist/POSCHAT.apk.sig \
             dist/PostechChat-Setup.exe dist/PostechChat-mac.dmg dist/PostechChat.apk \
             --repo "$GITHUB_REPOSITORY" --title "POSCHAT $TAG" --target "$GITHUB_SHA" \
             --notes-file notes.md --generate-notes

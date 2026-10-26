@@ -1223,7 +1223,7 @@ function showSettings() {
     h("div", { class: "field" }, h("label", {}, "업데이트"),
       h("label", { style: "display:flex;align-items:center;font-weight:400;cursor:pointer" }, autoUpdate, "시작할 때 새 버전 확인"),
       h("div", { class: "row", style: "margin-top:6px" },
-        h("small", { style: "flex:1;margin:0" }, `지금 버전 ${S.version}. 새 버전은 GitHub Releases에서 받아 설치합니다.`),
+        h("small", { style: "flex:1;margin:0" }, `지금 버전 ${S.version}. 새 버전은 업데이트 서버에서 받아 설치합니다.`),
         h("button", { class: "btn", type: "button", onclick: async (e) => {
           e.target.disabled = true;
           try {
@@ -1324,8 +1324,8 @@ function offerUpdate(update, attempts = 0) {
     h("small", { style: "display:block;margin-top:10px;color:var(--text-3)" },
       update.store ? "Microsoft Store로 설치한 앱입니다. Store의 다운로드 및 업데이트(또는 POSCHAT 페이지)에서 업데이트하세요. " +
         "새 버전은 Store 심사(보통 1~2일)를 거친 뒤 Store에 보입니다. 대화·설정은 그대로 남습니다."
-        : update.can_install ? "GitHub Releases에서 설치 파일을 받아 크기·SHA-256을 확인한 뒤 설치를 시작합니다. 대화·설정은 그대로 남습니다."
-          : "이 기기에서는 자동으로 설치할 수 없습니다. Releases 페이지에서 받아 설치하세요."));
+        : update.can_install ? "업데이트 서버에서 설치 파일을 받아 크기·SHA-256·서명을 확인한 뒤 설치를 시작합니다. 대화·설정은 그대로 남습니다."
+          : "이 기기에서는 자동으로 설치할 수 없습니다. 업데이트 서버 페이지에서 받아 설치하세요."));
   modal({
     title: "업데이트",
     body,
@@ -1337,7 +1337,7 @@ function offerUpdate(update, attempts = 0) {
           const r = await api().open_store_updates(); if (r && r.ok === false) toast(r.error); close(); } }
         : update.can_install
           ? { label: "업데이트", class: "primary", action: (close) => { close(); startUpdate(update); } }
-          : { label: "Releases 열기", class: "primary", action: (close) => { api().open_release_page(); close(); } },
+          : { label: "다운로드 페이지 열기", class: "primary", action: (close) => { api().open_release_page(); close(); } },
     ],
   });
 }
@@ -1643,7 +1643,7 @@ PDF 안의 스크립트·링크·양식은 실행하지 않고, 논문 글은 '�
 
 휴대폰 앱에서도 녹음할 수 있습니다. 처음 녹음할 때 마이크 권한을 묻고, 녹음하는 동안 알림이 떠 있으며 화면을 꺼도 계속 받아 적습니다(알림에서 중지).`],
   ["업데이트", `
-앱이 시작할 때 GitHub Releases에서 새 버전을 확인해 알려 줍니다. **업데이트**를 누르면 설치 파일을 받아 확인한 뒤 설치를 시작합니다(Windows는 설치 프로그램이 열리고 앱이 닫힙니다). 대화·설정은 그대로 남습니다.
+앱이 시작할 때 업데이트 서버에서 새 버전을 확인해 알려 줍니다. **업데이트**를 누르면 설치 파일을 받아 서명을 확인한 뒤 설치를 시작합니다(Windows는 설치 프로그램이 열리고 앱이 닫힙니다). 대화·설정은 그대로 남습니다.
 
 **설정 → 업데이트**에서 시작할 때 확인을 끄거나 지금 확인할 수 있습니다.`],
   ["파일 첨부", `

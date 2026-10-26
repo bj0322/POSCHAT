@@ -645,7 +645,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
     # ---- 업데이트 ----
 
     def check_for_updates(self, manual=False):
-        """GitHub Releases의 최신 버전. 시작할 때(manual=False)는 설정을 따르고 6시간에 한 번만, 건너뛴 버전은 알리지 않는다."""
+        """업데이트 서버의 최신 버전. 시작할 때(manual=False)는 설정을 따르고 6시간에 한 번만, 건너뛴 버전은 알리지 않는다."""
         if not manual and (not self._config.get("update_check", True)
                            or time.time() - self._config.get("update_checked_at", 0) < UPDATE_INTERVAL):
             return {"available": False, "skipped": True}

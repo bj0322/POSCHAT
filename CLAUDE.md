@@ -46,8 +46,9 @@ python tools/license_check.py repo               # SPDX·고지 점검
 1. 작업 브랜치에서 `version.py`, `docs/release-notes/vX.Y.Z.md`, README 첫 줄·기능 표, `web/app.js` 사용법 가이드를 고친다.
 2. 푸시만으로는 CI가 돌지 않는다. PR을 열거나 `build.yml`을 workflow_dispatch로 실행한다.
 3. CI(license·tests·ui·windows·macos·android·browser-spike)가 모두 통과하면 PR을 머지한다.
-4. main에서 `build.yml`을 workflow_dispatch로 `release=vX.Y.Z` 입력과 함께 실행 → 태그·릴리스·자산 7개
-   (POSCHAT-Setup.exe, POSCHAT-Store-Setup.exe, POSCHAT-mac.dmg, POSCHAT.apk와 옛 이름 PostechChat-* 사본 3개). 태그는 모든 사용자에게
+4. main에서 `build.yml`을 workflow_dispatch로 `release=vX.Y.Z` 입력과 함께 실행 → 태그·릴리스·자산 10개
+   (POSCHAT-Setup.exe, POSCHAT-Store-Setup.exe, POSCHAT-mac.dmg, POSCHAT.apk, 서명 파일 .sig 3개와 옛 이름 PostechChat-* 사본 3개).
+   앱은 업데이트 서버(`updates.UPDATE_BASE_URL`, [docs/update-server.md](docs/update-server.md))에서 받는다. 서버가 10분마다 GitHub 릴리스를 가져오므로 릴리스 뒤 `curl <서버>/api/releases/latest`로 새 태그가 보이는지 확인한다. 태그는 모든 사용자에게
    자동 업데이트로 나가므로 사용자 승인 없이 만들지 않는다. 한 번 올린 릴리스 자산은 바꾸지 않는다(Store 제출 주소, 정책 10.2.9).
 5. 머지 뒤 작업 브랜치는 `git fetch origin main && git checkout -B <브랜치> origin/main`으로 다시 시작한다.
 6. Microsoft Store(EXE 방식, [docs/microsoft-store.md](docs/microsoft-store.md)): 사용자가 파트너 센터에서 패키지 URL을 새 버전의
