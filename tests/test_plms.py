@@ -139,6 +139,18 @@ class PlmsTests(unittest.TestCase):
         with self.assertRaises(plms.PlmsError):
             self.client.course("7")
 
+    def test_code_agent_reader_without_browser_navigation(self):
+        import code_agent
+        with isolated_app_dir() as root:
+            a = code_agent.CodeAgent("test", root, True, 5, 5, lambda _: None, lambda *_: None,
+                                     lambda *_: False, lambda: False, plms=True,
+                                     plms_reader=lambda action, **kwargs: getattr(self.client, action)(**kwargs))
+            prompt = a._static_prompt([], "수업 자료를 정리해 줘", None)
+            self.assertIn("plms_courses", prompt)
+            self.assertNotIn('"action": "browser_click"', prompt)
+            self.assertIn("물리학", a._tool_plms_courses())
+            self.assertIn("수강 목록", a._execute({"action": "plms_course", "course_id": "999"}))
+
     def test_agent_without_workspace_and_tool_output_is_untrusted(self):
         a = agent.Agent("test", None, True, 5, 5, lambda _: None, lambda *_: None,
                         lambda *_: False, lambda: False, browser=self.browser, plms=True)

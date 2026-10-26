@@ -158,11 +158,12 @@ class BrowserApi:
         except Exception:
             return {"ok": False, "error": "PLMS 자료를 읽지 못했습니다. 로그인 상태를 확인하고 다시 시도하세요."}
 
-    def _plms_read(self, action, **kwargs):
+    def _plms_read(self, action, cancelled=lambda: False, **kwargs):
         import plms
         if not self._config.get("plms_enabled"):
             raise plms.PlmsError("PLMS 로그인·연결을 먼저 켜세요.")
-        client = plms.Client(self._browser(create=False))
+        client = plms.Client(self._browser(create=False),
+                             cancelled=lambda: cancelled() or not self._config.get("plms_enabled"))
         try:
             return getattr(client, action)(**kwargs)
         finally:

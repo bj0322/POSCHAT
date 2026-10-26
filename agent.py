@@ -361,7 +361,7 @@ class Agent:
                  on_status, on_tool, confirm, cancelled, thread_id=None, share_threads=True, mcp=None,
                  api_settings=None, on_delta=None, ai_memory_state=None, on_ai_memory_state=None, policy=None,
                  browser=None, paper=None, review=None, browser_progress=None, browser_paused=None, engine=None,
-                 prompt_cache=False, web=True, plms=False):
+                 prompt_cache=False, web=True, plms=False, plms_reader=None):
         self.api_key = api_key
         # 원격(SSH) 작업 폴더(1.18)면 RPath: 아래 도구들의 파일 작업이 서버에서 일어난다(remote_fs)
         self.workspace = remote_fs.path_of(workspace) if remote_fs.is_remote(workspace) else \
@@ -395,6 +395,7 @@ class Agent:
         self.denied = []              # 사용자가 거부한 단계 — 인계의 '필요한 승인'
         self.project = ""             # 통합 메모리의 프로젝트 키("workspace/project")
         self.plms = bool(plms)
+        self.plms_reader = plms_reader
         self.browser = browser        # browser.Browser — 옆 브라우저가 열려 있을 때(1.13)
         self.paper = paper            # 논문 화면에 열린 PDF {"id", "path", "title", "pages", "workspace"} (1.14)
         self.steps = 0                # 이번 실행에서 모델이 고른 단계 수(관측용)
@@ -810,7 +811,7 @@ class Agent:
             "[단계 종류]\n" + (ACTION_DOCS if self.workspace or not self.plms else '{"action":"done","answer":"최종 답변"}') + ("\n" + WEB_ACTION_DOC if self.web and (self.workspace or not self.plms) else "")
             + ("\n" + MCP_ACTION_DOC if self.mcp_servers else "")
             + ("\n" + BROWSER_ACTION_DOC if self.browser and (self.workspace or not self.plms) else "")
-            + ("\n" + PLMS_ACTION_DOC if self.plms and self.browser else "") + "\n" + PAPER_ACTION_DOC,
+            + ("\n" + PLMS_ACTION_DOC if self.plms and (self.browser or self.plms_reader) else "") + "\n" + PAPER_ACTION_DOC,
             "[규칙]\n" + RULES + ("\n" + WEB_RULE if self.web else "") + ("\n" + MCP_RULE if self.mcp_servers else "")
             + ("\n" + BROWSER_RULE if self.browser else "")
             + "\n" + connectors.UNTRUSTED_RULE
@@ -1127,12 +1128,15 @@ class Agent:
     def _plms_tool(self, action, item_offset=0, **kwargs):
         import plms
 
-        if not self.plms or self.browser is None:
+        if not self.plms or (self.browser is None and self.plms_reader is None):
             raise ToolError("사이드바 PLMS에서 연결·로그인하고 브라우저를 열어 둔 뒤 요청하세요.")
         client = None
         try:
-            client = plms.Client(self.browser, cancelled=self.cancelled)
-            result = getattr(client, action)(**kwargs)
+            if self.plms_reader is not None:
+                result = self.plms_reader(action, **kwargs)
+            else:
+                client = plms.Client(self.browser, cancelled=self.cancelled)
+                result = getattr(client, action)(**kwargs)
         except (plms.PlmsError, ValueError) as e:
             raise ToolError(str(e)) from None
         finally:
