@@ -1253,6 +1253,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
             on_ai_memory_state=save_ai_memory_state,
             policy=connectors.Policy(dict(self._config)),
             browser=browser,
+            plms=bool(self._config.get("plms_enabled")) and not block_tools,
             paper=self._paper_for_agent(),
             # 1.15: Code 화면이 열려 있으면 파일 수정은 승인 창 대신 Code 화면의 변경 검토(덩어리별)로
             review=lambda *a: self._code_review_edit(thread_id, alive, workspace, *a, session_allow=run["allow"]),

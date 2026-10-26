@@ -133,3 +133,62 @@ class BrowserApi:
     def _browser_for_agent(self):
         b = self._browser(create=False)
         return b if b is not None and b.visible else None
+
+    def plms_login(self):
+        """인증 입력은 외부 웹 뷰에서 사용자가 직접 한다."""
+        import plms
+        def go():
+            with self._lock:
+                if self._browser_owner is not None:
+                    raise plms.PlmsError("브라우저를 쓰는 에이전트를 멈춘 뒤 로그인하세요.")
+            self._browser().open(plms.LOGIN)
+            with self._lock:
+                self._config["plms_enabled"] = True
+                import storage
+                storage.save_config(self._config)
+            return {"url": plms.LOGIN}
+        return self._plms_call(go)
+
+    def _plms_call(self, fn):
+        import plms
+        try:
+            return {"ok": True, **fn()}
+        except (plms.PlmsError, browser.BrowserError, ValueError) as e:
+            return {"ok": False, "error": str(e)}
+        except Exception:
+            return {"ok": False, "error": "PLMS 자료를 읽지 못했습니다. 로그인 상태를 확인하고 다시 시도하세요."}
+
+    def _plms_read(self, action, **kwargs):
+        import plms
+        if not self._config.get("plms_enabled"):
+            raise plms.PlmsError("PLMS 로그인·연결을 먼저 켜세요.")
+        client = plms.Client(self._browser(create=False))
+        try:
+            return getattr(client, action)(**kwargs)
+        finally:
+            client.close()
+
+    def plms_courses(self):
+        return self._plms_call(lambda: {"courses": self._plms_read("courses")})
+
+    def plms_course(self, course_id):
+        return self._plms_call(lambda: {"course": self._plms_read("course", course_id=course_id)})
+
+    def plms_read(self, course_id, url, query="", offset=0, parent=""):
+        return self._plms_call(lambda: {"document": self._plms_read("read", course_id=course_id, url=url,
+                                                                  query=query, offset=offset, parent=parent)})
+
+    def plms_disconnect(self):
+        def go():
+            with self._lock:
+                if self._browser_owner is not None:
+                    raise browser.BrowserError("브라우저를 쓰는 에이전트를 멈춘 뒤 연결을 해제하세요.")
+                self._config["plms_enabled"] = False
+                import storage
+                storage.save_config(self._config)
+            b = self._browser(create=False)
+            if b is not None:
+                b.plms_cookies(clear=True)
+                b.open("https://plms.postech.ac.kr/login/index.php")
+            return {}
+        return self._plms_call(go)

@@ -207,6 +207,24 @@ class WebView2Backend:
             raise browser_mod.BrowserError("웹페이지가 응답하지 않습니다.")
         return str(task.Result)
 
+    def plms_cookies(self, origin, clear=False):
+        if not self.ready.wait(20) or self.error:
+            raise browser_mod.BrowserError("PLMS 브라우저가 준비되지 않았습니다.")
+        manager = self._invoke(lambda: self.view.CoreWebView2.CookieManager)
+        task = self._invoke(lambda: manager.GetCookiesAsync(origin))
+        if not task.Wait(READ_TIMEOUT_MS):
+            raise browser_mod.BrowserError("PLMS 세션을 읽지 못했습니다.")
+        def finish():
+            # 쿠키 속성도 WebView2의 UI 스레드에서만 읽을 수 있다.
+            cookies = list(task.Result)
+            if clear:
+                for cookie in cookies:
+                    if str(cookie.Domain).lstrip(".") == "plms.postech.ac.kr":
+                        manager.DeleteCookie(cookie)
+                return []
+            return [{"name": str(c.Name), "value": str(c.Value), "path": str(c.Path)} for c in cookies]
+        return self._invoke(finish)
+
     def screenshot(self):
         """보이는 웹페이지를 PNG로(1.16 브라우저 에이전트). 작업 스레드에서 부른다(UI 스레드에서 결과를 기다리지 않는다)."""
         from Microsoft.Web.WebView2.Core import CoreWebView2CapturePreviewImageFormat
