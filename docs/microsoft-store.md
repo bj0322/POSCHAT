@@ -9,7 +9,7 @@ POSCHAT Windows 앱을 Microsoft Store에 **EXE 방식**으로 올리는 절차�
 |---|---|
 | 무인 설치(설치 화면 없이) | `POSCHAT-Store-Setup.exe --silent --no-desktop` (성공 0, 실패 1) |
 | 독립 설치 파일(설치 중 내려받지 않음) | 앱 전체가 설치 파일 안에 있음 |
-| 버전이 들어간 HTTPS 주소, 제출 뒤 파일이 바뀌지 않음(10.2.9) | `https://github.com/bj0322/POSCHAT/releases/download/vX.Y.Z/POSCHAT-Store-Setup.exe` — 릴리스마다 새 태그. **저장소가 비공개이면 이 주소로 받을 수 없으므로** 공개 HTTPS 주소(업데이트 서버에 도메인·HTTPS를 붙이거나 별도 공개 위치)가 필요합니다 |
+| 버전이 들어간 HTTPS 주소, 제출 뒤 파일이 바뀌지 않음(10.2.9) | `https://github.com/bj0322/POSCHAT/releases/download/vX.Y.Z/POSCHAT-Store-Setup.exe` — 릴리스마다 새 태그. **저장소가 비공개이면 이 주소로 받을 수 없으므로** 공개 HTTPS 주소가 필요합니다(업데이트 서버 `https://pidstech.com`에 Store용 파일도 올리도록 동기화를 넓히면 됩니다. 지금은 올리지 않습니다) |
 | 설치 파일과 모든 PE 파일 서명(10.2.9) | 인증서를 넣으면 빌드가 exe·dll·pyd 중 서명 없는 것에 모두 서명(`build_installer.sign_tree`) — **인증서는 직접 구해야 함** |
 | 심사한 파일만 설치 | Store판(`distribution.txt` = store)은 새 버전을 알리기만 하고 Microsoft Store를 엽니다. 스스로 내려받지 않습니다 |
 | 깨끗한 제거(10.2.7) | 설정 → 앱에 'POSCHAT'으로 등록, 조용한 제거(`--uninstall --quiet`) |

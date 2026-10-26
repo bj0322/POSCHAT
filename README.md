@@ -1,6 +1,6 @@
 # POSCHAT
 
-버전 1.18.2 — **자체 업데이트 서버**: 저장소를 비공개로 바꿔도 자동 업데이트가 되도록 새 버전 확인·설치 파일 받기를 PIDS Tech. 업데이트 서버로 옮기고, 설치 파일은 Ed25519 서명을 확인한 뒤에만 설치합니다. [릴리스 노트](docs/release-notes/v1.18.2.md) · [이전 버전 기록](#버전-기록)
+버전 1.18.3 — **업데이트 서버를 HTTPS 도메인(pidstech.com)으로**: 새 버전 확인과 설치 파일 받기가 `https://pidstech.com`을 쓰고, 기존처럼 설치 파일 서명도 확인합니다. [릴리스 노트](docs/release-notes/v1.18.3.md) · [이전 버전 기록](#버전-기록)
 
 POSTECH GenAI API(기본) 또는 본인의 Claude·OpenAI(GPT) API 키를 쓰는 Windows·macOS 데스크톱·안드로이드 챗봇 POSCHAT입니다(1.10까지의 이름은 POSTECH GenAI Chat). PIDS Tech. 팀이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 소프트웨어 라이선스(AGPL-3.0-only, 과거 버전은 MIT)는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
 
@@ -396,7 +396,7 @@ py -3 -m venv .venv
   ```
 
   태그를 직접 push하지 않고 Actions에서 **Build installer → Run workflow**의 `release` 칸에 `v1.2.0`을 넣어 실행해도 됩니다. 이 경우 실행한 커밋에 태그와 Release가 만들어집니다.
-- 사용자에게는 항상 최신 버전을 가리키는 업데이트 서버 링크 `http://3.38.118.65/releases/download/latest/POSCHAT-Setup.exe`(맥은 `POSCHAT-mac.dmg`, 안드로이드는 `POSCHAT.apk`)를 안내하면 됩니다. 저장소가 비공개여도 받을 수 있습니다. 서버가 GitHub 릴리스를 10분마다 가져옵니다([운영 안내](docs/update-server.md)).
+- 사용자에게는 항상 최신 버전을 가리키는 업데이트 서버 링크 `https://pidstech.com/releases/download/latest/POSCHAT-Setup.exe`(맥은 `POSCHAT-mac.dmg`, 안드로이드는 `POSCHAT.apk`)를 안내하면 됩니다. 저장소가 비공개여도 받을 수 있습니다. 서버가 GitHub 릴리스를 10분마다 가져옵니다([운영 안내](docs/update-server.md)).
 - **자동 업데이트**(1.9.1부터): 앱이 시작할 때(6시간에 한 번) 업데이트 서버(`updates.UPDATE_BASE_URL`)의 `/api/releases/latest`로 최신 정식 릴리스를 확인합니다. 1.18.1 이하 앱은 GitHub를 확인하므로, 저장소를 비공개로 바꾸기 전에 1.18.2를 공개 저장소에서 릴리스해 한 번 받게 합니다. 새 버전이 있으면 릴리스 노트와 함께 알리고, **업데이트**를 누르면 이 기기용 파일(`POSCHAT-Setup.exe`·`POSCHAT-mac.dmg`·`POSCHAT.apk`, 1.11부터의 이름. 릴리스에는 1.9.1~1.10.0 앱을 위해 예전 이름 `PostechChat-*`도 함께 올립니다)을 받아 서버가 알려 준 크기·SHA-256(digest)과, 릴리스 CI가 만든 Ed25519 서명(`<파일>.sig`)을 앱에 들어 있는 공개키로 확인합니다. 서버 주소가 http이므로 서명이 없거나 맞지 않으면 설치하지 않습니다([보안](docs/security.md#업데이트-신뢰-모델)).
   - Windows: 설치 프로그램을 지금 설치 폴더로 열고 앱이 스스로 닫힙니다. 설치 프로그램에서 **설치**를 누르면 앱이 완전히 닫히기를 기다렸다가(1.11부터, 한 번만 누르면 됨) 대화·설정을 유지한 채 바뀝니다. 30초가 지나도 닫히지 않으면 강제로 종료할지 묻습니다.
   - macOS: 디스크 이미지를 엽니다. 앱을 끝낸 뒤 응용 프로그램 폴더로 끌어다 놓아 바꿉니다.
@@ -428,6 +428,7 @@ py -3 -m venv .venv
 
 각 버전의 자세한 내용은 [docs/release-notes](docs/release-notes)에 있습니다.
 
+- 1.18.3 — **업데이트 서버를 HTTPS 도메인으로**: `https://pidstech.com`(IP 주소는 1.18.2 앱을 위해 유지). [릴리스 노트](docs/release-notes/v1.18.3.md)
 - 1.18.2 — **자체 업데이트 서버**: 새 버전 확인과 설치 파일 받기를 업데이트 서버로 옮기고 Ed25519 서명 확인을 더했습니다(저장소 비공개 전환 준비). [릴리스 노트](docs/release-notes/v1.18.2.md)
 - 1.18.1 — **에이전트 인터넷 조사**: 웹 검색·페이지와 PDF 읽기·저자별 논문 목록·파일 받기, `/usage`. [릴리스 노트](docs/release-notes/v1.18.1.md)
 - 1.18.0 — **GPT, 코드 화면 터미널, SSH 서버의 폴더**: 본인 OpenAI API 키로 GPT(GPT-5.1 등), 코드 화면 아래 패널이 진짜 터미널(PowerShell·로그인 셸, **Ctrl+`**), 코드 화면 위 **SSH**로 서버의 폴더에서 파일·Git·터미널·Code 에이전트. [릴리스 노트](docs/release-notes/v1.18.0.md)

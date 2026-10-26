@@ -1,6 +1,6 @@
 # POSCHAT 로드맵과 다음 작업 (v1.16부터)
 
-마지막 갱신: 2026-10-26, v1.18.2 릴리스 시점. 작업 지침은 저장소 최상위 [CLAUDE.md](../CLAUDE.md).
+마지막 갱신: 2026-10-26, v1.18.3 릴리스 시점. 작업 지침은 저장소 최상위 [CLAUDE.md](../CLAUDE.md).
 
 **플랫폼 정책(2026-10, 사용자 지시)**: 안드로이드 앱은 따로 요청하지 않으면 기능을 맞추지 않는다. 데스크톱(Windows·macOS)만 손본다.
 공유 Python·화면 코드는 안드로이드 빌드에도 들어가므로 새 모듈은 계속 공유 목록에 넣고, 안드로이드에서 안 되는 기능은 '쓸 수 없음'으로 막는다. CI의 android 작업과 APK 자산은 그대로 둔다.
@@ -17,6 +17,7 @@
 | 1.17.1 | Code 에이전트 2(Claude Code·Codex처럼): 권한 모드 4가지·다시 묻지 않기 규칙·작업 중 지시·슬래시 명령·지시별 되돌리기·AGENTS.md·격리 작업 공간(git worktree)·새 도구, 손익분기 실험 도구 | 릴리스 |
 | 1.17.2 | Code 에이전트 3(터미널처럼, 사용자 요청 '완벽히 CLI처럼'): 작업 탭 전체를 Claude Code 같은 터미널로 — `● Read(…) ⎿` 기록·줄 번호 diff·접힌 출력(Ctrl+O), 기록 안의 승인 선택지(1·2·3·Esc, 거부하며 다르게 하라고 알리기), Shift+Tab 모드(작업 중에도), Esc 멈춤·Esc 두 번 되돌리기, ↑↓ 지난 입력, `/`·`@` 자동 완성, `!명령`·`#메모`·`@파일`, 프로젝트 명령(.poschat/.claude commands), /clear /resume /status /diff /revert /todos /permissions /memory /worktree /apply /keep /discard /delete. 코드는 채팅과 나누지 않는 하나의 전체 화면 | 릴리스 |
 | 1.18.1 | 에이전트 인터넷 도구(web_search·web_fetch·paper_search 저자별·web_download, `web_research.py`, 에이전트가 만든 주소는 승인·내부망 차단), `/usage`(채팅·작업 탭), 작업 탭 아래 회색 띠 없앰 | 릴리스 |
+| 1.18.3 | 업데이트 서버를 HTTPS 도메인(`https://pidstech.com`)으로. 서버는 IP 피드(1.18.2 앱용)와 도메인 피드를 따로 만든다 | 릴리스 |
 | 1.18.2 | 자체 업데이트 서버(저장소 비공개 전환 준비): 새 버전 확인·설치 파일 받기를 PIDS Tech. 서버로, 설치 파일 Ed25519 서명 확인, 서명 도구·서버 동기화([update-server.md](update-server.md)). 서버는 아직 http(IP) | 릴리스 |
 | 1.18.0 | 일반 AI 모델(GPT, 본인 OpenAI API 키·Responses API), 코드 화면 아래 패널을 진짜 터미널로(ConPTY·pty, xterm.js, Git·변경 검토는 왼쪽 탭), SSH 원격 작업 폴더(paramiko + 원격 도우미, 파일·Git·터미널·에이전트가 서버에서), 부적절한 응답 신고, Store 제출 준비 | 릴리스 |
 
