@@ -76,6 +76,9 @@ class WebView2Backend:
         main = getattr(getattr(self.form, "browser", None), "webview", None)
         if main is not None:
             main.BringToFront()
+        # 1.18.6 PLMS 숨은 로그인: 화면에 붙이기(show) 전에도 웹 뷰가 초기화되도록 창 핸들을 먼저 만든다
+        view.CreateControl()
+        _ = view.Handle
         view.CoreWebView2InitializationCompleted += self._on_ready
         view.EnsureCoreWebView2Async(None)
         self.view, self.splitter = view, splitter

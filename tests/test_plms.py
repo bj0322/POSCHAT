@@ -134,6 +134,137 @@ class PlmsTests(unittest.TestCase):
         self.assertEqual(plms.autologin(fake, lambda: False), "no-credentials")
         self.assertNotIn("student", json.dumps(self.client.courses()))
 
+    def test_classify_login_page_and_login_required_errors(self):
+        self.assertEqual(plms.classify_login_page({"text": "StonePASS 인증번호를 입력하세요"}), "otp")
+        self.assertEqual(plms.classify_login_page({"text": "아이디 또는 비밀번호가 일치하지 않습니다"}), "failed")
+        self.assertEqual(plms.classify_login_page({"text": "POSTECH Single Sign-On Login"}), "unknown")
+        self.assertEqual(plms.classify_login_page(None), "unknown")
+        # 로그인 화면·SSO로 가는 리다이렉트는 '로그인 필요', 그 밖의 외부 주소는 일반 오류
+        self.pages[O + "/mod/resource/view.php?id=10"] = Response("", status=302, Location="https://sso.postech.ac.kr/login")
+        with self.assertRaises(plms.PlmsLoginRequired):
+            self.client.read("7", O + "/mod/resource/view.php?id=10")
+        self.pages[O + "/mod/resource/view.php?id=10"] = Response("", status=302, Location=O + "/login/index.php")
+        with self.assertRaises(plms.PlmsLoginRequired):
+            self.client.read("7", O + "/mod/resource/view.php?id=10")
+        self.pages[O + "/mod/resource/view.php?id=10"] = Response("", status=302, Location="https://evil.test/x")
+        with self.assertRaises(plms.PlmsError) as ctx:
+            self.client.read("7", O + "/mod/resource/view.php?id=10")
+        self.assertNotIsInstance(ctx.exception, plms.PlmsLoginRequired)
+        self.pages[O + "/my/"] = Response('<input type="password">')
+        with self.assertRaises(plms.PlmsLoginRequired):
+            self.client.check()
+
+    def test_background_login_outcomes(self):
+        plms.save_credentials("student", "pw")
+        import threading
+        class Fake:
+            def __init__(self, text, lands=None, later=None):
+                self.state = {"url": "", "loading": False}
+                self.opened, self.text, self.lands, self.later = [], text, lands, later
+            def open_background(self, url):
+                self.opened.append(url)
+                self.state["url"] = "https://sso.postech.ac.kr/login"
+            def run_script(self, script, ok):
+                if "innerText" in script:  # 화면 글 확인
+                    return json.dumps({"host": "sso.postech.ac.kr", "pw": True, "text": self.text})
+                if self.lands:  # 제출하면 학교가 PLMS로 돌려보낸다
+                    self.state["url"] = self.lands
+                if self.later:  # 사용자가 추가 인증을 마친 것처럼 잠시 뒤 PLMS로 이동
+                    threading.Timer(0.1, lambda: self.state.update(url=self.later)).start()
+                return "submitted"
+        kwargs = dict(settle=0.05, user_wait=1.0, interval=0.01)
+        shown = []
+        # 1) 바로 로그인됨: 사용자에게 아무것도 보이지 않는다
+        fake = Fake("", lands=O + "/my/")
+        with patch.object(plms, "session_alive", return_value=True):
+            self.assertEqual(plms.background_login(fake, lambda: False, show=lambda: shown.append(1), **kwargs)[0], "ok")
+        self.assertEqual(shown, [])
+        self.assertEqual(fake.opened, [plms.LOGIN])
+        # 2) 계정 거부: 브라우저를 보이고 바로 끝낸다(기다리지 않는다)
+        fake = Fake("아이디 또는 비밀번호가 일치하지 않습니다")
+        with patch.object(plms, "session_alive", return_value=False):
+            status, message = plms.background_login(fake, lambda: False, show=lambda: shown.append(1), **kwargs)
+        self.assertEqual((status, shown), ("failed", [1]))
+        self.assertIn("비밀번호", message)
+        # 3) 추가 인증: 브라우저를 보이고 알린 뒤, 사용자가 마치면 성공
+        fake, shown, notes = Fake("StonePASS 인증번호", later=O + "/my/"), [], []
+        with patch.object(plms, "session_alive", return_value=True):
+            status, _ = plms.background_login(fake, lambda: False, show=lambda: shown.append(1), notify=notes.append, **kwargs)
+        self.assertEqual((status, shown), ("ok", [1]))
+        self.assertTrue(notes and "추가 인증" in notes[0])
+        # 3-2) 사용자가 끝내 인증하지 않으면 시간 초과(needs-user)
+        fake = Fake("StonePASS 인증번호")
+        with patch.object(plms, "session_alive", return_value=False):
+            status, _ = plms.background_login(fake, lambda: False, show=lambda: None, **dict(kwargs, user_wait=0.1))
+        self.assertEqual(status, "needs-user")
+        # 4) 저장된 계정이 없으면 시도하지 않는다
+        plms.clear_credentials()
+        fake = Fake("")
+        self.assertEqual(plms.background_login(fake, lambda: False, **kwargs)[0], "no-credentials")
+        self.assertEqual(fake.opened, [])
+
+    def test_bridge_relogs_in_hidden_and_blocks_repeated_attempts(self):
+        import threading
+        import time
+        import browser_api
+        class Api(browser_api.BrowserApi):
+            def __init__(self):
+                self._lock, self._browser_owner = threading.RLock(), None
+                self._config, self.events = {"plms_enabled": True}, []
+                self.web = SimpleNamespace(ensure=lambda: None, visible=False, show=lambda: None, hide=lambda: None)
+            def _browser(self, create=True):
+                return self.web
+            def _push(self, event):
+                self.events.append(event)
+        api = Api()
+        attempts = []
+        class FakeClient:
+            def __init__(self, browser, cancelled=lambda: False): pass
+            def close(self): pass
+            def courses(self):
+                if not attempts:
+                    raise plms.PlmsLoginRequired("만료")
+                return [{"id": "7"}]
+        with patch.object(plms, "Client", FakeClient), patch.object(plms, "session_alive", return_value=False):
+            # 저장된 계정 없음: 원래 오류 그대로, 로그인 시도 없음
+            with patch.object(plms, "background_login") as login, self.assertRaises(plms.PlmsLoginRequired):
+                api._plms_read("courses")
+            login.assert_not_called()
+            plms.save_credentials("student", "pw")
+            def ok(*a, **k):
+                attempts.append(1)
+                return "ok", ""
+            with patch.object(plms, "background_login", side_effect=ok) as login:
+                self.assertEqual(api._plms_read("courses"), [{"id": "7"}])
+            self.assertEqual(login.call_count, 1)
+            # 실패하면 같은 오류를 내고, 10분 동안은 다시 로그인하지 않는다
+            attempts.clear()
+            with patch.object(plms, "background_login", return_value=("failed", "학교 로그인이 거부되었습니다.")) as login:
+                with self.assertRaises(plms.PlmsError) as ctx:
+                    api._plms_read("courses")
+                self.assertIn("거부", str(ctx.exception))
+                with self.assertRaises(plms.PlmsError) as ctx:
+                    api._plms_read("courses")
+                self.assertIn("최근에 실패", str(ctx.exception))
+            self.assertEqual(login.call_count, 1)
+            self.assertGreater(api._plms_block_until, time.monotonic())
+            # 연결이 꺼져 있으면 아무것도 하지 않는다
+            api._config["plms_enabled"] = False
+            with self.assertRaises(plms.PlmsError):
+                api._plms_read("courses")
+
+    def test_chat_agent_uses_plms_without_open_browser(self):
+        a = agent.Agent("test", None, True, 5, 5, lambda _: None, lambda *_: None, lambda *_: False, lambda: False,
+                        browser=None, plms=True, plms_reader=lambda action, **kw: getattr(self.client, action)(**kw))
+        seen = []
+        def ask(prompt, **kwargs):
+            seen.append(prompt)
+            return json.dumps({"action": "plms_courses"} if len(seen) == 1 else {"action": "done", "answer": "물리학"})
+        with patch.object(a, "_ask", side_effect=ask):
+            self.assertEqual(a.run([], "PLMS 수업 알려 줘"), "물리학")
+        self.assertIn("plms_courses", seen[0])
+        self.assertIn("물리학", seen[-1])
+
     def test_pdf_redirect_and_extraction(self):
         from pypdf import PdfWriter
         stream = io.BytesIO()

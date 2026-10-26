@@ -119,3 +119,36 @@ class PlmsUiTests(unittest.TestCase):
                 self.assertEqual([e for e in errors if "favicon" not in e], [])
             finally:
                 bw.close()
+
+    def test_saved_account_logs_in_without_opening_the_browser(self):
+        from playwright.sync_api import sync_playwright
+
+        def factory(b):
+            backend = FakeBackend(b)
+            backend.plms_cookies = lambda origin, clear=False: []
+            return backend
+        self.bridge._browser_obj = browser.Browser(factory)
+        plms.save_credentials("student1", "pw-for-test")
+        course = {"id": "7", "title": "물리학", "url": plms.ORIGIN + "/course/view.php?id=7", "status": "current", "term": "2026년 2학기"}
+        logins = []
+        def background(browser_obj, cancelled, **kwargs):
+            logins.append(1)
+            return "ok", "PLMS에 로그인했습니다."
+        try:
+            with patch.object(plms, "background_login", side_effect=background), \
+                    patch.object(plms, "session_alive", return_value=False), \
+                    patch.object(self.bridge, "_plms_read", return_value=[course]), sync_playwright() as p:
+                bw, page, errors = self.open(p)
+                try:
+                    page.evaluate("S.config.plms_username = 'student1'")
+                    page.click("#btn-plms")
+                    page.get_by_role("button", name="로그인", exact=True).click()
+                    page.wait_for_selector("#plms-content h3:has-text('이번 학기 수업 1개')")
+                    self.assertEqual(logins, [1])
+                    self.assertFalse(page.evaluate("BR.open"))  # 브라우저를 열지 않았다
+                    self.assertEqual([e for e in errors if "favicon" not in e], [])
+                finally:
+                    bw.close()
+        finally:
+            plms.clear_credentials()
+            self.bridge._browser_obj = None

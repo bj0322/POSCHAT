@@ -253,6 +253,22 @@ def main():
             # 앱 화면이 다 열린 뒤에 붙인다(실제 앱에서도 사용자가 브라우저를 여는 것은 화면이 뜬 뒤다)
             step("app window loaded", shown.wait(60), f"native={type(getattr(window, 'native', None)).__name__}")
             b = browser.Browser(browser.desktop_factory(window), on_event=on_event)
+            # 1.18.6 PLMS 숨은 로그인·조회: 화면에 붙이지 않은 웹 뷰에서도 이동·스크립트·쿠키 API가 되어야 한다
+            print("... opening in a hidden view", url, flush=True)
+            b.open_background(url)
+            step("hidden view stays hidden", not b.visible and b.mode == "native", f"visible={b.visible} mode={b.mode}")
+            hidden_loaded = wait_for(lambda: b.state["url"].startswith(url) and not b.state["loading"] and b.state["title"], timeout=45)
+            step("hidden navigation events", hidden_loaded, json.dumps(b.state))
+            try:
+                title = b.run_script("document.title", lambda u: u.startswith(url))
+            except Exception as e:
+                title = f"{type(e).__name__}: {e}"
+            step("hidden script", "Spike Page" in title, title)
+            try:
+                step("hidden cookie API", isinstance(b.plms_cookies(), list), "native cookie read; values omitted")
+            except Exception as e:
+                step("hidden cookie API", False, f"{type(e).__name__}: {e}")
+            step("hidden script blocked for other pages", b.run_script("document.title", lambda u: False) == "blocked")
             print("... attaching the page view and opening", url, flush=True)
             b.open(url)
             step("backend", b.mode == "native", f"mode={b.mode} note={getattr(b._backend, 'note', '')}")

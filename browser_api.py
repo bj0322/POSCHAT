@@ -134,40 +134,68 @@ class BrowserApi:
         b = self._browser(create=False)
         return b if b is not None and b.visible else None
 
+    # 1.18.6 PLMS는 화면에 붙이지 않은 웹 뷰에서 로그인·조회한다. 사람이 해야 하는 단계(StonePASS 등)에서만 브라우저를 보인다.
+    _plms_block_until = 0.0  # 로그인이 거부·미완료면 이 시각까지 자동 로그인을 다시 시도하지 않는다(계정 잠김 방지)
+    _plms_login_gen = 0
+
     def plms_login(self):
-        """저장된 계정이 있으면 로그인 창의 칸을 채워 준다. 없거나 2단계(StonePASS) 인증은 사용자가 직접 한다."""
+        """저장된 계정이 있으면 숨은 웹 뷰에서 로그인한다. 없으면 브라우저를 열어 직접 로그인하게 한다."""
         import plms
         def go():
-            with self._lock:
-                if self._browser_owner is not None:
-                    raise plms.PlmsError("브라우저를 쓰는 에이전트를 멈춘 뒤 로그인하세요.")
-            b = self._browser()
-            b.open(plms.LOGIN)
             with self._lock:
                 self._config["plms_enabled"] = True
                 import storage
                 storage.save_config(self._config)
-            auto = plms.credentials() is not None
-            if auto:
-                self._plms_autologin(b)
-            return {"url": plms.LOGIN, "auto": auto}
+            if plms.credentials() is None:
+                with self._lock:
+                    if self._browser_owner is not None:
+                        raise plms.PlmsError("브라우저를 쓰는 에이전트를 멈춘 뒤 로그인하세요.")
+                self._browser().open(plms.LOGIN)
+                return {"mode": "visible", "url": plms.LOGIN}
+            self._plms_block_until = 0.0  # 사용자가 직접 누른 로그인은 막지 않는다
+            if self._plms_relogin(self._browser(), lambda: False, force=True):
+                return {"mode": "background", "message": "PLMS에 로그인했습니다."}
+            raise plms.PlmsError("PLMS 로그인에 실패했습니다.")
         return self._plms_call(go)
 
-    def _plms_autologin(self, b):
-        """로그인 창이 뜰 때까지 기다리는 스레드. 새 로그인·연결 해제·창 닫기 때 이전 것은 멈춘다."""
-        import threading
+    def _plms_relogin(self, b, cancelled, force=False):
+        """세션이 없을 때 저장된 계정으로 숨은 로그인. 성공하면 True, 저장된 계정이 없으면 False, 실패하면 PlmsError."""
+        import time
         import plms
+        if plms.credentials() is None:
+            return False
+        if not force and time.monotonic() < self._plms_block_until:
+            raise plms.PlmsError("PLMS 자동 로그인이 최근에 실패했습니다. 사이드바 PLMS에서 로그인한 뒤 다시 요청하세요.")
         with self._lock:
-            self._plms_login_gen = getattr(self, "_plms_login_gen", 0) + 1
-            gen = self._plms_login_gen
-        def cancelled():
-            return gen != getattr(self, "_plms_login_gen", 0) or not b.visible or not self._config.get("plms_enabled")
-        def work():
-            result = plms.autologin(b, cancelled,
-                                    on_status=lambda text: self._push({"type": "plms", "kind": "autologin", "message": text}))
-            if result == "timeout" and not cancelled():
-                self._push({"type": "plms", "kind": "autologin", "message": "자동 입력을 하지 못했습니다. 로그인 창에서 직접 입력하세요."})
-        threading.Thread(target=work, name="plms-autologin", daemon=True).start()
+            if self._browser_owner is not None and not force:
+                return False  # 브라우저를 쓰는 에이전트가 같은 웹 뷰를 쓰는 중이라 이동시키지 않는다
+            gen = self._plms_login_gen  # 연결 해제(plms_disconnect)가 세대를 올리면 진행 중인 로그인이 멈춘다
+        lock = self._plms_lock()
+        with lock:
+            if plms.session_alive(b):
+                return True  # 기다리는 사이 다른 요청이 이미 로그인했다
+            was_visible = b.visible
+            def stop():
+                return cancelled() or gen != self._plms_login_gen or not self._config.get("plms_enabled")
+            status, message = plms.background_login(
+                b, stop, show=b.show,
+                notify=lambda text: self._push({"type": "plms", "kind": "login", "message": text}))
+            if status == "ok":
+                if not was_visible and b.visible:
+                    b.hide()  # 사용자 인증을 위해 보였다면 다시 숨긴다
+                self._plms_block_until = 0.0
+                return True
+            if status != "cancelled":
+                self._plms_block_until = time.monotonic() + 600
+            raise plms.PlmsError(message)
+
+    def _plms_lock(self):
+        import threading
+        with self._lock:
+            lock = getattr(self, "_plms_login_lock", None)
+            if lock is None:
+                lock = self._plms_login_lock = threading.Lock()
+            return lock
 
     def plms_account(self):
         """저장된 계정 정보(아이디만). 비밀번호는 돌려주지 않는다."""
@@ -187,12 +215,18 @@ class BrowserApi:
         import plms
         if not self._config.get("plms_enabled"):
             raise plms.PlmsError("PLMS 로그인·연결을 먼저 켜세요.")
-        client = plms.Client(self._browser(create=False),
-                             cancelled=lambda: cancelled() or not self._config.get("plms_enabled"))
-        try:
-            return getattr(client, action)(**kwargs)
-        finally:
-            client.close()
+        b = self._browser()
+        b.ensure()  # 화면에 붙이지 않은 웹 뷰: 보이는 브라우저가 없어도 조회한다
+        for attempt in (0, 1):
+            client = plms.Client(b, cancelled=lambda: cancelled() or not self._config.get("plms_enabled"))
+            try:
+                return getattr(client, action)(**kwargs)
+            except plms.PlmsLoginRequired:
+                # 세션이 없거나 만료됐다: 저장된 계정이 있으면 숨은 웹 뷰에서 한 번 다시 로그인하고 같은 조회를 다시 한다
+                if attempt or not self._plms_relogin(b, cancelled):
+                    raise
+            finally:
+                client.close()
 
     def plms_courses(self):
         return self._plms_call(lambda: {"courses": self._plms_read("courses")})
@@ -210,7 +244,7 @@ class BrowserApi:
                 if self._browser_owner is not None:
                     raise browser.BrowserError("브라우저를 쓰는 에이전트를 멈춘 뒤 연결을 해제하세요.")
                 self._config["plms_enabled"] = False
-                self._plms_login_gen = getattr(self, "_plms_login_gen", 0) + 1
+                self._plms_login_gen += 1
                 import storage
                 storage.save_config(self._config)
             b = self._browser(create=False)

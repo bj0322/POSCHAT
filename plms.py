@@ -35,6 +35,10 @@ class PlmsError(Exception):
     pass
 
 
+class PlmsLoginRequired(PlmsError):
+    """로그인이 없거나 만료됐다(저장된 계정이 있으면 앱이 숨은 웹 뷰에서 다시 로그인한다)."""
+
+
 # ---- 학기 구분(1.18.5) ----
 SEMESTER_SECONDS = 200 * 86400  # 종료일이 없는 수업은 시작한 지 이만큼 지나면 지난 학기로 본다
 
@@ -209,6 +213,109 @@ def autologin(browser, cancelled, on_status=lambda text: None, timeout=150, inte
     return "timeout"
 
 
+# ---- 숨은 로그인(1.18.6) ----
+PROBE_SCRIPT = r"""(() => {
+  const text = ((document.body && document.body.innerText) || "").replace(/\s+/g, " ").slice(0, 400);
+  const pw = [...document.querySelectorAll("input[type=password]")].some((e) => e.offsetParent !== null);
+  return JSON.stringify({host: location.hostname, pw: pw, text: text});
+})()"""
+OTP_RE = re.compile(r"stonepass|otp|인증\s*(?:번호|코드|요청|방법)|2\s*단계|2\s*차|추가\s*인증|본인\s*확인|verification|two-?factor|authenticator", re.I)
+FAIL_RE = re.compile(r"일치하지|틀렸|잘못|실패|오류|잠겼|잠금|제한|incorrect|invalid|wrong|failed|locked|not match", re.I)
+
+
+def classify_login_page(info):
+    """로그인이 끝나지 않았을 때 화면 글로 이유를 짐작한다: otp(추가 인증)·failed(계정 거부)·unknown."""
+    text = str((info or {}).get("text") or "")
+    if OTP_RE.search(text):
+        return "otp"
+    if FAIL_RE.search(text):
+        return "failed"
+    return "unknown"
+
+
+def session_alive(browser):
+    """네이티브 웹 뷰의 쿠키로 지금 로그인된 PLMS 세션인지(조회 한 번)."""
+    try:
+        client = Client(browser)
+    except PlmsError:
+        return False
+    try:
+        return client.check()
+    except PlmsError:
+        return False
+    finally:
+        client.close()
+
+
+def _login_page_info(browser):
+    try:
+        raw = browser.run_script(PROBE_SCRIPT, login_host_ok)
+        info = json.loads(raw)
+        if isinstance(info, str):
+            info = json.loads(info)
+        return info if isinstance(info, dict) else {}
+    except Exception:
+        return {}
+
+
+def background_login(browser, cancelled, show=lambda: None, notify=lambda text: None,
+                     settle=30, user_wait=180, interval=1.5):
+    """저장된 계정으로 화면에 붙이지 않은 웹 뷰에서 로그인한다.
+
+    계정 입력은 한 번만 보낸다. 세션이 안 생기면 이유를 화면 글로 짐작해, 계정 거부면 바로 끝내고
+    추가 인증(StonePASS 등)이면 브라우저를 보여 주고 사용자가 마칠 때까지 기다린다.
+    반환: (ok·no-credentials·failed·needs-user·cancelled, 사용자에게 보일 글).
+    """
+    if credentials() is None:
+        return "no-credentials", "저장된 PLMS 계정이 없습니다."
+    browser.open_background(LOGIN)
+    result = autologin(browser, cancelled, timeout=40, interval=interval)
+    if result == "cancelled":
+        return "cancelled", "PLMS 로그인을 멈췄습니다."
+    if result != "submitted":
+        show()
+        return "needs-user", "로그인 창에 자동으로 입력하지 못했습니다. 오른쪽 브라우저에서 직접 로그인하세요."
+    def wait(seconds):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            if cancelled():
+                return "cancelled"
+            state = browser.state or {}
+            if login_host_ok(state.get("url", "")) and urlsplit(state["url"]).hostname == "plms.postech.ac.kr" \
+                    and not state.get("loading") and session_alive(browser):
+                return "ok"
+            time.sleep(interval)
+        return "timeout"
+    outcome = wait(settle)
+    if outcome == "ok":
+        return "ok", "PLMS에 로그인했습니다."
+    if outcome == "cancelled":
+        return "cancelled", "PLMS 로그인을 멈췄습니다."
+    kind = classify_login_page(_login_page_info(browser))
+    show()
+    if kind == "failed":
+        return "failed", "학교 로그인이 거부되었습니다. 설정의 PLMS 아이디·비밀번호를 확인하세요. 오른쪽 브라우저에서 직접 로그인할 수도 있습니다."
+    notify("StonePASS 같은 추가 인증이 필요할 수 있습니다. 오른쪽 브라우저에서 인증을 마치세요.")
+    outcome = wait(user_wait)
+    if outcome == "ok":
+        return "ok", "PLMS에 로그인했습니다."
+    if outcome == "cancelled":
+        return "cancelled", "PLMS 로그인을 멈췄습니다."
+    return "needs-user", "PLMS 로그인이 끝나지 않았습니다. 오른쪽 브라우저에서 로그인을 마친 뒤 다시 시도하세요."
+
+
+def _is_login_redirect(dest):
+    """PLMS 로그인 화면 또는 학교 SSO(postech.ac.kr)로 보내는 리다이렉트인가."""
+    try:
+        p = urlsplit(str(dest))
+        host = (p.hostname or "").lower()
+    except ValueError:
+        return False
+    if host == "plms.postech.ac.kr":
+        return p.path.startswith("/login")
+    return host == LOGIN_HOST or host.endswith("." + LOGIN_HOST)
+
+
 def safe_url(url):
     """학교 PLMS의 조회 경로만 허용한다. 인증·제출·완료 처리와 외부 리다이렉트를 막는다."""
     if len(str(url)) > 2000:
@@ -321,12 +428,14 @@ class Client:
                 with r:
                     if r.status_code in (301, 302, 303, 307, 308):
                         if ajax is not None:
-                            raise PlmsError("PLMS 로그인이 만료되었습니다. 다시 로그인하세요.")
+                            raise PlmsLoginRequired("PLMS 로그인이 만료되었습니다. 다시 로그인하세요.")
                         dest = urljoin(url, r.headers.get("Location", ""))
                         try:
                             url = safe_url(dest)
                         except PlmsError:
-                            raise PlmsError("로그인이 필요하거나 외부 자료로 연결됩니다. PLMS 브라우저에서 확인하세요.") from None
+                            if _is_login_redirect(dest):
+                                raise PlmsLoginRequired("PLMS 로그인이 필요합니다. PLMS에서 로그인하세요.") from None
+                            raise PlmsError("외부 자료로 연결됩니다. PLMS 브라우저에서 확인하세요.") from None
                         continue
                     if r.status_code in (401, 403):
                         raise PlmsError("PLMS 로그인 또는 수업 접근 권한을 확인하세요.")
@@ -348,10 +457,18 @@ class Client:
         final, headers, body = self._request(url)
         raw = body.decode("utf-8", errors="replace")
         if re.search(r'type\s*=\s*["\']password|<body[^>]*\b(?:notloggedin|guestuser)\b', raw, re.I):
-            raise PlmsError("PLMS 로그인이 만료되었습니다. PLMS에서 SSO 로그인 후 다시 시도하세요.")
+            raise PlmsLoginRequired("PLMS 로그인이 만료되었습니다. PLMS에서 SSO 로그인 후 다시 시도하세요.")
         if "html" not in headers.get("Content-Type", "").lower():
             raise PlmsError("웹페이지 대신 파일이 반환되었습니다. 자료 읽기를 사용하세요.")
         return final, raw
+
+    def check(self):
+        """로그인된 PLMS 세션인지 한 번만 확인한다. 아니면 PlmsLoginRequired."""
+        _, raw = self._html(ORIGIN + "/my/")
+        uid = re.search(r'["\']userid["\']\s*:\s*["\']?(\d+)', raw)
+        if not ((uid and int(uid[1]) > 1) or re.search(r'/user/profile\.php\?id=\d+|/login/logout\.php\?', raw)):
+            raise PlmsLoginRequired("로그인된 PLMS 세션이 아닙니다.")
+        return True
 
     def courses(self):
         if self._courses is not None:
@@ -361,7 +478,7 @@ class Client:
         uid = re.search(r'["\']userid["\']\s*:\s*["\']?(\d+)', raw)
         logged = (uid and int(uid[1]) > 1) or bool(re.search(r'/user/profile\.php\?id=\d+|/login/logout\.php\?', raw))
         if not logged:
-            raise PlmsError("로그인된 내 수업 화면을 확인하지 못했습니다. PLMS에서 로그인 상태를 확인하세요.")
+            raise PlmsLoginRequired("로그인된 내 수업 화면을 확인하지 못했습니다. PLMS에서 로그인 상태를 확인하세요.")
         self._dashboard = raw
         courses = {}
         for item in links(raw, final):
@@ -442,7 +559,7 @@ class Client:
         if "html" in ctype:
             raw = body.decode("utf-8", errors="replace")
             if re.search(r'type\s*=\s*["\']password', raw, re.I):
-                raise PlmsError("PLMS 로그인이 만료되었습니다. 다시 로그인하세요.")
+                raise PlmsLoginRequired("PLMS 로그인이 만료되었습니다. 다시 로그인하세요.")
             title, text, _ = html_to_text(raw, final)
             items = links(raw, final)[:400]
         else:
