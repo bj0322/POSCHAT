@@ -166,6 +166,18 @@ class CodeAgentUiTests(unittest.TestCase):
             browser, page, errors = self.open(p)
             try:
                 page.wait_for_selector("#ca-new-session")
+                # 상태 응답이 늦게 와도 새 세션 선택을 되돌리지 않아야 한다.
+                page.evaluate("""() => {
+                  const original = api();
+                  window.pywebview.api = new Proxy(original, { get(target, name) {
+                    if (name !== 'code_agent_state') return target[name];
+                    return async (...args) => {
+                      const state = await target[name](...args);
+                      await new Promise(resolve => setTimeout(resolve, 800));
+                      return state;
+                    };
+                  } });
+                }""")
                 self.send(page, "/new")
                 self.send(page, "동시 첫 작업")
                 page.wait_for_function("caRunning()")

@@ -12,6 +12,7 @@
    - 입력 앞글자: / 명령 · ! 명령 바로 실행(출력은 다음 지시의 맥락) · # 프로젝트 지침에 메모 · @파일 붙이기(자동 완성) */
 
 const CA = {
+  sessionVersion: 0, newSession: false,
   state: null, task: null, status: "", tab: null, el: null, draft: "",
   live: "", runId: null, runCommand: "", shell: null,   // 에이전트가 실행 중인 명령 · ! 명령 {run_id, command}
   startedAt: 0, spinTimer: null, verbose: false, open: new Set(), clearedAt: 0,
@@ -69,12 +70,14 @@ async function caOpen(activate = true) {
 }
 
 async function caRefresh() {
+  const version = CA.sessionVersion;
   const st = await codeCall(api().code_agent_state(), true);
-  if (!st) return;
+  if (!st || version !== CA.sessionVersion) return;
   CA.state = st;
-  const keep = CA.task && st.tasks.some((x) => x.id === CA.task.id) ? CA.task.id : (st.running || (st.shell && st.shell.task_id) || "");
+  const keep = CA.task && st.tasks.some((x) => x.id === CA.task.id) ? CA.task.id : (CA.newSession ? "" : (st.running || (st.shell && st.shell.task_id) || ""));
   if (keep) {
     const r = await codeCall(api().code_agent_task(keep), true);
+    if (version !== CA.sessionVersion) return;
     CA.task = r ? r.task : null;
   } else if (CA.task && CA.task.workspace !== st.workspace) CA.task = null;
   if (st.shell && !CA.shell) CA.shell = { run_id: st.shell.run_id, command: st.shell.command };
@@ -787,16 +790,20 @@ async function caSubmit() {
 }
 
 async function caSend(text, mode, isolate) {
+  const version = CA.sessionVersion;
   const dirty = CODE.tabs.filter((t) => t.kind === "file" && t.editor.isDirty());
   if (dirty.length) caPrint(`저장하지 않은 파일 ${dirty.length}개가 있습니다. 에이전트는 디스크의 내용을 봅니다.`, "ca-warn");
   const options = { isolate: !!isolate && !CA.task, ...(mode ? { mode } : {}) };
   const r = await caCall(api().code_agent_start(text, CA.task ? CA.task.id : "", options));
   if (!r) return;
+  if (version !== CA.sessionVersion) return caRefresh();
   if (mode && CA.state && CA.state.approval === "plan" && mode !== "plan") {
     // 계획을 승인하면 계획 모드를 벗어난다(Claude Code처럼). 다음 지시도 그 모드로
     const m = await codeCall(api().code_agent_set_approval(mode, CA.task ? CA.task.id : ""), true);
     if (m) CA.state.approval = m.approval;
   }
+  if (version !== CA.sessionVersion) return caRefresh();
+  CA.newSession = false;
   CA.task = r.task;
   CA.status = "생각하는 중...";
   CA.live = "";
@@ -1006,6 +1013,8 @@ async function caUsage() {
 }
 
 function caDetach() {
+  CA.sessionVersion++;
+  CA.newSession = true;
   // 다른 작업으로 옮겨도 승인 요청은 원래 작업에 묶인 대화 상자로 남긴다.
   if (CA.select && CA.select.kind === "confirm" && CA.confirmEvent) showConfirm({ ...CA.confirmEvent, source: "background_code_agent" });
   CA.confirmEvent = null;
@@ -1021,9 +1030,11 @@ function caResume(arg) {
   const tasks = (CA.state && CA.state.tasks) || [];
   if (!tasks.length) return caPrint("이 작업 폴더에 지난 작업이 없습니다.");
   const pick = async (id) => {
+    const version = ++CA.sessionVersion;
     const r = await caCall(api().code_agent_task(id));
-    if (!r) return;
+    if (!r || version !== CA.sessionVersion) return;
     caDetach();
+    CA.newSession = false;
     CA.task = r.task;
     const run = (CA.state.running_tasks || {})[r.task.id];
     CA.state.approval = run ? run.mode : r.task.approval;
@@ -1157,7 +1168,7 @@ function caEvent(ev) {
       const i = CA.state.tasks.findIndex((t) => t.id === ev.task.id);
       if (i < 0) CA.state.tasks.unshift(ev.task); else CA.state.tasks[i] = ev.task;
     }
-    if (task && task.id !== ev.task.id) return;
+    if ((CA.newSession && !task) || (task && task.id !== ev.task.id)) return caRenderLog();
     CA.task = ev.task;
     if (!CA.startedAt) CA.startedAt = Date.now();
     return caRender();

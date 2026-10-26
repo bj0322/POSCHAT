@@ -48,6 +48,7 @@ const REPO_URL = "https://github.com/bj0322/POSCHAT";
 const S = {
   threads: [],
   currentId: null,
+  chatViewVersion: 0,
   thread: null,
   busy: false,
   busyThread: null,
@@ -269,8 +270,10 @@ async function refreshThreads() {
 /* ---------- 대화 ---------- */
 // leave=false: 앱을 시작할 때처럼 사용자가 고른 것이 아니면 열어 둔 화면(코드·Lab 등)을 닫지 않는다
 async function openThread(id, leave = true) {
+  const version = ++S.chatViewVersion;
   if (leave) leaveViews();
   const thread = await api().load_thread(id);
+  if (version !== S.chatViewVersion) return;
   if (!thread) return refreshThreads();
   S.currentId = id;
   S.thread = thread;
