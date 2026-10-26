@@ -49,3 +49,7 @@ android/**/build/
 
 # CodeMirror 묶음 빌드(tools/codemirror)
 node_modules/
+
+# Graphify가 이 컴퓨터에서 쓰는 실행기·작업 폴더 경로
+graphify-out/.graphify_python
+graphify-out/.graphify_root

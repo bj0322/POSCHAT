@@ -223,7 +223,7 @@ class ProposalStore:
     def add(self, proposal):
         with self._lock:
             for p in self._items.values():
-                if p.status == "pending" and p.key == proposal.key:
+                if p.status == "pending" and p.key == proposal.key and p.thread_id == proposal.thread_id:
                     return p, False  # 같은 제안이 이미 기다리는 중: 다시 만들지 않는다
             self._items[proposal.proposal_id] = proposal
             done = [p for p in self._items.values() if p.status != "pending"]

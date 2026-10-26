@@ -73,16 +73,18 @@ class CodeApi:
     # ---- 도우미 ----
 
     def _code_store(self):
-        if self._code_store_obj is None:
-            self._code_store_obj = code_diff.ProposalStore()
-            self._code_waiters = {}
-        return self._code_store_obj
+        with self._lock:
+            if self._code_store_obj is None:
+                self._code_store_obj = code_diff.ProposalStore()
+                self._code_waiters = {}
+            return self._code_store_obj
 
     def _code_runner(self):
-        if self._code_runner_obj is None:
-            self._code_runner_obj = code_runner.RunManager(
-                on_event=self._push, log_path=str(storage.APP_DIR / "code" / "runs.jsonl"), secrets=self._code_secrets)
-        return self._code_runner_obj
+        with self._lock:
+            if self._code_runner_obj is None:
+                self._code_runner_obj = code_runner.RunManager(
+                    on_event=self._push, log_path=str(storage.APP_DIR / "code" / "runs.jsonl"), secrets=self._code_secrets)
+            return self._code_runner_obj
 
     def _code_secrets(self):
         """출력에서 가릴 비밀 값: 설정에 저장한 키·토큰과 비밀 이름의 환경 변수 값."""
@@ -402,7 +404,7 @@ class CodeApi:
         self._push({"type": "code", "kind": "proposal", "proposal": p.to_dict(full=False)})
         return True
 
-    def _code_review_edit(self, thread_id, alive, workspace, rel, old_text, new_text, title, reason, encoding):
+    def _code_review_edit(self, thread_id, alive, workspace, rel, old_text, new_text, title, reason, encoding, session_allow=None):
         """에이전트의 write/edit(agent.Agent.review). workspace는 그 에이전트의 작업 폴더.
         None을 돌려주면 예전 승인 창을 쓴다."""
         if not self._code_active or self._code_android() or self._code_settings()["review"] != "auto":
@@ -419,7 +421,7 @@ class CodeApi:
         store = self._code_store()
         p, created = store.add(p)
         permission = self._config.get("permission", "ask")
-        if permission in ("auto_edit", "auto_all") or "edit" in getattr(self, "_session_allow", set()):
+        if permission in ("auto_edit", "auto_all") or "edit" in (session_allow if session_allow is not None else getattr(self, "_session_allow", set())):
             try:
                 with self._lock:
                     result = code_diff.apply(self._code_proposal_ws(p), p, [h.id for h in p.hunks])

@@ -10,6 +10,7 @@ import json
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest.mock import patch
 
 MODELS = {
     "qwen2.5:7b": {"size": 4_700_000_000, "family": "qwen2", "parameter_size": "7.6B", "quantization_level": "Q4_K_M",
@@ -158,6 +159,9 @@ class FakeOllama:
         self.httpd.redirect_all = False
         self.httpd.pull_error = ""
         self.httpd.pull_delay = 0.0
+        # 가짜 모델은 메모리를 쓰지 않는다. 러너의 RAM 크기와 관계없이 같은 경로를 시험한다.
+        self._memory_patch = patch("local_ai._memory", return_value=(32 * 2**30, 24 * 2**30))
+        self._memory_patch.start()
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.thread.start()
 
@@ -171,3 +175,4 @@ class FakeOllama:
     def close(self):
         self.httpd.shutdown()
         self.httpd.server_close()
+        self._memory_patch.stop()

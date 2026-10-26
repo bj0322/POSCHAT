@@ -368,3 +368,7 @@ textarea.code-input { resize: vertical; }
 .ssh-fp code { font-size: 12.5px; word-break: break-all; }
 .ssh-secret { display: flex; flex-direction: column; gap: 8px; }
 .ssh-field { display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+
+/* 작업 세션을 바꿔도 실행은 이어진다. */
+.ca-session-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.ca-session-bar select { max-width: 55%; }

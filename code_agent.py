@@ -162,7 +162,8 @@ class TaskStore:
     def _prune(self):
         files = sorted(tasks_dir().glob("task-*.json"), key=lambda x: x.stat().st_mtime, reverse=True)
         for p in files[MAX_TASKS:]:
-            self.delete(p.stem)
+            if self.load(p.stem).get("status") != "running":
+                self.delete(p.stem)
 
 
 def step_kind(summary):
@@ -496,7 +497,19 @@ class CodeAgentApi:
     """main.Bridge가 상속한다(CodeApi와 함께). 화면은 web/code-agent.js의 '작업' 탭."""
 
     _ca_store = None
-    _ca_running = None   # {"task_id", "cancel": Event, "run_id", "steer": [지시], "mode", "agent", "started"}
+    _ca_runs = None
+
+    @property
+    def _ca_running(self):
+        # 기존 상태 조회 호출자는 첫 실행을 본다. 작업 제어는 ID로 고른다.
+        return next(iter((self._ca_runs or {}).values()), None)
+
+    def _ca_run(self, task_id=None):
+        if task_id is not None:
+            return (self._ca_runs or {}).get(task_id)
+        return self._ca_running
+
+    # {"task_id", "cancel": Event, "run_id", "steer": [지시], "mode", "agent", "started"}
     _ca_shell = None     # ! 명령 {"task_id", "run_id"} — 사용자가 직접 실행 중인 명령(1.17.2)
 
     def _ca(self):
@@ -558,7 +571,8 @@ class CodeAgentApi:
     def code_agent_state(self):
         def go():
             ws = self._code_ws_opt()
-            running = self._ca_running
+            running = next((r for r in (self._ca_runs or {}).copy().values()
+                            if r.get("workspace") == ws), None)
             info = {}
             if ws and not self._code_android():
                 g = code_project.git_summary(ws)
@@ -570,27 +584,29 @@ class CodeAgentApi:
                 model = self._thread_api_settings({}).model
             except Exception:
                 model = ""
-            return {"tasks": self._ca().list(ws) if ws else [], "approval": running.get("mode") if running else self._ca_approval(),
-                    "running": running["task_id"] if running else None, "workspace": ws,
+            return {"tasks": self._ca().list(ws) if ws else [], "default_approval": self._ca_approval(), "approval": running.get("mode") if running else self._ca_approval(),
+                    "running": running["task_id"] if running else None,
+                    "running_tasks": {tid: {"mode": r["mode"], "started": r["started"]}
+                                      for tid, r in (self._ca_runs or {}).copy().items()}, "workspace": ws,
                     "android": self._code_android(), "project": info,
                     "slash": code_project.slash_help(ws if ws and not self._code_android() else None),
                     "modes": list(APPROVALS), "model": model, "auto_model": adaptive_engine.active(self._config),
                     "shell": dict(self._ca_shell) if self._ca_shell else None}
         return self._ca_call(go)
 
-    def code_agent_set_approval(self, mode):
+    def code_agent_set_approval(self, mode, task_id=None):
         """권한 모드 바꾸기. 작업 중이면 그 작업에도 바로 반영한다(Claude Code의 Shift+Tab처럼, 다음 단계부터)."""
         def go():
             if mode not in APPROVALS:
                 raise TaskError("알 수 없는 승인 방식입니다.")
             self._code_conf()["agent_approval"] = mode
             self._code_save_conf()
-            self._ca_switch_running(mode)
+            self._ca_switch_running(mode, task_id)
             return {"approval": mode}
         return self._ca_call(go)
 
-    def _ca_switch_running(self, mode):
-        running = self._ca_running
+    def _ca_switch_running(self, mode, task_id=None):
+        running = self._ca_run(task_id)
         if not running or running.get("mode") == mode:
             return
         running["mode"] = mode
@@ -606,7 +622,7 @@ class CodeAgentApi:
 
     def code_agent_delete(self, task_id):
         def go():
-            if self._ca_running and self._ca_running["task_id"] == task_id:
+            if self._ca_run(task_id):
                 raise TaskError("실행 중인 작업은 지울 수 없습니다. 먼저 멈추세요.")
             task = self._ca().load(task_id)
             if task.get("worktree") and not task.get("worktree_removed"):
@@ -629,10 +645,8 @@ class CodeAgentApi:
             msg = str(text or "").strip()
             if not msg:
                 raise TaskError("맡길 작업을 입력하세요.")
-            if self._ca_running:
-                raise TaskError("다른 작업이 진행 중입니다. 끝나거나 멈춘 뒤 다시 하세요(진행 중인 작업에는 '추가 지시'를 보낼 수 있습니다).")
-            if getattr(self, "_busy", False):
-                raise TaskError("채팅 응답을 기다리는 중입니다. 끝난 뒤 다시 하세요.")
+            if task_id and self._ca_run(task_id):
+                raise TaskError("이 작업이 진행 중입니다. 추가 지시를 보내거나 끝난 뒤 다시 하세요.")
             api_key = self._api_key()
             if not api_key and self._api_needed(self._config, "auto"):  # 1.17: Local Only·로컬 모델이면 키 없이도 된다
                 raise TaskError(self._missing_key_error())
@@ -694,18 +708,21 @@ class CodeAgentApi:
                 self._ca_step(task["id"], f"📎 @로 붙인 파일 {len(files)}개: " + ", ".join(files), "",
                               {"name": "attach", "arg": ", ".join(files)})
                 task = store.load(task["id"])
-            self._ca_running = {"task_id": task["id"], "cancel": threading.Event(), "run_id": None, "steer": [], "mode": mode,
-                                "agent": None, "started": time.time()}
+            if self._ca_runs is None:
+                self._ca_runs = {}
+            self._ca_runs[task["id"]] = {"task_id": task["id"], "cancel": threading.Event(), "run_id": None, "steer": [], "mode": mode,
+                                "agent": None, "started": time.time(), "workspace": ws}
+            self._ca_push("agent_task", task=task)
             threading.Thread(target=self._ca_work, args=(task["id"], root, history, prompt, api_key, mode),
                              daemon=True, name=f"code-agent-{task['id']}").start()
-            self._ca_push("agent_task", task=task)
             return {"task": task}
-        return self._ca_call(go)
+        with self._lock:
+            return self._ca_call(go)
 
-    def code_agent_steer(self, text):
+    def code_agent_steer(self, text, task_id=None):
         """진행 중인 작업에 추가 지시(Claude Code처럼 일하는 중에 끼어들기). 다음 단계부터 반영한다."""
         def go():
-            running = self._ca_running
+            running = self._ca_run(task_id)
             msg = str(text or "").strip()
             if not running:
                 raise TaskError("진행 중인 작업이 없습니다.")
@@ -722,15 +739,15 @@ class CodeAgentApi:
             return {"queued": True}
         return self._ca_call(go)
 
-    def code_agent_stop(self):
+    def code_agent_stop(self, task_id=None):
         shell = self._ca_shell
-        if shell and not self._ca_running:   # ! 명령을 멈춘다
+        if shell and (task_id is None or shell["task_id"] == task_id) and not self._ca_run(task_id):   # ! 명령을 멈춘다
             try:
                 self._code_runner().stop(shell["run_id"])
             except code_runner.RunnerError:
                 pass
             return {"ok": True, "stopped": True}
-        running = self._ca_running
+        running = self._ca_run(task_id)
         if not running:
             return {"ok": True, "stopped": False}
         running["cancel"].set()
@@ -740,8 +757,9 @@ class CodeAgentApi:
             except code_runner.RunnerError:
                 pass
         for entry in list(getattr(self, "_pending", {}).values()):  # 기다리는 승인은 거부로
-            entry[1] = "deny"
-            entry[0].set()
+            if len(entry) > 2 and entry[2] == running["task_id"]:
+                entry[1] = "deny"
+                entry[0].set()
         return {"ok": True, "stopped": True}
 
     def _ca_step(self, task_id, summary, detail, tool=None):
@@ -762,47 +780,48 @@ class CodeAgentApi:
         store = self._ca()
 
         def review(rel, old_text, new_text, title, reason, encoding):
-            if mode_fn() not in ("auto_edit", "full_auto") or not alive() or AUTO_RUN_FILES.search(str(rel).replace("\\", "/")):
-                return None  # 승인 창(confirm "edit")으로 묻는다
-            task = store.load(task_id)
-            p = cw.resolve(self._ca_root(task), rel, allow_root=False)
-            current = None
-            if p.exists():
-                current, _ = self._ca_read(p)
-            if (old_text is None and p.exists()) or (old_text is not None and current != old_text):
-                return {"status": "conflict", "message": "읽은 뒤 파일이 바뀌어 저장하지 않았습니다"}
-            if current == new_text:
-                return {"status": "unchanged"}
-            import difflib
+            with self._lock:
+                if mode_fn() not in ("auto_edit", "full_auto") or not alive() or AUTO_RUN_FILES.search(str(rel).replace("\\", "/")):
+                    return None  # 승인 창(confirm "edit")으로 묻는다
+                task = store.load(task_id)
+                p = cw.resolve(self._ca_root(task), rel, allow_root=False)
+                current = None
+                if p.exists():
+                    current, _ = self._ca_read(p)
+                if (old_text is None and p.exists()) or (old_text is not None and current != old_text):
+                    return {"status": "conflict", "message": "읽은 뒤 파일이 바뀌어 저장하지 않았습니다"}
+                if current == new_text:
+                    return {"status": "unchanged"}
+                import difflib
 
-            diff = "\n".join(difflib.unified_diff((old_text or "").splitlines(), new_text.splitlines(), f"a/{rel}", f"b/{rel}",
-                                                  lineterm=""))
-            bdir = store.backup_dir(task_id)
+                diff = "\n".join(difflib.unified_diff((old_text or "").splitlines(), new_text.splitlines(), f"a/{rel}", f"b/{rel}",
+                                                      lineterm=""))
+                bdir = store.backup_dir(task_id)
 
-            def keep_backup():
-                name = f"{len(list(bdir.iterdir())) + 1}.bak"
-                (bdir / name).write_bytes(p.read_bytes())
-                return name
-            change = task["changes"].get(rel)
-            if change is None or change.get("reverted"):
-                change = {"path": rel, "created": old_text is None, "backup": keep_backup() if old_text is not None else "",
-                          "before_sha": _sha(old_text), "encoding": encoding, "first_at": time.time(), "turns": {}}
-            turn = str(task.get("turn_no") or 0)
-            turns = change.setdefault("turns", {})
-            if turn not in turns:   # 이 지시에서 처음 고침: 지시 전 상태를 남긴다
-                first = change.get("backup") if not turns else ""
-                turns[turn] = {"created": old_text is None, "before_sha": _sha(old_text),
-                               "backup": "" if old_text is None else (first or keep_backup())}
-            p.parent.mkdir(parents=True, exist_ok=True)
-            atomic_write(p, new_text.encode(encoding or "utf-8"))
-            change.update(after_sha=_sha(new_text), reverted=False, edits=change.get("edits", 0) + 1, last_at=time.time(),
-                          reason=str(reason or "")[:300])
+                def keep_backup():
+                    name = f"{len(list(bdir.iterdir())) + 1}.bak"
+                    (bdir / name).write_bytes(p.read_bytes())
+                    return name
+                change = task["changes"].get(rel)
+                if change is None or change.get("reverted"):
+                    change = {"path": rel, "created": old_text is None, "backup": keep_backup() if old_text is not None else "",
+                              "before_sha": _sha(old_text), "encoding": encoding, "first_at": time.time(), "turns": {}}
+                turn = str(task.get("turn_no") or 0)
+                turns = change.setdefault("turns", {})
+                if turn not in turns:   # 이 지시에서 처음 고침: 지시 전 상태를 남긴다
+                    first = change.get("backup") if not turns else ""
+                    turns[turn] = {"created": old_text is None, "before_sha": _sha(old_text),
+                                   "backup": "" if old_text is None else (first or keep_backup())}
+                p.parent.mkdir(parents=True, exist_ok=True)
+                atomic_write(p, new_text.encode(encoding or "utf-8"))
+                change.update(after_sha=_sha(new_text), reverted=False, edits=change.get("edits", 0) + 1, last_at=time.time(),
+                              reason=str(reason or "")[:300])
 
-            def put(t):
-                t["changes"][rel] = change
-            store.update(task_id, put)
-            self._ca_push("agent_change", task_id=task_id, path=rel, change=change)
-            return {"status": "applied", "diff": diff}
+                def put(t):
+                    t["changes"][rel] = change
+                store.update(task_id, put)
+                self._ca_push("agent_change", task_id=task_id, path=rel, change=change)
+                return {"status": "applied", "diff": diff}
         return review
 
     @staticmethod
@@ -815,8 +834,22 @@ class CodeAgentApi:
                 continue
         return raw.decode("utf-8", errors="replace"), "utf-8"
 
-    def _ca_work(self, task_id, root, history, msg, api_key, mode):
-        running = self._ca_running
+    def _ca_work(self, task_id, *args):
+        try:
+            self._ca_execute(task_id, *args)
+        except Exception as e:
+            def fail(t):
+                t["status"] = "error"
+                t["turns"].append({"role": "assistant", "text": f"오류: {type(e).__name__}: {e}",
+                                   "at": time.time(), "status": "error"})
+            self._ca().update(task_id, fail)
+        finally:
+            task = self._ca().load(task_id)
+            self._ca_runs.pop(task_id, None)
+            self._ca_push("agent_done", task_id=task_id, task=task, status=task["status"])
+
+    def _ca_execute(self, task_id, root, history, msg, api_key, mode):
+        running = self._ca_run(task_id)
         cancel = running["cancel"]
         store = self._ca()
 
@@ -844,12 +877,15 @@ class CodeAgentApi:
             if not alive():
                 return False
             cid = uuid.uuid4().hex
-            entry = [threading.Event(), "deny"]
+            entry = [threading.Event(), "deny", task_id]
             self._pending[cid] = entry
             self._push({"type": "confirm", "id": cid, "thread_id": task_id, "kind": kind, "title": title,
                         "detail": detail, "allow_session": False, "source": "code_agent",
+                        "session_title": store.load(task_id)["title"],
                         **({"remember": remember} if remember else {})})
-            entry[0].wait()
+            while not entry[0].wait(0.1):
+                if not alive():
+                    break
             self._pending.pop(cid, None)
             if entry[1] == "remember" and remember and alive():
                 self._ca_add_rule(ws, remember)
@@ -859,7 +895,7 @@ class CodeAgentApi:
                 # '예, 이 작업 동안 수정은 묻지 않기'(Claude Code처럼): 수정 자동으로 바꾼다
                 self._code_conf()["agent_approval"] = "auto_edit"
                 self._code_save_conf()
-                self._ca_switch_running("auto_edit")
+                self._ca_switch_running("auto_edit", task_id)
                 return True
             return entry[1] in ("allow", "always") and alive()
 
@@ -913,8 +949,6 @@ class CodeAgentApi:
                 task = store.update(task_id, finish)
             except Exception:
                 task = None
-            self._ca_running = None
-            self._ca_push("agent_done", task_id=task_id, task=task, status=status)
 
     # ---- CLI 입력: !명령 · #메모 · @파일 (1.17.2) ----
 
@@ -1020,7 +1054,7 @@ class CodeAgentApi:
     def code_agent_revert(self, task_id, path=""):
         """작업이 바꾼 파일을 처음 상태로. 에이전트가 쓴 뒤 다른 변경이 있으면 건너뛴다(덮어쓰지 않는다)."""
         def go():
-            if self._ca_running and self._ca_running["task_id"] == task_id:
+            if self._ca_run(task_id):
                 raise TaskError("진행 중인 작업은 되돌릴 수 없습니다. 먼저 멈추세요.")
             store = self._ca()
             task = store.load(task_id)
@@ -1058,7 +1092,7 @@ class CodeAgentApi:
     def code_agent_undo(self, task_id):
         """마지막 지시(turn)로 바뀐 파일만 그 지시 전으로(Claude Code의 되감기처럼). 그 뒤 바뀐 파일은 건너뛴다."""
         def go():
-            if self._ca_running and self._ca_running["task_id"] == task_id:
+            if self._ca_run(task_id):
                 raise TaskError("진행 중인 작업은 되돌릴 수 없습니다. 먼저 멈추세요.")
             store = self._ca()
             task = store.load(task_id)
@@ -1120,8 +1154,8 @@ class CodeAgentApi:
     def code_agent_compact(self, task_id):
         """지난 지시·답을 요약 하나로 줄인다(긴 작업에서 다음 지시의 맥락을 가볍게). 바뀐 파일·되돌리기 기록은 그대로."""
         def go():
-            if self._ca_running:
-                raise TaskError("작업이 진행 중입니다. 끝난 뒤 하세요.")
+            if self._ca_run(task_id):
+                raise TaskError("이 작업이 진행 중입니다. 끝난 뒤 하세요.")
             store = self._ca()
             task = store.load(task_id)
             turns = [t for t in task["turns"] if not t.get("compacted")]
@@ -1159,7 +1193,7 @@ class CodeAgentApi:
     def code_agent_apply(self, task_id, discard_after=True):
         """격리 작업의 변경을 원래 작업 폴더에 적용한다(먼저 검사, 겹치면 3-way). 적용 뒤 격리 공간을 정리한다."""
         def go():
-            if self._ca_running and self._ca_running["task_id"] == task_id:
+            if self._ca_run(task_id):
                 raise TaskError("진행 중인 작업입니다. 끝난 뒤 적용하세요.")
             store = self._ca()
             task = store.load(task_id)
@@ -1186,7 +1220,7 @@ class CodeAgentApi:
         """격리 작업의 변경을 그 브랜치(poschat/<작업>)에 커밋해 남기고 worktree만 정리한다(Codex처럼). 원래 폴더는 그대로이고,
         사용자가 Git으로 합친다(git merge poschat/<작업>). 커밋 훅은 돌리지 않는다(--no-verify: 승인 없이 명령이 돌지 않게)."""
         def go():
-            if self._ca_running and self._ca_running["task_id"] == task_id:
+            if self._ca_run(task_id):
                 raise TaskError("진행 중인 작업입니다. 끝난 뒤 하세요.")
             store = self._ca()
             task = store.load(task_id)
@@ -1207,7 +1241,7 @@ class CodeAgentApi:
     def code_agent_discard(self, task_id):
         """격리 작업 공간과 브랜치를 버린다(원래 작업 폴더는 그대로)."""
         def go():
-            if self._ca_running and self._ca_running["task_id"] == task_id:
+            if self._ca_run(task_id):
                 raise TaskError("진행 중인 작업입니다. 먼저 멈추세요.")
             store = self._ca()
             task = store.load(task_id)
@@ -1233,5 +1267,7 @@ class CodeAgentApi:
         return self._ca_call(go)
 
     def _ca_shutdown(self):
-        if self._ca_running or self._ca_shell:
+        for task_id in list(self._ca_runs or {}):
+            self.code_agent_stop(task_id)
+        if self._ca_shell:
             self.code_agent_stop()

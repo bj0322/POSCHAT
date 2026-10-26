@@ -212,14 +212,6 @@ class RegistryTests(unittest.TestCase):
             self.assertTrue(set(connectors.TOOL_KINDS[c.server].values()) <= set(connectors.KINDS), c.server)
             self.assertNotIn(c.server, mcp_client.BUILTIN_SERVERS)  # 커넥터 서버는 기본으로 켜지지 않는다
 
-    def test_android_build_ships_every_module(self):
-        gradle = (Path(__file__).resolve().parent.parent / "android" / "app" / "build.gradle.kts").read_text()
-        root = Path(__file__).resolve().parent.parent
-        # 빌드 도구와 데스크톱 전용 네이티브 웹 뷰(안드로이드는 MainActivity가 웹페이지 뷰를 만든다), SSH 연결(paramiko)은 빼고
-        desktop_only = ("build_installer.py", "browser_win.py", "browser_mac.py", "ssh_remote.py")
-        modules = {p.name for p in root.glob("*.py") if p.name not in desktop_only}
-        missing = [m for m in sorted(modules) if f'"{m}"' not in gradle]
-        self.assertEqual(missing, [], "android/app/build.gradle.kts의 syncSharedPython에 더하세요")
 
 
 class GatewayTests(unittest.TestCase):

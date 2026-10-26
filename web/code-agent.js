@@ -12,6 +12,7 @@
    - 입력 앞글자: / 명령 · ! 명령 바로 실행(출력은 다음 지시의 맥락) · # 프로젝트 지침에 메모 · @파일 붙이기(자동 완성) */
 
 const CA = {
+  sessionVersion: 0, newSession: false,
   state: null, task: null, status: "", tab: null, el: null, draft: "",
   live: "", runId: null, runCommand: "", shell: null,   // 에이전트가 실행 중인 명령 · ! 명령 {run_id, command}
   startedAt: 0, spinTimer: null, verbose: false, open: new Set(), clearedAt: 0,
@@ -42,7 +43,7 @@ const CA_PREVIEW = 4;      // 접힌 출력에 보이는 줄 수
 const CA_DIFF_LINES = 40;  // 접힌 diff에 보이는 줄 수
 
 function caMode(v) { return CA_MODES.find(([m]) => m === v) || CA_MODES[1]; }
-function caRunning() { return !!(CA.state && CA.state.running && CA.task && CA.state.running === CA.task.id); }
+function caRunning() { return !!(CA.task && CA.state && (CA.state.running_tasks || {})[CA.task.id]); }
 function caBusy() { return caRunning() || !!CA.shell; }
 function caVisible() {
   const pane = $("#code-pane");
@@ -69,16 +70,19 @@ async function caOpen(activate = true) {
 }
 
 async function caRefresh() {
+  const version = CA.sessionVersion;
   const st = await codeCall(api().code_agent_state(), true);
-  if (!st) return;
+  if (!st || version !== CA.sessionVersion) return;
   CA.state = st;
-  const keep = CA.task && st.tasks.some((x) => x.id === CA.task.id) ? CA.task.id : (st.running || (st.shell && st.shell.task_id) || "");
+  const keep = CA.task && st.tasks.some((x) => x.id === CA.task.id) ? CA.task.id : (CA.newSession ? "" : (st.running || (st.shell && st.shell.task_id) || ""));
   if (keep) {
     const r = await codeCall(api().code_agent_task(keep), true);
+    if (version !== CA.sessionVersion) return;
     CA.task = r ? r.task : null;
   } else if (CA.task && CA.task.workspace !== st.workspace) CA.task = null;
   if (st.shell && !CA.shell) CA.shell = { run_id: st.shell.run_id, command: st.shell.command };
   if (!st.shell) CA.shell = null;
+  st.approval = (CA.task && (st.running_tasks || {})[CA.task.id] || {}).mode || st.default_approval || st.approval;
   if (caRunning() && !CA.startedAt) {
     const users = (CA.task.turns || []).filter((x) => x.role === "user" && !x.steer);
     CA.startedAt = users.length ? users[users.length - 1].at * 1000 : Date.now();
@@ -132,7 +136,13 @@ function caRenderLog(stick) {
   const st = CA.state || { tasks: [] };
   const task = CA.task;
   const running = caRunning();
-  const nodes = [caBanner()];
+  const sessions = h("select", { id: "ca-sessions", "aria-label": "작업 세션", onchange: (e) => { if (e.target.value) caResume(e.target.value); } },
+    h("option", { value: "" }, task ? "작업 전환…" : "작업 선택…"),
+    ...(st.tasks || []).map((t, i) => h("option", { value: String(i + 1) },
+      ((st.running_tasks || {})[t.id] ? "● 실행 중 · " : "") + t.title)));
+  const nodes = [h("div", { class: "ca-session-bar" }, sessions,
+    h("button", { class: "btn", id: "ca-new-session", onclick: () => caLocalSlash("/new") }, "새 세션"),
+    h("span", { class: "ca-dim" }, `실행 중 ${Object.keys(st.running_tasks || {}).length}개`)), caBanner()];
   const items = [];
   if (task) {
     for (const x of task.turns || []) items.push({ at: x.at, turn: x });
@@ -405,7 +415,8 @@ function caCancelSelect() {
 
 /* Bridge의 승인 요청(source: code_agent). 탭이 보이면 기록 안에서 묻고 true, 아니면 false(예전처럼 대화 상자) */
 function caConfirm(ev) {
-  if (!caVisible()) return false;
+  if (!caVisible() || !CA.task || ev.thread_id !== CA.task.id || CA.select) return false;
+  CA.confirmEvent = ev;
   const run = ev.kind === "run";
   const detail = String(ev.detail || "");
   let body;
@@ -422,6 +433,7 @@ function caConfirm(ev) {
   options.push({ label: "아니요, 다르게 하라고 알려 주기 (esc)", value: "feedback", id: "ca-no", keep: true });
   const answer = (v) => {
     if (v === "feedback") { CA.feedback = { cid: ev.id }; caRender(); caFocus(); return; }
+    CA.confirmEvent = null;
     api().resolve_confirm(ev.id, v);
   };
   caAsk({ kind: "confirm", cid: ev.id, title: run ? "Bash 명령" : ev.title || "파일 수정", body,
@@ -436,7 +448,7 @@ async function caFeedback(text) {
   CA.feedback = null;
   CA.select = null;
   if (!fb) return;
-  if (text) await caCall(api().code_agent_steer(text));
+  if (text) await caCall(api().code_agent_steer(text, CA.task ? CA.task.id : ""));
   api().resolve_confirm(fb.cid, "deny");
   caRender();
 }
@@ -709,7 +721,7 @@ function caEscape(v) {
 
 async function caStop() {
   caFlash("멈추는 중…");
-  await codeCall(api().code_agent_stop(), true);
+  await codeCall(api().code_agent_stop(CA.task ? CA.task.id : ""), true);
 }
 
 async function caCycleMode() {
@@ -720,7 +732,7 @@ async function caCycleMode() {
 }
 
 async function caSetMode(mode, quiet) {
-  const r = await caCall(api().code_agent_set_approval(mode));
+  const r = await caCall(api().code_agent_set_approval(mode, CA.task ? CA.task.id : ""));
   if (!r || !CA.state) return;
   CA.state.approval = r.approval;
   const [, label, desc] = caMode(r.approval);
@@ -778,16 +790,20 @@ async function caSubmit() {
 }
 
 async function caSend(text, mode, isolate) {
+  const version = CA.sessionVersion;
   const dirty = CODE.tabs.filter((t) => t.kind === "file" && t.editor.isDirty());
   if (dirty.length) caPrint(`저장하지 않은 파일 ${dirty.length}개가 있습니다. 에이전트는 디스크의 내용을 봅니다.`, "ca-warn");
   const options = { isolate: !!isolate && !CA.task, ...(mode ? { mode } : {}) };
   const r = await caCall(api().code_agent_start(text, CA.task ? CA.task.id : "", options));
   if (!r) return;
+  if (version !== CA.sessionVersion) return caRefresh();
   if (mode && CA.state && CA.state.approval === "plan" && mode !== "plan") {
     // 계획을 승인하면 계획 모드를 벗어난다(Claude Code처럼). 다음 지시도 그 모드로
-    const m = await codeCall(api().code_agent_set_approval(mode), true);
+    const m = await codeCall(api().code_agent_set_approval(mode, CA.task ? CA.task.id : ""), true);
     if (m) CA.state.approval = m.approval;
   }
+  if (version !== CA.sessionVersion) return caRefresh();
+  CA.newSession = false;
   CA.task = r.task;
   CA.status = "생각하는 중...";
   CA.live = "";
@@ -795,15 +811,18 @@ async function caSend(text, mode, isolate) {
   CA.startedAt = Date.now();
   if (CA.state) {
     CA.state.running = r.task.id;
+    CA.state.running_tasks ||= {};
+    if (r.task.status === "running") CA.state.running_tasks[r.task.id] = { mode: r.task.approval, started: Date.now() / 1000 };
     if (!CA.state.tasks.some((x) => x.id === r.task.id)) CA.state.tasks.unshift({ id: r.task.id, title: r.task.title, status: "running" });
   }
+  await caRefresh();
   caRenderLog(true);
   caRenderFoot();
 }
 
 async function caSteer(text) {
   if (text.startsWith("/")) return caPrint("작업 중에는 슬래시 명령을 쓸 수 없습니다. 끝나거나 멈춘 뒤(esc) 쓰세요.", "error");
-  await caCall(api().code_agent_steer(text));
+  await caCall(api().code_agent_steer(text, CA.task ? CA.task.id : ""));
 }
 
 async function caShell(cmd) {
@@ -861,7 +880,8 @@ async function caLocalSlash(text) {
   switch (cmd) {
     case "/help": caHelp(); return true;
     case "/clear": case "/new": case "/reset":
-      if (idle()) return true;
+      if (CA.shell) return caFlash("! 명령을 먼저 멈추세요"), true;
+      caDetach();
       CA.task = null; CA.sys = []; CA.clearedAt = 0; CA.open.clear(); CA.select = null;
       caRender();
       return true;
@@ -918,9 +938,10 @@ async function caLocalSlash(text) {
       caWorktree(task, cmd.slice(1));
       return true;
     case "/worktree":
-      if (idle()) return true;
+      if (CA.shell) return caFlash("! 명령을 먼저 멈추세요"), true;
       if (!arg) { caPrint("/worktree 뒤에 할 일을 쓰세요. 예: /worktree 로그인 화면에 비밀번호 찾기 추가", "error"); return true; }
       if (!(st.project && st.project.git)) { caPrint("격리 작업 공간은 Git 저장소(커밋 1개 이상)에서만 됩니다.", "error"); return true; }
+      caDetach();
       CA.task = null;
       await caSend(arg, null, true);
       return true;
@@ -991,14 +1012,33 @@ async function caUsage() {
     h("div", { class: "ca-dim" }, "이 기기에서 이 앱이 보낸 호출입니다(채팅·에이전트·Code 포함). 토큰은 서버가 알려 줄 때만 셉니다.")));
 }
 
+function caDetach() {
+  CA.sessionVersion++;
+  CA.newSession = true;
+  // 다른 작업으로 옮겨도 승인 요청은 원래 작업에 묶인 대화 상자로 남긴다.
+  if (CA.select && CA.select.kind === "confirm" && CA.confirmEvent) showConfirm({ ...CA.confirmEvent, source: "background_code_agent" });
+  CA.confirmEvent = null;
+  CA.select = null;
+  CA.feedback = null;
+  CA.live = "";
+  CA.runId = null;
+  CA.startedAt = 0;
+  CA.status = "";
+}
+
 function caResume(arg) {
-  if (caBusy()) return caPrint("작업이 진행 중입니다. 끝나거나 멈춘 뒤(esc) 하세요.", "error");
   const tasks = (CA.state && CA.state.tasks) || [];
   if (!tasks.length) return caPrint("이 작업 폴더에 지난 작업이 없습니다.");
   const pick = async (id) => {
+    const version = ++CA.sessionVersion;
     const r = await caCall(api().code_agent_task(id));
-    if (!r) return;
+    if (!r || version !== CA.sessionVersion) return;
+    caDetach();
+    CA.newSession = false;
     CA.task = r.task;
+    const run = (CA.state.running_tasks || {})[r.task.id];
+    CA.state.approval = run ? run.mode : r.task.approval;
+    CA.startedAt = run ? run.started * 1000 : 0;
     CA.open.clear();
     CA.clearedAt = 0;
     caRender();
@@ -1121,8 +1161,15 @@ function caEvent(ev) {
   }
   if (!ev.kind || !ev.kind.startsWith("agent_")) return;
   if (ev.kind === "agent_task") {
+    if (CA.state) {
+      CA.state.running_tasks ||= {};
+      if (ev.task.status === "running") CA.state.running_tasks[ev.task.id] = { mode: ev.task.approval, started: Date.now() / 1000 };
+      if (ev.task.workspace !== CA.state.workspace) return;
+      const i = CA.state.tasks.findIndex((t) => t.id === ev.task.id);
+      if (i < 0) CA.state.tasks.unshift(ev.task); else CA.state.tasks[i] = ev.task;
+    }
+    if ((CA.newSession && !task) || (task && task.id !== ev.task.id)) return caRenderLog();
     CA.task = ev.task;
-    if (CA.state) CA.state.running = ev.task.id;
     if (!CA.startedAt) CA.startedAt = Date.now();
     return caRender();
   }
@@ -1145,11 +1192,22 @@ function caEvent(ev) {
     return;
   }
   if (ev.kind === "agent_mode") {   // 작업 중 권한 모드가 바뀜(승인에서 '이 작업 동안 수정은 묻지 않기' 등)
+    if (CA.state && CA.state.running_tasks && CA.state.running_tasks[ev.task_id]) CA.state.running_tasks[ev.task_id].mode = ev.mode;
+    if (!task || task.id !== ev.task_id) return;
     if (CA.state) CA.state.approval = ev.mode;
     return caRenderFoot();
   }
+  if (ev.kind === "agent_done" && CA.state) {
+    delete (CA.state.running_tasks || {})[ev.task_id];
+    S.confirmQueue = S.confirmQueue.filter((c) => c.thread_id !== ev.task_id);
+    if (S.confirmActive && S.confirmActive.thread_id === ev.task_id) S.confirmActive.modal.close();
+  }
   if (!task || ev.task_id !== task.id) {
-    if (ev.kind === "agent_done") caRefresh();
+    if (ev.kind === "agent_done" && CA.state) {
+      const item = CA.state.tasks.find((t) => t.id === ev.task_id);
+      if (item) item.status = ev.status;
+      caRenderLog();
+    }
     return;
   }
   if (ev.kind === "agent_status") {
