@@ -332,7 +332,7 @@ def selfcheck(timeout=10):
     out, done = [], threading.Event()
     m = TerminalManager(on_output=lambda sid, text: out.append(text), on_exit=lambda sid, code: done.set())
     shell = ((os.environ.get("COMSPEC") or "cmd.exe"), ["/c", "echo poschat-term-ok"], "cmd") if os.name == "nt" \
-        else ("/bin/sh", ["-c", "echo poschat-term-ok"], "sh")
+        else ("/bin/sh", ["-c", "echo poschat-term-ok; sleep 1"], "sh")   # 바로 끝나면 macOS pty가 남은 출력을 버릴 수 있다
     try:
         m.open(os.path.expanduser("~"), 80, 24, shell=shell)
     except TerminalError as e:
