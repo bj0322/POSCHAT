@@ -849,6 +849,8 @@ window.onBackendEvent = (ev) => {
   } else if (ev.type === "credit") {
     S.credit = ev.credit;
     document.querySelectorAll("[data-credit]").forEach((el) => { el.textContent = creditText(S.credit); });
+  } else if (ev.type === "plms") {
+    toast(ev.message);
   } else if (ev.type === "browser") {
     if (window.browserEvent) browserEvent(ev);
   } else if (ev.type === "code") {
@@ -1048,6 +1050,9 @@ function showSettings() {
     : "firecrawl MCP 서버를 쓸 때만 필요합니다.";
   const firecrawl = h("input", { type: "password", placeholder: c.firecrawl_source ? "••••••••••••" : "fc-... (선택)", autocomplete: "off" });
   const clearFirecrawl = h("input", { type: "checkbox", style: "width:auto;margin:0 6px 0 0" });
+  const plmsUser = h("input", { type: "text", value: c.plms_username || "", placeholder: "POSTECH 아이디 (선택)", autocomplete: "off", spellcheck: false });
+  const plmsPass = h("input", { type: "password", placeholder: c.plms_username ? "••••••••••••" : "비밀번호 (선택)", autocomplete: "new-password" });
+  const clearPlms = h("input", { type: "checkbox", style: "width:auto;margin:0 6px 0 0" });
   const usageBox = usageView();
   const hist = h("input", { type: "number", min: 0, max: 200, value: c.history_messages });
   const steps = h("input", { type: "number", min: 1, max: 100, value: c.max_steps });
@@ -1250,6 +1255,13 @@ function showSettings() {
       c.firecrawl_source === "settings"
         ? h("label", { style: "display:flex;align-items:center;font-size:13px;margin-top:4px;cursor:pointer" }, clearFirecrawl, "저장된 키 지우기")
         : null),
+    h("div", { class: "field" }, h("label", {}, "PLMS 계정 (자동 로그인)"), plmsUser, plmsPass,
+      h("small", {}, c.plms_username ? "저장된 계정이 있습니다. 바꾸려면 새 아이디·비밀번호를 입력하세요. " : "",
+        "PLMS → SSO 로그인을 누르면 로그인 창에 자동으로 입력합니다. StonePASS 같은 2단계 인증은 직접 진행해야 합니다. ",
+        "비밀번호는 이 PC의 보안 저장소(Windows 자격 증명 관리자·macOS 키체인)에만 저장하며, AI·대화 기록·동기화로 보내지 않습니다."),
+      c.plms_username
+        ? h("label", { style: "display:flex;align-items:center;font-size:13px;margin-top:4px;cursor:pointer" }, clearPlms, "저장된 계정 지우기")
+        : null),
     h("div", { class: "field" }, h("label", {}, "업데이트"),
       h("label", { style: "display:flex;align-items:center;font-weight:400;cursor:pointer" }, autoUpdate, "시작할 때 새 버전 확인"),
       h("div", { class: "row", style: "margin-top:6px" },
@@ -1327,6 +1339,7 @@ function showSettings() {
             update_check: autoUpdate.checked, developer_mode: devMode.checked,
             notion_token: notion.value.trim(), clear_notion: clearNotion.checked && !notion.value.trim(),
             firecrawl_key: firecrawl.value.trim(), clear_firecrawl: clearFirecrawl.checked && !firecrawl.value.trim(),
+            plms_username: plmsUser.value.trim(), plms_password: plmsPass.value, clear_plms: clearPlms.checked,
           });
           if (state.ok === false) return toast(state.error);
           applyState(state);
@@ -1618,8 +1631,11 @@ Claude Sonnet 5.5 기준으로 1크레딧은 입력 약 250토큰, 출력 약 75
 - **단가·손익분기**: 경량·프런티어 단가를 넣으면 요청마다 손익분기(경량 단가 ÷ 프런티어 단가가 이 값보다 작아야 경량이 쌈)를 계산해, 프런티어 직접이 더 싼 요청은 프런티어로 보냅니다. **프롬프트 캐싱**을 켜면 같은 앞부분의 입력 비용을 줄입니다.
 - **개발자 모드**(설정): 답변 아래 표시에 호출마다의 실제 토큰·캐시·손익분기·원본 JSON이, 사용량·진단에 개발자 데이터가 보입니다.
 - 안드로이드에서는 로컬 AI를 쓸 수 없습니다(자동 선택을 켜도 Cloud 모델만 고릅니다).`],
-  ["PLMS 수업·공지·자료 (1.18.4)", `
-왼쪽 **PLMS → SSO 로그인**을 누르고 오른쪽 브라우저에서 POSTECH 계정과 StonePASS로 직접 인증하세요. 다시 **PLMS → 내 수업 불러오기**를 누르면 참여 수업을 고를 수 있습니다.
+  ["PLMS 수업·공지·자료 (1.18.5)", `
+왼쪽 **PLMS → SSO 로그인**을 누르고 오른쪽 브라우저에서 POSTECH 계정과 StonePASS로 인증하세요. 다시 **PLMS → 내 수업 불러오기**를 누르면 **이번 학기 수업**이 먼저 나오고, 지난 학기 수업은 접힌 묶음에 있습니다.
+
+- **계정 저장(선택)**: 설정의 **PLMS 계정**에 아이디·비밀번호를 저장해 두면 SSO 로그인을 누를 때 로그인 창을 자동으로 채웁니다. StonePASS 같은 2단계 인증은 직접 하세요. 비밀번호는 이 PC의 보안 저장소(자격 증명 관리자·키체인)에만 저장하고 AI·대화 기록·동기화로 보내지 않습니다. 같은 로그인 화면에는 한 번만 보내므로 비밀번호가 틀려도 반복해서 시도하지 않습니다.
+- 수업 화면은 **공지·게시판·자료·과제** 칩으로 거르고, 주차·주제별로 묶여 보입니다.
 
 - 수업에서 공지 게시판·강의자료를 선택해 본문과 첨부 링크를 읽습니다. PDF·Office·한글·텍스트 자료는 20MB까지, 긴 자료는 **이어서 읽기**로 읽습니다.
 - **에이전트에게 수업 정리 맡기기 / 이 자료 묻기**를 누르면 질문이 입력됩니다. 확인한 뒤 보내세요. PLMS 조회는 작업 폴더 없이도 에이전트 모드에서 됩니다. 로그인 후 Code 작업 에이전트에서도 수업 자료를 조회할 수 있습니다.

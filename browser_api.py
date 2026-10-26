@@ -135,19 +135,44 @@ class BrowserApi:
         return b if b is not None and b.visible else None
 
     def plms_login(self):
-        """인증 입력은 외부 웹 뷰에서 사용자가 직접 한다."""
+        """저장된 계정이 있으면 로그인 창의 칸을 채워 준다. 없거나 2단계(StonePASS) 인증은 사용자가 직접 한다."""
         import plms
         def go():
             with self._lock:
                 if self._browser_owner is not None:
                     raise plms.PlmsError("브라우저를 쓰는 에이전트를 멈춘 뒤 로그인하세요.")
-            self._browser().open(plms.LOGIN)
+            b = self._browser()
+            b.open(plms.LOGIN)
             with self._lock:
                 self._config["plms_enabled"] = True
                 import storage
                 storage.save_config(self._config)
-            return {"url": plms.LOGIN}
+            auto = plms.credentials() is not None
+            if auto:
+                self._plms_autologin(b)
+            return {"url": plms.LOGIN, "auto": auto}
         return self._plms_call(go)
+
+    def _plms_autologin(self, b):
+        """로그인 창이 뜰 때까지 기다리는 스레드. 새 로그인·연결 해제·창 닫기 때 이전 것은 멈춘다."""
+        import threading
+        import plms
+        with self._lock:
+            self._plms_login_gen = getattr(self, "_plms_login_gen", 0) + 1
+            gen = self._plms_login_gen
+        def cancelled():
+            return gen != getattr(self, "_plms_login_gen", 0) or not b.visible or not self._config.get("plms_enabled")
+        def work():
+            result = plms.autologin(b, cancelled,
+                                    on_status=lambda text: self._push({"type": "plms", "kind": "autologin", "message": text}))
+            if result == "timeout" and not cancelled():
+                self._push({"type": "plms", "kind": "autologin", "message": "자동 입력을 하지 못했습니다. 로그인 창에서 직접 입력하세요."})
+        threading.Thread(target=work, name="plms-autologin", daemon=True).start()
+
+    def plms_account(self):
+        """저장된 계정 정보(아이디만). 비밀번호는 돌려주지 않는다."""
+        import plms
+        return {"ok": True, "username": plms.saved_username()}
 
     def _plms_call(self, fn):
         import plms
@@ -185,6 +210,7 @@ class BrowserApi:
                 if self._browser_owner is not None:
                     raise browser.BrowserError("브라우저를 쓰는 에이전트를 멈춘 뒤 연결을 해제하세요.")
                 self._config["plms_enabled"] = False
+                self._plms_login_gen = getattr(self, "_plms_login_gen", 0) + 1
                 import storage
                 storage.save_config(self._config)
             b = self._browser(create=False)

@@ -284,6 +284,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
                     "env" if os.environ.get("NOTION_TOKEN") or os.environ.get("NOTION_API_KEY") else None),
                 "firecrawl_source": "settings" if self._config.get("firecrawl_key") else (
                     "env" if os.environ.get("FIRECRAWL_API_KEY") else None),
+                "plms_username": self._plms_saved_username(),  # 1.18.5 저장된 PLMS 아이디(비밀번호는 화면으로 보내지 않는다)
             },
             "data_dir": str(storage.APP_DIR),
             "version": APP_VERSION, "distribution": version.distribution(),
@@ -376,6 +377,33 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
 
     # ---- 설정 ----
 
+    @staticmethod
+    def _plms_saved_username():
+        try:
+            import plms
+            return plms.saved_username()
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _save_plms_account(settings):
+        """1.18.5 설정의 PLMS 계정(OS 보안 저장소). 오류 글을 돌려주고, 잘 됐으면 None."""
+        import plms
+        try:
+            if settings.get("clear_plms"):
+                plms.clear_credentials()
+                return None
+            username = str(settings.get("plms_username") or "").strip()
+            password = str(settings.get("plms_password") or "")
+            if not username and not password:
+                return None
+            if username and not password and username == plms.saved_username():
+                return None  # 아이디만 그대로: 저장된 비밀번호를 유지한다
+            plms.save_credentials(username, password)
+        except plms.PlmsError as e:
+            return str(e)
+        return None
+
     def save_settings(self, settings):
         mode = settings.get("api_mode", self._mode())
         url = api.endpoint_url(settings.get("responses_url", self._config.get("responses_url", "")),
@@ -387,6 +415,9 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
             return {"ok": False, "error": "Responses API를 선택했다면 올바른 HTTPS 주소를 입력해야 합니다."}
         if mode == "chat_completions" and compatible_url and not self._valid_https_url(compatible_url):
             return {"ok": False, "error": "OpenAI 호환 API를 선택했다면 올바른 HTTPS Chat Completions 주소를 입력해야 합니다."}
+        plms_error = self._save_plms_account(settings)
+        if plms_error:
+            return {"ok": False, "error": plms_error}
         with self._lock:
             before = self._sync_settings()
             if settings.get("api_key"):

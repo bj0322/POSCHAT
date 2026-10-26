@@ -253,6 +253,16 @@ class Browser:
             raise BrowserError("이 페이지는 읽을 수 없습니다.")
         return page
 
+    def run_script(self, script, url_ok):
+        """PLMS 자동 로그인 전용: 지금 열린 주소가 url_ok일 때만 스크립트를 돌리고 결과 글자를 돌려준다."""
+        with self._lock:
+            if self._backend is None or not self.visible:
+                raise BrowserError("열린 웹페이지가 없습니다.")
+            if not url_ok(self.state.get("url", "")):
+                return "blocked"
+            backend = self._backend
+        return str(backend.read(script) or "").strip('"')
+
     def plms_cookies(self, clear=False):
         """PLMS 모듈 전용. 쿠키는 화면 API·모델에 반환하지 않는다."""
         from plms import ORIGIN

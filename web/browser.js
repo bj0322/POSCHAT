@@ -207,15 +207,30 @@ else window.addEventListener("pywebviewready", browserInit, { once: true });
 
 
 /* PLMS: 인증은 네이티브 웹 뷰에서, 조회 결과만 앱 화면에서 다룬다. */
+const PLMS_KINDS = {
+  notice: "공지", board: "게시판", file: "자료", folder: "폴더", assign: "과제", page: "페이지", link: "링크",
+  syllabus: "강의계획서", other: "기타",
+};
+// 수업 화면의 걸러 보기 묶음(칩)
+const PLMS_FILTERS = [
+  ["all", "전체", null], ["notice", "공지", ["notice"]], ["board", "게시판", ["board"]],
+  ["file", "자료", ["file", "folder", "syllabus"]], ["assign", "과제", ["assign"]], ["etc", "기타", ["page", "link", "other"]],
+];
+
 function plmsPanel() {
+  const saved = S.config && S.config.plms_username;
   const content = h("div", { id: "plms-content", role: "status", "aria-live": "polite" },
-    h("p", {}, "내장 브라우저에서 POSTECH SSO·StonePASS 인증을 직접 마친 뒤 ‘내 수업 불러오기’를 누르세요."),
-    h("p", {}, "요청한 공지·자료는 선택한 AI 서비스로 전송될 수 있습니다. 비밀번호·인증 코드·쿠키는 AI에 보내지 않습니다."));
-  let generation = 0, closed = false;
-  const showError = (message) => content.replaceChildren(h("p", { role: "alert" }, message));
+    h("p", {}, saved
+      ? `저장된 계정(${saved})으로 ‘SSO 로그인’을 누르면 로그인 창을 자동으로 채웁니다. StonePASS 인증은 직접 진행한 뒤 ‘내 수업 불러오기’를 누르세요.`
+      : "내장 브라우저에서 POSTECH SSO·StonePASS 인증을 직접 마친 뒤 ‘내 수업 불러오기’를 누르세요. 설정에 계정을 저장해 두면 아이디·비밀번호는 자동으로 입력됩니다."),
+    h("p", { class: "plms-note" }, "요청한 공지·자료는 선택한 AI 서비스로 전송될 수 있습니다. 비밀번호·인증 코드·쿠키는 AI에 보내지 않습니다."));
+  let generation = 0, closed = false, courses = null;
+  // replaceChildren은 null을 "null" 글자로 넣는다: 빈 칸은 걸러서 넣는다
+  const put = (...nodes) => content.replaceChildren(...nodes.flat().filter((n) => n != null && n !== false));
+  const showError = (message) => put(h("p", { role: "alert" }, message));
   const call = async (fn, render) => {
     const current = ++generation;
-    content.replaceChildren(h("p", {}, "PLMS에서 읽는 중…"));
+    put(h("p", {}, "PLMS에서 읽는 중…"));
     try {
       const res = await fn();
       if (closed || current !== generation) return;
@@ -234,27 +249,81 @@ function plmsPanel() {
     $("#input").value = prompt;
     autoresize(); updateSend(); $("#input").focus();
   };
-  const list = (items, onclick) => h("div", { class: "plms-list" }, items.map((item) =>
-    h("button", { class: "btn", onclick: () => onclick(item) }, item.title)));
-  const read = (course, item, parents) => call(() => api().plms_read(course.id, item.url, "", 0, parents), (res) => {
-    const doc = res.document;
-    const renderDoc = (data) => {
-      content.replaceChildren(h("button", { class: "btn", onclick: () => openCourse(course) }, "수업으로 돌아가기"),
-        h("h3", {}, data.title), h("p", {}, data.url),
-        h("pre", { class: "plms-text" }, data.text),
-        h("button", { class: "btn primary", onclick: () => ask(`PLMS 수업 ${course.title} (course_id=${course.id})의 자료를 읽고 요약해 줘.\n주소: ${item.url}\nparent: ${JSON.stringify(parents)}`) }, "에이전트에게 이 자료 묻기"),
-        data.next_offset == null ? null : h("button", { class: "btn", onclick: () => call(
-          () => api().plms_read(course.id, item.url, "", data.next_offset, parents), (r) => renderDoc(r.document)) }, "이어서 읽기"),
-        list(data.items || [], (child) => read(course, child, [...parents, item.url])));
+  const chip = (text, cls = "") => h("span", { class: "plms-chip " + cls, "aria-hidden": "true" }, text);
+  const row = (title, tag, onclick, hint) =>
+    h("button", { class: "plms-row", title: hint || title, onclick }, chip(tag), h("span", { class: "plms-row-title" }, title));
+
+  /* 수업 목록: 이번 학기를 먼저, 지난 학기는 접어 둔다 */
+  const showCourses = (list) => {
+    courses = list;
+    const card = (c) => h("button", { class: "plms-card", onclick: () => openCourse(c) },
+      h("span", { class: "plms-card-title" }, c.title),
+      c.term ? chip(c.term, c.status === "current" ? "on" : "") : null);
+    const now = list.filter((c) => c.status === "current" || c.status === "unknown");
+    const next = list.filter((c) => c.status === "future");
+    const past = list.filter((c) => c.status === "past");
+    const group = (title, items, open) => items.length ? h("details", { class: "plms-group", open }, h("summary", {}, `${title} ${items.length}개`),
+      h("div", { class: "plms-cards" }, items.map(card))) : null;
+    put(
+      h("h3", {}, now.length ? `이번 학기 수업 ${now.length}개` : `참여 수업 ${list.length}개`),
+      list.length ? null : h("p", {}, "표시할 수업이 없습니다. PLMS의 내 강좌 화면도 확인하세요."),
+      now.length ? h("div", { class: "plms-cards" }, now.map(card)) : null,
+      group("예정 수업", next, true), group("지난 학기 수업", past, !now.length));
+  };
+
+  /* 수업 화면: 종류 칩으로 거르고, 주차·주제별로 묶는다 */
+  const renderCourse = (course, c, filter = "all") => {
+    const kinds = (PLMS_FILTERS.find((f) => f[0] === filter) || PLMS_FILTERS[0])[2];
+    const shown = c.items.filter((x) => !kinds || kinds.includes(x.kind));
+    const count = (names) => (names ? c.items.filter((x) => names.includes(x.kind)).length : c.items.length);
+    const tag = (x) => PLMS_KINDS[x.kind] || "기타";
+    const open = (x) => read(course, c, x, [], () => renderCourse(course, c, filter));
+    const body = [];
+    if (!shown.length) body.push(h("p", { class: "plms-note" }, "이 종류의 항목이 없습니다."));
+    else if (filter !== "all") body.push(h("div", { class: "plms-rows" }, shown.map((x) => row(x.title, tag(x), () => open(x), x.section))));
+    else {
+      const groups = new Map();
+      for (const x of shown) groups.set(x.section || "", [...(groups.get(x.section || "") || []), x]);
+      let n = 0;
+      for (const [name, items] of groups) {
+        body.push(h("details", { class: "plms-group", open: n++ < 4 }, h("summary", {}, `${name || "수업 메뉴"} · ${items.length}`),
+          h("div", { class: "plms-rows" }, items.map((x) => row(x.title, tag(x), () => open(x))))));
+      }
+    }
+    put(
+      h("div", { class: "plms-crumbs" }, h("button", { class: "btn", onclick: () => showCourses(courses) }, "← 수업 목록")),
+      h("div", { class: "plms-head" }, h("h3", {}, c.title), c.term ? chip(c.term, c.status === "current" ? "on" : "") : null),
+      h("div", { class: "plms-actions" },
+        h("button", { class: "btn primary", onclick: () => ask(`PLMS 수업 ${c.title} (course_id=${c.id})의 공지와 강의자료를 확인해서 정리해 줘. 원문 링크도 알려 줘.`) }, "에이전트에게 수업 정리 맡기기")),
+      h("div", { class: "plms-filters", role: "group", "aria-label": "항목 종류" }, PLMS_FILTERS.filter((f) => f[0] === "all" || count(f[2])).map(([key, label, names]) =>
+        h("button", { class: "plms-filter" + (key === filter ? " on" : ""), "aria-pressed": String(key === filter),
+          onclick: () => renderCourse(course, c, key) }, `${label} ${count(names)}`))),
+      ...body,
+      c.text ? h("details", { class: "plms-group" }, h("summary", {}, "수업 페이지 글 보기"), h("pre", { class: "plms-text" }, c.text)) : null);
+  };
+  const openCourse = (course) => call(() => api().plms_course(course.id), (res) => renderCourse(course, { ...res.course, term: course.term, status: course.status }));
+
+  /* 자료 화면 */
+  const read = (course, c, item, parents, back) => call(() => api().plms_read(course.id, item.url, "", 0, parents), (res) => {
+    const data = res.document;
+    const here = () => renderDoc(data);
+    const renderDoc = (d) => {
+      const progress = d.total_chars ? `${Math.min(d.offset + d.text.length, d.total_chars).toLocaleString()} / ${d.total_chars.toLocaleString()}자` : "";
+      put(
+        h("div", { class: "plms-crumbs" }, h("button", { class: "btn", onclick: back }, "← 돌아가기"),
+          h("span", { class: "plms-note" }, `${c.title} › ${item.title}`)),
+        h("h3", {}, d.title || item.title),
+        h("div", { class: "plms-actions" },
+          h("button", { class: "btn primary", onclick: () => ask(`PLMS 수업 ${c.title} (course_id=${c.id})의 자료를 읽고 요약해 줘.\n주소: ${item.url}\nparent: ${JSON.stringify(parents)}`) }, "에이전트에게 이 자료 묻기"),
+          d.next_offset == null ? null : h("button", { class: "btn", onclick: () => call(
+            () => api().plms_read(course.id, item.url, "", d.next_offset, parents), (r) => renderDoc(r.document)) }, "이어서 읽기"),
+          progress ? h("span", { class: "plms-note" }, progress) : null),
+        h("pre", { class: "plms-text" }, d.text),
+        (d.items || []).length ? h("h4", {}, "이 자료 안의 항목") : null,
+        (d.items || []).length ? h("div", { class: "plms-rows" }, d.items.map((child) =>
+          row(child.title, PLMS_KINDS[child.kind] || "기타", () => read(course, c, child, [...parents, item.url], here)))) : null);
     };
-    renderDoc(doc);
-  });
-  const openCourse = (course) => call(() => api().plms_course(course.id), (res) => {
-    const c = res.course;
-    content.replaceChildren(h("h3", {}, c.title),
-      h("button", { class: "btn primary", onclick: () => ask(`PLMS 수업 ${c.title} (course_id=${c.id})의 공지와 강의자료를 확인해서 정리해 줘. 원문 링크도 알려 줘.`) }, "에이전트에게 수업 정리 맡기기"),
-      h("pre", { class: "plms-text" }, c.text),
-      list(c.items, (item) => read(c, item, [])));
+    renderDoc(data);
   });
   const { close } = modal({ title: "PLMS 수업·공지·자료", wide: true, body: content,
     onClose: () => { closed = true; ++generation; }, buttons: [
@@ -263,14 +332,15 @@ function plmsPanel() {
         if (window.paperLeave) paperLeave();
         if (window.codeLeave) codeLeave();
         const res = await browserCall(api().plms_login());
-        if (res) { BR.open = true; BR.url = res.url; renderBrowserBar(); toast("SSO 인증 후 PLMS → 내 수업 불러오기를 누르세요."); }
+        if (res) {
+          BR.open = true; BR.url = res.url; renderBrowserBar();
+          toast(res.auto ? "저장된 계정을 입력하는 중입니다. StonePASS 인증은 직접 진행한 뒤 PLMS → 내 수업 불러오기를 누르세요."
+            : "SSO 인증 후 PLMS → 내 수업 불러오기를 누르세요.");
+        }
       } },
-      { label: "내 수업 불러오기", class: "primary", action: () => call(() => api().plms_courses(), (res) => {
-        content.replaceChildren(h("h3", {}, `참여 수업 ${res.courses.length}개`),
-          res.courses.length ? list(res.courses, openCourse) : h("p", {}, "표시할 수업이 없습니다. PLMS의 내 강좌 화면도 확인하세요."));
-      }) },
+      { label: "내 수업 불러오기", class: "primary", action: () => call(() => api().plms_courses(), (res) => showCourses(res.courses)) },
       { label: "연결 해제", action: () => call(() => api().plms_disconnect(), () => {
-        content.replaceChildren(h("p", {}, "PLMS 조회 연결을 끄고 PLMS 전용 쿠키를 지웠습니다. 학교 공통 SSO 세션과 기존 대화 기록은 유지됩니다."));
+        put(h("p", {}, "PLMS 조회 연결을 끄고 PLMS 전용 쿠키를 지웠습니다. 학교 공통 SSO 세션과 기존 대화 기록은 유지됩니다."));
       }) },
       { label: "닫기" }
     ] });
