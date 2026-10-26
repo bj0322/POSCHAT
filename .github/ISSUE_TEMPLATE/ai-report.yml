@@ -1,0 +1,47 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
+# 앱의 '부적절한 응답 신고'(web/app.js reportAiResponse)가 이 양식을 채워서 연다. 필드 id를 바꾸면 앱도 같이 고친다.
+name: 부적절한 AI 응답 신고
+description: POSCHAT의 AI가 만든 답변에 유해하거나 부적절한 내용이 있으면 알려 주세요.
+title: "[AI 응답 신고] "
+labels: ["ai-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        이 이슈는 **누구나 볼 수 있습니다.** 개인정보·API 키·비밀이 든 내용은 넣지 마세요.
+        신고는 확인한 뒤 프롬프트·안전 규칙을 고치거나 답을 남깁니다.
+  - type: dropdown
+    id: reason
+    attributes:
+      label: 신고 이유
+      options:
+        - 유해하거나 위험한 내용
+        - 혐오·차별·괴롭힘
+        - 성적인 내용
+        - 개인정보 노출
+        - 사실과 다른 내용(환각)
+        - 그 밖의 문제
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: 무엇이 문제였나요?
+      description: 어떤 질문에 어떤 답이 나왔는지, 왜 문제인지 짧게 적어 주세요.
+  - type: textarea
+    id: response
+    attributes:
+      label: AI 답변(선택)
+      description: 문제가 된 답변. 개인정보는 지워 주세요.
+      render: markdown
+  - type: input
+    id: model
+    attributes:
+      label: 모델
+      description: 앱이 채웁니다(예 auto, claude-…, GPT-…).
+  - type: input
+    id: version
+    attributes:
+      label: 앱 버전
+      description: 앱이 채웁니다.

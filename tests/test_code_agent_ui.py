@@ -377,7 +377,7 @@ class CodeAgentUiTests(unittest.TestCase):
                 page.wait_for_selector(".code-tab.agent")
                 for sel in (".ca-banner", ".ca-log"):
                     page.wait_for_selector(sel)
-                page.click("#code-btab-run")
+                page.wait_for_selector(".code-term:not([hidden]) .xterm", timeout=15000)   # 1.18: 아래 패널은 터미널
                 # 1.15 화면처럼 안내 글(code-welcome)을 편집기 자리에 띄운다
                 page.evaluate("""() => { document.querySelectorAll('.code-tabpane').forEach((t) => { t.hidden = true; });
                   document.querySelector('#code-stack').append(codeWelcome()); }""")

@@ -14,6 +14,7 @@ const ICONS = {
   stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>',
   copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>',
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  flag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg>',
   pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
   chev: '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>',
@@ -261,16 +262,22 @@ async function refreshThreads() {
 }
 
 /* ---------- 대화 ---------- */
-async function openThread(id) {
-  leaveViews();
+// leave=false: 앱을 시작할 때처럼 사용자가 고른 것이 아니면 열어 둔 화면(코드·Lab 등)을 닫지 않는다
+async function openThread(id, leave = true) {
+  if (leave) leaveViews();
   const thread = await api().load_thread(id);
   if (!thread) return refreshThreads();
   S.currentId = id;
   S.thread = thread;
-  $("#chat-title").textContent = thread.title;
+  // 다른 화면이 열려 있으면(leave=false) 대화는 뒤에서 준비만 하고, 제목·대화 선택 표시·초점은 그 화면을 닫을 때 돌아온다
+  const inView = !leave && ((typeof PAGE !== "undefined" && PAGE.id) || (typeof PO !== "undefined" && PO.open)
+    || (typeof CODE !== "undefined" && CODE.open));
+  if (!inView) $("#chat-title").textContent = thread.title;
   renderThreadModel();
   renderSidebar();
+  if (inView) document.querySelectorAll(".thread.active").forEach((t) => t.classList.remove("active"));
   renderMessages();
+  if (inView) return;
   if (isNarrow()) setCollapsed(true);
   else $("#input").focus();  // 휴대폰에서는 키보드가 화면을 가리지 않게 자동으로 띄우지 않는다
 }
@@ -279,14 +286,15 @@ async function openThread(id) {
 function modeModels() {
   const mode = S.config.api_mode || "chat_completions";
   const base = mode === "responses" ? (S.responsesModels || [])
-    : mode === "anthropic" ? (S.anthropicModels || []) : (S.models || []);
+    : mode === "anthropic" ? (S.anthropicModels || []) : mode === "openai" ? (S.openaiModels || []) : (S.models || []);
   // 1.17: 자동 선택을 켰으면 '자동'과 로컬 모델을 앞에 더한다(adaptive.js)
   return window.adaptiveModelOptions ? adaptiveModelOptions(base) : base;
 }
 
 function modeDefaultModel() {
   const models = modeModels();
-  const configured = (S.config.api_mode === "anthropic") ? S.config.anthropic_model : S.config.model;
+  const configured = S.config.api_mode === "anthropic" ? S.config.anthropic_model
+    : S.config.api_mode === "openai" ? S.config.openai_model : S.config.model;
   return models.some((m) => m.id === configured) ? configured : ((models[0] || {}).id || "");
 }
 
@@ -312,17 +320,59 @@ function leaveViews() {
   if (window.pageLeave) pageLeave();
 }
 
-async function newThread() {
+async function newThread(leave = true) {
   // 이미 비어 있는 새 대화가 열려 있으면 그대로 쓴다
   if (S.thread && !S.thread.messages.length) {
-    leaveViews();
+    if (leave) leaveViews();
     $("#input").focus();
     return;
   }
   const thread = await api().new_thread();
   S.threads.unshift({ id: thread.id, title: thread.title, updated: thread.updated });
-  await openThread(thread.id);
+  await openThread(thread.id, leave);
 }
+
+/* 부적절한 AI 응답 신고(1.18, Microsoft Store 정책 11.16 '생성형 AI 콘텐츠'): GitHub 이슈 양식(.github/ISSUE_TEMPLATE/ai-report.yml)을
+   채워서 브라우저로 연다. 이슈는 공개이므로 답변을 넣을지는 사용자가 고르고, 넣을 글을 보고 고칠 수 있다. 앱이 몰래 보내는 것은 없다. */
+const REPORT_REASONS = ["유해하거나 위험한 내용", "혐오·차별·괴롭힘", "성적인 내용", "개인정보 노출", "사실과 다른 내용(환각)", "그 밖의 문제"];
+const REPORT_MAX = 1500;  // 주소 길이 제한 때문에 답변은 앞부분만
+
+function reportUrl({ reason, note, response, model }) {
+  const q = new URLSearchParams({ template: "ai-report.yml", title: `[AI 응답 신고] ${reason}`, reason,
+    what: note || "", response: response || "", model: model || "", version: `${S.version || ""}${S.distribution === "store" ? " (Microsoft Store)" : ""}` });
+  return `${REPO_URL}/issues/new?${q.toString()}`;
+}
+
+function reportAiResponse({ content, model }) {
+  const text = String(content || "");
+  const reason = h("select", { id: "report-reason", "aria-label": "신고 이유" }, ...REPORT_REASONS.map((r) => h("option", { value: r }, r)));
+  const note = h("textarea", { id: "report-note", rows: 3, placeholder: "무엇이 문제인지 짧게 적어 주세요(선택)" });
+  const include = h("input", { type: "checkbox", id: "report-include" });
+  const preview = h("textarea", { id: "report-response", rows: 6, hidden: true, "aria-label": "이슈에 넣을 답변" },
+    text.length > REPORT_MAX ? text.slice(0, REPORT_MAX) + " …(잘림)" : text);
+  include.addEventListener("change", () => { preview.hidden = !include.checked; });
+  modal({
+    title: "부적절한 응답 신고",
+    body: h("div", { class: "report-form" },
+      h("p", { style: "margin:0 0 10px;color:var(--text-2)" }, "AI가 만든 답변에 문제가 있으면 알려 주세요. 신고는 GitHub 이슈로 받고, 확인해 고칩니다. ",
+        h("b", {}, "GitHub 이슈는 누구나 볼 수 있습니다"), " — 개인정보·비밀이 든 내용은 넣지 마세요(GitHub 계정이 필요합니다)."),
+      h("label", { class: "field" }, h("span", {}, "이유"), reason),
+      h("label", { class: "field" }, h("span", {}, "설명"), note),
+      h("label", { style: "display:flex;gap:6px;align-items:center;margin:6px 0" }, include, "답변 내용을 함께 넣기(아래에서 고칠 수 있음)"),
+      preview),
+    buttons: [{ label: "취소", value: null }, { label: "GitHub에서 신고 열기", class: "primary", action: (close) => {
+      const url = reportUrl({ reason: reason.value, note: note.value.trim(), response: include.checked ? preview.value : "", model });
+      const a = h("a", { href: url, target: "_blank", rel: "noopener", hidden: true, id: "report-link" });
+      document.body.append(a);
+      a.click();
+      setTimeout(() => a.remove(), 1000);
+      close();
+      toast("브라우저에서 신고 양식을 열었습니다. 내용을 확인하고 'Create'를 누르세요");
+    } }],
+  });
+}
+window.reportAiResponse = reportAiResponse;
+window.reportUrl = reportUrl;
 
 // 답변 평가(👍/👎): 대화에 저장하고 사용량·진단 탭의 모델별 비교에 쓴다
 function feedbackButton(msg, rating) {
@@ -359,6 +409,8 @@ function messageNode(msg) {
         h("div", { class: "msg-actions" },
           h("button", { title: "복사", html: ICONS.copy, onclick: () => copyText(msg.content) }),
           feedbackButton(msg, 1), feedbackButton(msg, -1),
+          h("button", { title: "부적절한 응답 신고", "aria-label": "부적절한 응답 신고", class: "report-btn", html: ICONS.flag,
+            onclick: () => reportAiResponse({ content: msg.content, model: (msg.routing && msg.routing.model) || (S.thread && S.thread.model) || "" }) }),
         ),
       ),
     );
@@ -956,6 +1008,7 @@ function showSettings() {
   const mode = h("select", {},
     h("option", { value: "chat_completions" }, "POSTECH GenAI — OpenAI 호환 API, GPT·Claude·Gemini (권장)"),
     h("option", { value: "anthropic" }, "일반 AI 모델 (Claude) — 내 Claude API 키로 연결"),
+    h("option", { value: "openai" }, "일반 AI 모델 (GPT) — 내 OpenAI API 키로 연결"),
     h("option", { value: "responses" }, "POSTECH GenAI — OpenAI Responses API, GPT-5 계열"),
     h("option", { value: "a1" }, "POSTECH GenAI — a1/gpt 단일 호출 (예전 기본값, 모델은 서버가 정함)"),
   );
@@ -1035,6 +1088,47 @@ function showSettings() {
       h("small", {}, "Claude Opus 5.5를 권장합니다. 비용을 줄이려면 Sonnet 5.5나 Haiku 5.5를 고르세요. ",
         "PO노트의 서버 음성 보정과 크레딧 확인은 POSTECH GenAI 키가 있을 때만 씁니다(Claude API는 음성을 받지 않습니다).")),
   );
+  // 1.18 일반 AI 모델(GPT, 개인 OpenAI API 키): Claude와 같은 꼴. 모델 목록은 OpenAI가 알려 주는 대로, 저장해야 반영한다.
+  const openaiHint = c.openai_key_source === "settings" ? "저장된 키가 있습니다. 바꾸려면 새 키를 입력하세요."
+    : c.openai_key_source === "env" ? "환경 변수 OPENAI_API_KEY의 키를 쓰고 있습니다."
+    : "platform.openai.com → API keys에서 만든 본인 키(sk-...)를 넣으세요.";
+  const openaiKey = h("input", { type: "password", id: "openai-key", placeholder: c.openai_key_source ? "••••••••••••" : "sk-...",
+    autocomplete: "off" });
+  const clearOpenai = h("input", { type: "checkbox", style: "width:auto;margin:0 6px 0 0" });
+  const gptModel = h("select", { id: "openai-model" });
+  const fillGpt = (models, selected) => {
+    gptModel.replaceChildren(...models.map((m) => h("option", { value: m.id }, m.label)));
+    gptModel.value = models.some((m) => m.id === selected) ? selected : ((models[0] || {}).id || "");
+  };
+  fillGpt(S.openaiModels || [], c.openai_model);
+  const gptHint = h("small", {}, S.openaiModelsSource === "server"
+    ? "OpenAI에서 받은 모델 목록입니다." : "기본 목록입니다. '모델 목록 불러오기'로 이 키로 쓸 수 있는 모델을 모두 받아 옵니다.");
+  let openaiModels = null;
+  const loadGpt = h("button", { class: "btn", type: "button", id: "openai-load", style: "margin-top:8px", onclick: async () => {
+    loadGpt.disabled = true;
+    try {
+      const result = await api().refresh_models({ api_mode: "openai", openai_api_key: openaiKey.value.trim() });
+      if (result.ok === false) return toast(result.error);
+      openaiModels = result.models.map((m) => m.id);
+      fillGpt(result.models, gptModel.value);
+      gptHint.textContent = `OpenAI에서 받은 모델 목록입니다 (${result.models.length}개). 저장하면 반영됩니다.`;
+    } catch (error) {
+      toast(`모델 목록을 불러오지 못했습니다: ${error.message || error}`);
+    } finally {
+      loadGpt.disabled = false;
+    }
+  } }, "모델 목록 불러오기");
+  const openaiBox = h("div", { id: "openai-box" },
+    h("div", { class: "field" }, h("label", {}, "OpenAI API 키"), openaiKey,
+      h("small", {}, openaiHint, h("br"),
+        "요금은 이 키의 OpenAI 계정으로 청구되고 POSTECH 크레딧은 쓰지 않습니다. 키는 이 기기의 사용자 데이터 폴더(config.json)에 저장되며 동기화되지 않습니다."),
+      c.openai_key_source === "settings"
+        ? h("label", { style: "display:flex;align-items:center;font-size:13px;margin-top:4px;cursor:pointer" }, clearOpenai, "저장된 키 지우기")
+        : null),
+    h("div", { class: "field" }, h("label", {}, "기본 모델"), gptModel, gptHint, loadGpt,
+      h("small", {}, "GPT-5.1을 권장합니다. 비용을 줄이려면 GPT-5 mini를 고르세요. ",
+        "PO노트의 서버 음성 보정과 크레딧 확인은 POSTECH GenAI 키가 있을 때만 씁니다.")),
+  );
   const stream = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
   stream.checked = c.stream !== false;
   const autoUpdate = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
@@ -1057,16 +1151,18 @@ function showSettings() {
   const postechLabel = h("label", {}, "POSTECH GenAI API 키");
   const postechField = h("div", { class: "field" }, postechLabel, key,
     h("small", {}, keyHint, h("br"), "키는 이 PC의 사용자 데이터 폴더(config.json)에 저장됩니다. ",
-      "일반 AI 모델(Claude)을 쓸 때도 PO노트 서버 음성 보정·크레딧 확인에 쓰므로 있으면 넣어 두세요(선택)."));
+      "일반 AI 모델(Claude·GPT)을 쓸 때도 PO노트 서버 음성 보정·크레딧 확인에 쓰므로 있으면 넣어 두세요(선택)."));
   const syncMode = () => {
-    // Claude 방식에서는 Claude 키를 먼저 보이고, POSTECH 키는 선택 항목으로 그 아래에 둔다
-    const claude = mode.value === "anthropic";
-    postechLabel.textContent = claude ? "POSTECH GenAI API 키 (선택)" : "POSTECH GenAI API 키";
-    if (claude) anthropicBox.after(postechField);
+    // Claude·GPT 방식에서는 그 키를 먼저 보이고, POSTECH 키는 선택 항목으로 그 아래에 둔다
+    const own = mode.value === "anthropic" || mode.value === "openai";
+    postechLabel.textContent = own ? "POSTECH GenAI API 키 (선택)" : "POSTECH GenAI API 키";
+    if (mode.value === "anthropic") anthropicBox.after(postechField);
+    else if (mode.value === "openai") openaiBox.after(postechField);
     else if (mode.parentNode) mode.parentNode.after(postechField);
     responsesBox.hidden = mode.value !== "responses";
     compatibleBox.hidden = mode.value !== "chat_completions";
     anthropicBox.hidden = mode.value !== "anthropic";
+    openaiBox.hidden = mode.value !== "openai";
     url.required = mode.value === "responses";
   };
   mode.addEventListener("change", syncMode);
@@ -1080,6 +1176,7 @@ function showSettings() {
     responsesBox,
     compatibleBox,
     anthropicBox,
+    openaiBox,
     window.adaptiveSettingsField ? adaptiveSettingsField() : null,
     h("div", { class: "field" },
       h("label", { style: "display:flex;align-items:center;font-weight:600;cursor:pointer" }, stream, "답변을 받는 대로 표시 (스트리밍)"),
@@ -1153,15 +1250,22 @@ function showSettings() {
             anthropicKey.focus();
             return toast("일반 AI 모델(Claude)을 쓰려면 Claude API 키를 입력하세요.");
           }
+          if (mode.value === "openai" && !openaiKey.value.trim()
+              && (!c.openai_key_source || clearOpenai.checked)) {
+            openaiKey.focus();
+            return toast("일반 AI 모델(GPT)을 쓰려면 OpenAI API 키를 입력하세요.");
+          }
           const state = await api().save_settings({
             api_key: key.value.trim(), history_messages: hist.value, max_steps: steps.value, permission: perm.value,
             api_mode: mode.value, responses_url: url.value.trim(),
             chat_completions_url: compatibleUrl.value.trim(), server_models: serverModels,
             model: mode.value === "responses" ? responsesModel.value
-              : mode.value === "anthropic" ? claudeModel.value : compatibleModel.value,
+              : mode.value === "anthropic" ? claudeModel.value : mode.value === "openai" ? gptModel.value : compatibleModel.value,
             stream: stream.checked,
             anthropic_api_key: anthropicKey.value.trim(), anthropic_server_models: anthropicModels,
             clear_anthropic_key: clearAnthropic.checked && !anthropicKey.value.trim(),
+            openai_api_key: openaiKey.value.trim(), openai_server_models: openaiModels,
+            clear_openai_key: clearOpenai.checked && !openaiKey.value.trim(),
             update_check: autoUpdate.checked, developer_mode: devMode.checked,
             notion_token: notion.value.trim(), clear_notion: clearNotion.checked && !notion.value.trim(),
             firecrawl_key: firecrawl.value.trim(), clear_firecrawl: clearFirecrawl.checked && !firecrawl.value.trim(),
@@ -1174,7 +1278,7 @@ function showSettings() {
       },
     ],
   });
-  setTimeout(() => (mode.value === "anthropic" ? anthropicKey : key).focus(), 50);
+  setTimeout(() => (mode.value === "anthropic" ? anthropicKey : mode.value === "openai" ? openaiKey : key).focus(), 50);
 }
 
 /* ---------- 업데이트 ---------- */
@@ -1190,17 +1294,22 @@ function offerUpdate(update, attempts = 0) {
     h("p", { style: "margin:0 0 10px" }, `새 버전 ${update.version}을 쓸 수 있습니다. 지금 버전은 ${update.current || S.version}입니다.`),
     update.notes ? h("div", { class: "update-notes" }, renderMarkdown(update.notes)) : null,
     h("small", { style: "display:block;margin-top:10px;color:var(--text-3)" },
-      update.can_install ? "GitHub Releases에서 설치 파일을 받아 크기·SHA-256을 확인한 뒤 설치를 시작합니다. 대화·설정은 그대로 남습니다."
-        : "이 기기에서는 자동으로 설치할 수 없습니다. Releases 페이지에서 받아 설치하세요."));
+      update.store ? "Microsoft Store로 설치한 앱입니다. Store의 다운로드 및 업데이트(또는 POSCHAT 페이지)에서 업데이트하세요. " +
+        "새 버전은 Store 심사(보통 1~2일)를 거친 뒤 Store에 보입니다. 대화·설정은 그대로 남습니다."
+        : update.can_install ? "GitHub Releases에서 설치 파일을 받아 크기·SHA-256을 확인한 뒤 설치를 시작합니다. 대화·설정은 그대로 남습니다."
+          : "이 기기에서는 자동으로 설치할 수 없습니다. Releases 페이지에서 받아 설치하세요."));
   modal({
     title: "업데이트",
     body,
     buttons: [
       { label: "이 버전 건너뛰기", action: (close) => { api().skip_update(update.version); close(); } },
       { label: "나중에", value: null },
-      update.can_install
-        ? { label: "업데이트", class: "primary", action: (close) => { close(); startUpdate(update); } }
-        : { label: "Releases 열기", class: "primary", action: (close) => { api().open_release_page(); close(); } },
+      update.store
+        ? { label: "Microsoft Store 열기", class: "primary", action: async (close) => {
+          const r = await api().open_store_updates(); if (r && r.ok === false) toast(r.error); close(); } }
+        : update.can_install
+          ? { label: "업데이트", class: "primary", action: (close) => { close(); startUpdate(update); } }
+          : { label: "Releases 열기", class: "primary", action: (close) => { api().open_release_page(); close(); } },
     ],
   });
 }
@@ -1397,7 +1506,8 @@ const GUIDE = [
 - **OpenAI Responses API**: 콘솔의 \`.../a번호/openai/responses\` 주소를 넣고 GPT-5 계열 모델을 고릅니다.
 - **a1/gpt 단일 호출**: 예전 기본값입니다. 모델은 서버가 정합니다.
 - **일반 AI 모델 (Claude)** (1.11): 본인이 [Anthropic 콘솔](https://console.anthropic.com)에서 발급한 Claude API 키로 대화·에이전트·PO노트 노트 만들기 등 모든 모델 호출을 합니다. 요금은 그 키의 Anthropic 계정으로 청구되고 POSTECH 크레딧은 쓰지 않습니다. Claude Opus 5.5(권장)·Sonnet 5.5·Haiku 5.5·Fable 5.1 중에서 고르고, '모델 목록 불러오기'로 그 키로 쓸 수 있는 모델을 모두 받아 옵니다. PO노트의 서버 음성 보정과 크레딧 확인은 POSTECH 키가 있을 때만 씁니다.
-- OpenAI 호환·Responses·Claude 방식에서는 화면 위쪽 메뉴에서 대화별 모델을 지정합니다.
+- **일반 AI 모델 (GPT)** (1.18): 본인이 [OpenAI 플랫폼](https://platform.openai.com/api-keys)에서 발급한 OpenAI API 키로 모든 모델 호출을 합니다(OpenAI Responses API). 요금은 그 키의 OpenAI 계정으로 청구되고 POSTECH 크레딧은 쓰지 않습니다. **모델 목록 불러오기**로 그 키로 쓸 수 있는 GPT 모델을 받아 옵니다.
+- OpenAI 호환·Responses·Claude·GPT 방식에서는 화면 위쪽 메뉴에서 대화별 모델을 지정합니다.
 
 **답변을 받는 대로 표시(스트리밍)**를 켜면 일반 대화의 답변이 글자가 오는 대로 나옵니다. 표시가 이상하면 끄세요.`],
   ["크레딧 확인", `
@@ -1448,15 +1558,16 @@ Claude Sonnet 5.5 기준으로 1크레딧은 입력 약 250토큰, 출력 약 75
 - **제출·삭제·전송·업로드·결제·계정·로그인·비밀번호·다운로드·병합·리뷰 제출·권한 허용**과 **확인·동의·저장** 버튼은 설정과 관계없이 언제나 묻습니다. 파일 올리기는 하지 않습니다.
 - 브라우저 막대에 지금 하는 동작·횟수·시간이 보이고 **일시정지·계속·멈춤**을 누를 수 있습니다. 한 번에 40번·10분까지.
 - 비밀번호 칸의 값은 기록에 남기지 않습니다. 로그인·결제가 필요한 일은 직접 하세요.`],
-  ["코드: 전체 화면 코드 편집기 (1.15)", `
-작업 폴더를 고른 뒤 왼쪽 위 **코드**를 누르면 채팅 자리 전체에 파일 트리와 편집기가 열립니다(1.17.2부터 채팅과 나누어 띄우지 않음). 아래 패널 위 막대로 높이를 바꿉니다. 사이드바의 대화·새 채팅·다른 화면이나 오른쪽 위 ×로 돌아가고, 다시 **코드**를 누르면 열린 탭·저장하지 않은 내용이 그대로 있습니다.
+  ["코드: 편집기·터미널·SSH 서버 (1.15·1.18)", `
+작업 폴더를 고른 뒤 왼쪽 위 **코드**를 누르면 채팅 자리 전체에 파일 트리와 편집기가 열립니다(1.17.2부터 채팅과 나누어 띄우지 않음). 왼쪽 패널은 **파일·Git·변경 검토** 탭, 아래 패널은 **터미널**입니다(1.18). 아래 패널 위 막대로 높이를 바꿉니다. 사이드바의 대화·새 채팅·다른 화면이나 오른쪽 위 ×로 돌아가고, 다시 **코드**를 누르면 열린 탭·저장하지 않은 내용이 그대로 있습니다.
 
 - **파일**: 폴더를 펼쳐 파일을 탭으로 엽니다. 이름·내용 찾기, 새 파일·폴더, 이름 바꾸기, 지우기(데이터 폴더의 휴지통으로). 1MB가 넘는 파일은 읽기 전용입니다.
 - **편집**: 강조·줄 번호·찾기/바꾸기(Ctrl+F)·되돌리기, **Ctrl+S로 저장**. 인코딩·줄 끝(LF/CRLF)을 그대로 두고, 다른 프로그램이 파일을 바꿨으면 덮어쓰기 전에 묻습니다.
 - **AI에게 묻기**: 코드를 선택하고 **AI에게 묻기 ▾**에서 범위(선택·현재 함수/블록·파일·관련 파일)와 할 일(설명·오류 분석·성능·리팩터링·주석·테스트·RTL 검토)을 고르면 채팅으로 돌아가 경로·줄 번호가 붙은 첨부가 들어갑니다.
-- **변경 검토**: 코드 화면을 열어 두고 에이전트에게 고치게 하면, 승인 창 대신 덩어리마다 받아들이거나 거부합니다. 받아들이기 전에는 파일이 바뀌지 않습니다.
-- **Git**: 바뀐 파일·차이, 고른 파일만 스테이지, 스테이지한 변경 커밋, AI 변경 설명·리뷰·커밋 메시지 제안. 푸시는 하지 않습니다.
-- **실행**: 작업 폴더에서 명령을 실행합니다(매번 승인, 출력 실시간 표시, 중지). 작업 폴더는 시작 위치일 뿐 격리가 아닙니다. Verilator·iverilog는 설치돼 있으면 씁니다.
+- **변경 검토**(왼쪽 패널): 코드 화면을 열어 두고 에이전트에게 고치게 하면, 승인 창 대신 덩어리마다 받아들이거나 거부합니다. 받아들이기 전에는 파일이 바뀌지 않습니다.
+- **Git**(왼쪽 패널): 바뀐 파일·차이, 고른 파일만 스테이지, 스테이지한 변경 커밋, AI 변경 설명·리뷰·커밋 메시지 제안. 푸시는 하지 않습니다.
+- **터미널**(아래 패널, 1.18): 작업 폴더에서 진짜 셸(Windows PowerShell, macOS·Linux 로그인 셸)이 열립니다. vim·ssh 같은 대화형 프로그램도 됩니다. **+** 로 더 열고, **Ctrl+\`** 로 열고 접고, 글을 고르고 Ctrl+C로 복사, Ctrl+V로 붙여 넣습니다. **AI에게 묻기**는 고른 출력(없으면 끝부분)을 채팅에 첨부합니다. 직접 치는 셸이라 승인 창이 없고, 작업 폴더는 격리가 아닙니다.
+- **SSH**(위 오른쪽, 1.18): 서버(\`user@host\` 또는 ~/.ssh/config의 Host)에 연결하고 폴더를 고르면 파일·찾기·Git·터미널·Code 에이전트가 그 서버에서 돕니다. 처음 연결하는 서버는 지문을 확인하고, 암호·OTP는 물을 때만 넣습니다(저장하지 않음). 서버에는 python3만 있으면 됩니다. **SSH → 로컬 작업 폴더로**로 돌아옵니다.
 - 휴대폰 앱은 열기·강조·찾기·묻기·간단한 편집만 됩니다.`],
   ["논문: 채팅 옆 PDF 읽기 (1.14)", `
 왼쪽 위 **논문**을 누르면 채팅 오른쪽에 논문 화면이 열립니다. 가운데 막대를 끌어 너비를 바꿉니다.
@@ -1660,11 +1771,14 @@ function applyState(state) {
   S.config = state.config;
   S.dataDir = state.data_dir;
   S.version = state.version || "";
+  S.distribution = state.distribution || "github";
   S.models = state.models || [];
   S.responsesModels = state.responses_models || [];
   S.modelsSource = state.models_source || "builtin";
   S.anthropicModels = state.anthropic_models || [];
   S.anthropicModelsSource = state.anthropic_models_source || "builtin";
+  S.openaiModels = state.openai_models || [];
+  S.openaiModelsSource = state.openai_models_source || "builtin";
   S.memory = state.memory || [];
   S.defaultChatUrl = state.default_chat_completions_url || "";
   if (state.credit) S.credit = state.credit;
@@ -1790,8 +1904,9 @@ async function init() {
   const state = await api().get_state();
   applyState(state);
   S.busy = state.busy;
-  if (S.threads.length) await openThread(S.threads[0].id);
-  else await newThread();
+  // 시작할 때 첫 대화를 여는 동안 사용자가 이미 코드·Lab 등을 열었으면 그대로 둔다(닫으면 화면이 저절로 사라진다)
+  if (S.threads.length) await openThread(S.threads[0].id, false);
+  else await newThread(false);
   updateSend();
   if (!state.config.has_key) showSettings();
   // 새 버전 확인(설정에서 끌 수 있고 6시간에 한 번). 실패해도 사용에 지장이 없으므로 알리지 않는다.

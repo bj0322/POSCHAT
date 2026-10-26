@@ -16,7 +16,7 @@ import shlex
 import subprocess
 from pathlib import Path
 
-import code_runner
+from remote_fs import remote_ok
 
 INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md")
 MAX_INSTRUCTION_CHARS = 20000
@@ -31,6 +31,7 @@ class ProjectError(Exception):
 
 # ---- 지침·정보 ----
 
+@remote_ok
 def instructions(root):
     """[(파일 이름, 내용)] — 작업 폴더 맨 위의 AGENTS.md·CLAUDE.md(.claude/CLAUDE.md). 없으면 []."""
     out = []
@@ -46,6 +47,7 @@ def instructions(root):
     return out
 
 
+@remote_ok
 def detect_commands(root):
     """작업 폴더의 파일로 짐작한 테스트·빌드·린트 명령 [{kind, command, why}]. 실행하지 않는다."""
     root = Path(root)
@@ -97,6 +99,7 @@ def detect_commands(root):
     return out
 
 
+@remote_ok
 def git(root, *args, timeout=30, check=True, input_bytes=None):
     try:
         r = subprocess.run(["git", *args], cwd=str(root), capture_output=True, timeout=timeout, creationflags=_FLAGS,
@@ -110,6 +113,7 @@ def git(root, *args, timeout=30, check=True, input_bytes=None):
     return out
 
 
+@remote_ok
 def git_summary(root):
     """{branch, head, changed: [상태 줄], ahead} 또는 None(저장소 아님)."""
     try:
@@ -123,6 +127,7 @@ def git_summary(root):
     return {"branch": branch, "head": head, "changed": status[:40], "changed_count": len(status)}
 
 
+@remote_ok
 def context_block(root, extra_note=""):
     """에이전트 프롬프트에 붙일 [프로젝트 정보]·[프로젝트 지침] 글."""
     parts = []
@@ -169,10 +174,12 @@ SLASH_HELP = [
     ("/keep", "격리 작업을 브랜치로 남긴다(커밋해 두고 Git으로 합치기)"),
     ("/discard", "격리 작업 공간을 버린다"),
     ("/delete", "이 작업 기록을 지운다(파일은 그대로)"),
+    ("/report", "마지막 답변을 부적절한 응답으로 신고한다(GitHub 이슈)"),
 ]
 # 화면(web/code-agent.js)이 처리하는 명령. 백엔드로 오면 오류
 FRONT_COMMANDS = {"/help", "/clear", "/new", "/reset", "/resume", "/compact", "/undo", "/rewind", "/diff", "/revert", "/todos",
-                  "/mode", "/permissions", "/status", "/memory", "/apply", "/keep", "/discard", "/delete", "/worktree"}
+                  "/mode", "/permissions", "/status", "/memory", "/apply", "/keep", "/discard", "/delete", "/worktree",
+                  "/report"}
 BUILTIN_COMMANDS = FRONT_COMMANDS | {"/init", "/review", "/test", "/plan"}
 COMMAND_DIRS = (".poschat/commands", ".claude/commands")
 MAX_COMMAND_CHARS = 20000
@@ -189,6 +196,7 @@ REVIEW_PROMPT = (
     "결과는 심각도 순으로 '파일:줄 — 문제 — 왜 — 고치는 방법' 꼴로 쓰고, 문제가 없으면 없다고 쓰세요. 취향 문제는 따로 짧게.")
 
 
+@remote_ok
 def expand_slash(text, root):
     """(보낼 글, 이번 지시의 모드 또는 None). 화면에서만 다루는 명령(/undo /compact /new /help)은 ProjectError."""
     s = str(text or "").strip()
@@ -220,6 +228,7 @@ def expand_slash(text, root):
     raise ProjectError(f"모르는 명령입니다: {cmd} (/help로 목록을 보세요)")
 
 
+@remote_ok
 def custom_commands(root):
     """프로젝트 명령(Claude Code의 사용자 정의 슬래시 명령처럼): 작업 폴더의 .poschat/commands/*.md, .claude/commands/*.md.
     [{name, description, path, body}] — 파일 이름이 명령 이름(/이름), 본문의 $ARGUMENTS는 명령 뒤에 쓴 글로 바뀐다.
@@ -256,6 +265,7 @@ def custom_commands(root):
     return out
 
 
+@remote_ok
 def slash_help(root=None):
     """화면의 명령 목록: 내장 명령 + 프로젝트 명령."""
     items = [list(x) for x in SLASH_HELP]
@@ -271,6 +281,7 @@ MAX_MENTION_FILE = 100_000
 MAX_MENTION_TOTAL = 200_000
 
 
+@remote_ok
 def expand_mentions(text, root):
     """지시 속 @경로(작업 폴더 안의 파일·폴더)를 읽어 붙일 글로. (붙일 글, [상대 경로]).
     폴더는 목록만, 바이너리·너무 큰 파일은 빼고, 작업 폴더 밖·링크는 읽지 않는다. 이메일(a@b.com)은 건드리지 않는다."""
@@ -323,6 +334,7 @@ def expand_mentions(text, root):
 
 # ---- #메모: 프로젝트 지침 파일에 한 줄 더하기 ----
 
+@remote_ok
 def memory_file(root):
     """#메모를 더할 지침 파일 이름: 있는 것 중 AGENTS.md → CLAUDE.md → .claude/CLAUDE.md, 없으면 AGENTS.md(새로 만듦)."""
     for name in INSTRUCTION_FILES:
@@ -331,6 +343,7 @@ def memory_file(root):
     return "AGENTS.md"
 
 
+@remote_ok
 def memory_add(root, text):
     """지침 파일 끝에 '- 메모' 한 줄을 더한다(Claude Code의 # 메모처럼). 더한 파일 이름을 돌려준다."""
     import code_workspace as cw
@@ -352,6 +365,7 @@ def memory_add(root, text):
     return name
 
 
+@remote_ok
 def review_diff(root, limit=60000):
     """커밋하지 않은 변경(스테이지 포함)과 새 파일 목록."""
     try:
@@ -412,6 +426,8 @@ def rule_allows(rules, command):
     command = str(command or "").strip()
     if not command or CHAIN_RE.search(command):
         return False
+    import code_runner   # 앱 쪽에서만 쓴다(원격 도우미 묶음에는 code_runner가 없다)
+
     info = code_runner.analyze(command)
     if info.get("dangers") or info.get("network"):
         return False
@@ -425,12 +441,15 @@ def rule_allows(rules, command):
 
 def auto_run_ok(command):
     """'전체 자동'에서 묻지 않고 실행해도 되는지: 위험한 동작·네트워크가 없을 때."""
+    import code_runner
+
     info = code_runner.analyze(str(command or ""))
     return not info.get("dangers") and not info.get("network")
 
 
 # ---- 격리 작업 공간(git worktree) ----
 
+@remote_ok
 def worktree_create(root, path, branch):
     """root 저장소의 HEAD에서 브랜치를 만들어 path에 worktree를 연다. (기준 커밋) 반환."""
     if git_summary(root) is None:
@@ -443,6 +462,7 @@ def worktree_create(root, path, branch):
     return head
 
 
+@remote_ok
 def worktree_patch(path, base):
     """worktree의 모든 변경(새 파일 포함)을 base 기준 바이너리 패치로. 인덱스만 건드린다(작업 파일은 그대로)."""
     git(path, "add", "-A", timeout=60)
@@ -459,6 +479,7 @@ def patch_files(patch):
     return out
 
 
+@remote_ok
 def worktree_apply(root, patch):
     """패치를 원래 작업 폴더에 적용한다. 먼저 검사하고, 안 맞으면 3-way로 합쳐 본다. 3-way에서 겹치면(충돌 표시가 남으면)
     건드린 파일과 인덱스를 적용 전으로 되돌리고 오류 — 원래 폴더는 언제나 '다 적용' 아니면 '그대로'다."""
@@ -505,6 +526,7 @@ def worktree_apply(root, patch):
                            f"'브랜치로 남기기'로 커밋해 두고 Git으로 합칠 수 있습니다. ({str(e)[:200]})")
 
 
+@remote_ok
 def worktree_commit(path, message):
     """worktree의 모든 변경을 그 브랜치에 커밋한다. 사용자 Git 이름·메일이 없으면 POSCHAT 이름으로."""
     git(path, "add", "-A", timeout=60)
@@ -517,6 +539,7 @@ def worktree_commit(path, message):
     return True
 
 
+@remote_ok
 def worktree_remove(root, path, branch):
     git(root, "worktree", "remove", "--force", str(path), check=False, timeout=60)
     git(root, "worktree", "prune", check=False, timeout=30)

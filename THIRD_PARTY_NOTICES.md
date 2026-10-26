@@ -11,6 +11,7 @@ upstream notices and licenses.
 | `web/vendor/purify.min.js` | DOMPurify 3.1.6 | https://github.com/cure53/DOMPurify/tree/3.1.6 | [Apache-2.0 OR MPL-2.0](licenses/DOMPurify-LICENSE.txt) |
 | `web/vendor/katex/` (`katex.min.js`, `katex.min.css`, `fonts/*.woff2`) | KaTeX 0.16.22 | https://github.com/KaTeX/KaTeX/tree/v0.16.22 | [MIT](licenses/KaTeX-LICENSE.txt) |
 | `web/vendor/codemirror/codemirror.min.js` | CodeMirror 6 (`@codemirror/view` 6.43.15, `@codemirror/state` 6.7.6 and the language, search, command and theme packages listed in `licenses/codemirror/PACKAGES.txt`; Lezer parsers; `crelt`, `style-mod`, `w3c-keyname`, `@marijn/find-cluster-break`) | https://codemirror.net/ , https://github.com/codemirror , https://github.com/lezer-parser | [MIT, one license file per package](licenses/codemirror/PACKAGES.txt) |
+| `web/vendor/xterm/` (`xterm.js`, `xterm.css`, `addon-fit.js`) | xterm.js 6.0.0 (`@xterm/xterm`), fit addon 0.11.0 (`@xterm/addon-fit`) | https://github.com/xtermjs/xterm.js | [MIT](licenses/xterm-LICENSE.txt), [MIT](licenses/xterm-addon-fit-LICENSE.txt) |
 | `web/vendor/pdfjs/` (`pdf.min.js`, `pdf.worker.min.js`, `cmaps/`, `standard_fonts/`, `wasm/`) | PDF.js 6.4.299 (`pdfjs-dist`) | https://github.com/mozilla/pdf.js/tree/v6.4.299 | [Apache-2.0](licenses/pdf.js-LICENSE.txt); bundled fonts and decoders keep the license files next to them (`standard_fonts/LICENSE_FOXIT`, `LICENSE_LIBERATION`, `wasm/LICENSE_*`) |
 
 Marked and DOMPurify are bundled unchanged from the imported v1.1.0 source.
@@ -24,6 +25,9 @@ PDF.js files are copied unchanged from the `pdfjs-dist@6.4.299` npm package
 PDF scripting sandbox are left out because the app never runs PDF scripts); the two ES module
 builds are renamed from `.mjs` to `.js` so every platform's local file server
 serves them as JavaScript. Source maps are not included.
+
+xterm.js files (1.18, Code terminal) are copied unchanged from the `@xterm/xterm@6.0.0` (`lib/xterm.js`, `css/xterm.css`)
+and `@xterm/addon-fit@0.11.0` (`lib/addon-fit.js`) npm packages; source maps are not included.
 
 The CodeMirror bundle is built from the unmodified npm packages pinned in
 `tools/codemirror/package.json` (and `package-lock.json`) by `tools/codemirror/build.mjs`
@@ -71,11 +75,19 @@ document reading and the built-in Office MCP servers:
 | pywebview, bottle, proxy_tools | Desktop window | BSD-3-Clause, MIT, MIT |
 | pythonnet, clr_loader (Windows) / pyobjc (macOS) | pywebview platform backends | MIT |
 | CPython | The bundled Python interpreter | PSF-2.0 |
+| pywinpty (Windows) | Code terminal pseudo console (ConPTY; bundles winpty and Microsoft's OpenConsole/conpty) | MIT |
+| paramiko | SSH connection for remote work folders in the Code screen | LGPL-2.1-or-later |
+| bcrypt, PyNaCl (bundles libsodium), invoke (via paramiko) | SSH key decryption and signatures, paramiko helpers | Apache-2.0, Apache-2.0 (libsodium: ISC), BSD-2-Clause |
 | PyInstaller bootloader | Starts the bundled app | GPL-2.0-or-later with the PyInstaller bootloader exception |
 
 The desktop builds copy the license and notice files that each bundled
 Python package ships into `licenses/python/<package>-<version>/` inside the
 app. The app shows all of them under Settings → Third-party licenses.
+
+paramiko is used unmodified, as published on PyPI. Because POSCHAT itself is
+free software (AGPL-3.0-only) with its complete source and build scripts
+(`build_installer.py`) published, you can rebuild the app against a modified
+or newer paramiko, as the LGPL allows.
 
 The Android app bundles the Chaquopy runtime (MIT) with CPython 3.11
 (PSF-2.0), the Android builds of the Python packages above from the Chaquopy

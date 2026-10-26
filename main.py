@@ -34,9 +34,11 @@ from code_agent import CodeAgentApi
 from code_api import CodeApi
 from lab_api import LabApi
 from paper_api import PaperApi
+from ssh_api import SshApi
 from workspace_api import WorkspaceApi
 from agent import INIT_TASK, Agent, discover_skills, load_init, resource_dir
 from api import DEFAULT_MODEL, MODELS, RESPONSES_MODELS, ApiError, ApiSettings
+import version
 from version import APP_VERSION
 
 APP_TITLE = "POSCHAT"
@@ -97,10 +99,11 @@ def _installed_package_licenses():
     return sorted(items, key=lambda x: x["name"].lower())
 
 
-class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, AdaptiveApi):
+class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, LabApi, AdaptiveApi):
     """JS에서 호출하는 API. 밑줄로 시작하는 이름은 JS에 노출되지 않는다. '연결·도구' 창의 API는 WorkspaceApi,
     브라우저는 BrowserApi(1.13), 논문은 PaperApi(1.14), 코드 편집기는 CodeApi(1.15),
-    Code 에이전트는 CodeAgentApi(1.16), 실험 기록은 LabApi(1.16), AI 실행 정책·로컬 AI는 AdaptiveApi(1.17)에 있다."""
+    Code 에이전트는 CodeAgentApi(1.16), 실험 기록은 LabApi(1.16), AI 실행 정책·로컬 AI는 AdaptiveApi(1.17),
+    코드 화면의 원격(SSH) 작업 폴더는 SshApi(1.18)에 있다."""
 
     def __init__(self):
         storage.ensure_dirs()
@@ -193,10 +196,14 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
         return ws if ws and os.path.isdir(ws) else ""
 
     def _api_key(self):
-        """지금 API 방식이 쓰는 키. 일반 AI 모델(Claude)을 고르면 Claude(Anthropic) 키, 아니면(기본) POSTECH GenAI 키.
-
-        대화·에이전트·PO노트 노트 만들기·요약·평가 같은 모델 호출은 모두 이 키를 쓴다."""
-        return self._anthropic_key() if self._mode() == api.ANTHROPIC_MODE else self._postech_key()
+        """지금 API 방식이 쓰는 키. 일반 AI 모델(Claude)이면 Claude(Anthropic) 키, 일반 AI 모델(GPT)이면 OpenAI 키,
+        아니면(기본) POSTECH GenAI 키. 대화·에이전트·PO노트 노트 만들기·요약·평가 같은 모델 호출은 모두 이 키를 쓴다."""
+        mode = self._mode()
+        if mode == api.ANTHROPIC_MODE:
+            return self._anthropic_key()
+        if mode == api.OPENAI_MODE:
+            return self._openai_key()
+        return self._postech_key()
 
     def _postech_key(self):
         """POSTECH GenAI 키. 크레딧 확인과 PO노트의 서버 음성 인식은 API 방식과 관계없이 이 키를 쓴다."""
@@ -205,9 +212,14 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
     def _anthropic_key(self):
         return self._config.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
 
+    def _openai_key(self):
+        return self._config.get("openai_api_key") or os.environ.get("OPENAI_API_KEY", "")
+
     def _missing_key_error(self):
         if self._mode() == api.ANTHROPIC_MODE:
             return "Claude API 키가 없습니다. 설정 → API 방식 '일반 AI 모델 (Claude)'에서 키를 입력하세요."
+        if self._mode() == api.OPENAI_MODE:
+            return "OpenAI API 키가 없습니다. 설정 → API 방식 '일반 AI 모델 (GPT)'에서 키를 입력하세요."
         return "API 키가 없습니다. 설정에서 입력하세요."
 
     def _add(self, thread_id, role, content, **extra):
@@ -239,6 +251,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
         key_source = "settings" if self._config.get("api_key") else ("env" if os.environ.get("POSTECH_GENAI_API_KEY") else None)
         anthropic_source = "settings" if self._config.get("anthropic_api_key") else (
             "env" if os.environ.get("ANTHROPIC_API_KEY") else None)
+        openai_source = "settings" if self._config.get("openai_api_key") else ("env" if os.environ.get("OPENAI_API_KEY") else None)
         return {
             "threads": storage.list_threads(),
             "workspace": self._workspace_info(),
@@ -252,12 +265,14 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
                 "share_threads": self._config.get("share_threads", True),
                 "key_source": key_source,
                 "anthropic_key_source": anthropic_source,
+                "openai_key_source": openai_source,
                 "has_key": bool(self._api_key()),
                 "api_mode": self._mode(),
                 "responses_url": self._config.get("responses_url", ""),
                 "chat_completions_url": self._config.get("chat_completions_url", ""),
                 "model": self._config.get("model", DEFAULT_MODEL),
                 "anthropic_model": self._config.get("anthropic_model", api.DEFAULT_ANTHROPIC_MODEL),
+                "openai_model": self._config.get("openai_model", api.DEFAULT_OPENAI_MODEL),
                 "stream": self._config.get("stream", True),
                 "update_check": self._config.get("update_check", True),
                 "developer_mode": bool(self._config.get("developer_mode")),
@@ -268,12 +283,14 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
                     "env" if os.environ.get("FIRECRAWL_API_KEY") else None),
             },
             "data_dir": str(storage.APP_DIR),
-            "version": APP_VERSION,
+            "version": APP_VERSION, "distribution": version.distribution(),
             "models": [{"id": m, "label": label} for m, label in self._models("chat_completions")],
             "responses_models": [{"id": m, "label": label} for m, label in RESPONSES_MODELS],
             "models_source": "server" if self._config.get("server_models") else "builtin",
             "anthropic_models": [{"id": m, "label": label} for m, label in self._models(api.ANTHROPIC_MODE)],
             "anthropic_models_source": "server" if self._config.get("anthropic_server_models") else "builtin",
+            "openai_models": [{"id": m, "label": label} for m, label in self._models(api.OPENAI_MODE)],
+            "openai_models_source": "server" if self._config.get("openai_server_models") else "builtin",
             "memory": storage.load_memory(),
             "attach_limits": {"max_bytes": attachments.MAX_BYTES, "max_files": attachments.MAX_FILES},
             "default_chat_completions_url": api.DEFAULT_CHAT_COMPLETIONS_URL,
@@ -313,6 +330,9 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
         if mode == api.ANTHROPIC_MODE:
             server = [m for m in self._config.get("anthropic_server_models") or [] if isinstance(m, str) and m]
             return [(m, api.model_label(m)) for m in server] if server else api.ANTHROPIC_MODELS
+        if mode == api.OPENAI_MODE:
+            server = [m for m in self._config.get("openai_server_models") or [] if isinstance(m, str) and m]
+            return [(m, api.model_label(m)) for m in server] if server else api.OPENAI_MODELS
         server = [m for m in self._config.get("server_models") or [] if isinstance(m, str) and m]
         return [(m, api.model_label(m)) for m in server] if server else MODELS
 
@@ -322,8 +342,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
     def _default_model(self):
         mode = self._mode()
         allowed = self._models(mode)
-        configured = self._config.get(api.model_config_key(mode)) or (
-            api.DEFAULT_ANTHROPIC_MODEL if mode == api.ANTHROPIC_MODE else DEFAULT_MODEL)
+        configured = self._config.get(api.model_config_key(mode)) or api.default_model(mode)
         return configured if configured in {model_id for model_id, _ in allowed} else allowed[0][0]
 
     def rename_thread(self, thread_id, title):
@@ -374,6 +393,10 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
                 self._config["anthropic_api_key"] = settings["anthropic_api_key"].strip()
             if settings.get("clear_anthropic_key"):
                 self._config["anthropic_api_key"] = ""
+            if settings.get("openai_api_key"):
+                self._config["openai_api_key"] = settings["openai_api_key"].strip()
+            if settings.get("clear_openai_key"):
+                self._config["openai_api_key"] = ""
             if settings.get("notion_token"):
                 self._config["notion_token"] = settings["notion_token"].strip()
             if settings.get("clear_notion"):
@@ -407,6 +430,9 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
             anthropic_models = self._clean_models(settings.get("anthropic_server_models"))
             if anthropic_models:
                 self._config["anthropic_server_models"] = anthropic_models
+            openai_models = self._clean_models(settings.get("openai_server_models"))
+            if openai_models:
+                self._config["openai_server_models"] = openai_models
             if settings.get("model") in self._model_ids(self._mode()):
                 self._config[api.model_config_key(self._mode())] = settings["model"]
             if "stream" in settings:
@@ -445,6 +471,15 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
                 return {"ok": False, "error": "Claude API 키를 먼저 입력하세요."}
             try:
                 ids = api.list_anthropic_models(key)
+            except ApiError as e:
+                return {"ok": False, "error": f"모델 목록을 불러오지 못했습니다: {e}"}
+            return {"ok": True, "models": [{"id": m, "label": api.model_label(m)} for m in ids]}
+        if settings.get("api_mode") == api.OPENAI_MODE:
+            key = str(settings.get("openai_api_key") or "").strip() or self._openai_key()
+            if not key:
+                return {"ok": False, "error": "OpenAI API 키를 먼저 입력하세요."}
+            try:
+                ids = api.list_openai_models(key)
             except ApiError as e:
                 return {"ok": False, "error": f"모델 목록을 불러오지 못했습니다: {e}"}
             return {"ok": True, "models": [{"id": m, "label": api.model_label(m)} for m in ids]}
@@ -625,10 +660,13 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
             result["available"] = False
         result["can_install"] = bool(result["asset"]) and self._can_self_update()
         result["current"] = APP_VERSION
+        result["store"] = version.distribution() == "store"   # Store판: Store에서 업데이트하도록 안내만 한다
         return result
 
     @staticmethod
     def _can_self_update():
+        if version.distribution() == "store":
+            return False  # Store가 심사한 설치 파일만 설치되도록 스스로 받지 않는다(Store 정책 10.2.9)
         platform = updates.current_platform()
         if platform == "windows":
             return bool(getattr(sys, "frozen", False))  # 소스로 실행 중이면 설치 프로그램으로 바꿀 것이 없다
@@ -669,6 +707,14 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, LabApi, 
     def open_release_page(self):
         import webbrowser
         webbrowser.open(updates.RELEASES_PAGE)
+
+    def open_store_updates(self):
+        """Store판: Microsoft Store(제품 페이지 또는 다운로드 및 업데이트)를 연다."""
+        try:
+            open_path(updates.store_url())
+            return {"ok": True}
+        except OSError as e:
+            return {"ok": False, "error": f"Microsoft Store를 열지 못했습니다: {e}"}
 
     def download_update(self):
         """새 버전을 내려받아 설치를 시작한다. 진행은 {"type": "update"} 이벤트로 알린다."""
@@ -1296,9 +1342,11 @@ def selftest():
     config = storage.load_config()
     if config.get("api_mode") == api.ANTHROPIC_MODE:
         key = config.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
+    elif config.get("api_mode") == api.OPENAI_MODE:
+        key = config.get("openai_api_key") or os.environ.get("OPENAI_API_KEY", "")
     else:
         key = config.get("api_key") or os.environ.get("POSTECH_GENAI_API_KEY", "")
-    lines = [f"version: {APP_VERSION}",
+    lines = [f"version: {APP_VERSION}", f"distribution: {version.distribution()}",
              f"web: {(resource_dir() / 'web' / 'index.html').exists()}",
              f"skills: {len(discover_skills(config.get('workspace', '')))}"]
     try:
@@ -1337,6 +1385,15 @@ def selftest():
     import secret_store
     lines.append(f"secrets: {secret_store.backend_name()}")
     lines.append(f"stt: {stt.selfcheck()}")
+    import terminal
+    lines.append(f"terminal: {terminal.selfcheck()}")
+    import ssh_remote   # 1.18: paramiko와 암호 라이브러리(cryptography·bcrypt·pynacl)가 묶였는지
+    lines.append(f"ssh: {ssh_remote.selfcheck()}")
+    import remote_client   # 1.18: 서버로 보낼 원격 도우미 소스가 설치본에 들어 있는지
+    try:
+        lines.append(f"remote: OK {len(remote_client.bundle())} bytes")
+    except Exception as e:
+        lines.append(f"remote: FAIL {type(e).__name__}: {e}")
     import tempfile
     import rag
     import sync
@@ -1363,7 +1420,7 @@ def selftest():
             manager.shutdown()  # 서버가 임시 폴더를 쓰고 있으면 지울 수 없으므로 먼저 끈다
     try:
         settings = ApiSettings.from_config(config)
-        lines.append(f"api mode: {settings.mode}" + (f" ({settings.model})" if settings.mode in ("responses", api.ANTHROPIC_MODE) else ""))
+        lines.append(f"api mode: {settings.mode}" + (f" ({settings.model})" if settings.mode in ("responses", api.ANTHROPIC_MODE, api.OPENAI_MODE) else ""))
         reply = ask(key, "'정상'이라고 한 단어로만 답하세요.", settings=settings) if key else "(API 키 없음)"
         lines.append(f"api: OK {reply[:80]!r}")
     except ApiError as e:
@@ -1484,6 +1541,7 @@ def run_app():
         bridge._ca_shutdown()  # Code 에이전트 작업을 멈춘다
         bridge.adaptive_pull_cancel()  # 1.17: 받던 로컬 모델이 있으면 멈춘다(Ollama가 다음에 이어 받는다)
         bridge._code_shutdown()  # 실행 패널에서 돌던 명령을 끝낸다(프로세스가 남지 않게)
+        bridge._ssh_shutdown()  # 1.18: SSH 연결을 닫는다(서버의 도우미·명령도 함께 끝난다)
         bridge._mcp.shutdown()
         if bridge._browser_obj is not None:
             bridge._browser_obj.close()

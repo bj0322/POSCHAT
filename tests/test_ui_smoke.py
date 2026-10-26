@@ -527,6 +527,36 @@ class UiSmokeTests(unittest.TestCase):
                 browser.close()
                 self.bridge.save_settings({"api_mode": "chat_completions", "clear_anthropic_key": True})
 
+    def test_settings_switch_to_the_personal_gpt_api(self):
+        """1.18: 일반 AI 모델(GPT) — 내 OpenAI API 키. 키 없이는 저장하지 않고, 저장하면 대화 모델이 GPT 목록으로 바뀐다."""
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser, page, errors = self.open(p)
+            try:
+                page.evaluate("showSettings()")
+                mode = page.locator(".modal select").nth(0)
+                self.assertTrue(page.is_hidden("#openai-box"))
+                mode.select_option("openai")
+                page.wait_for_selector("#openai-box:not([hidden])")
+                self.assertTrue(page.is_hidden("text=Claude API 키 (Anthropic)"))
+                page.click(".modal-foot button.primary")
+                page.wait_for_selector("text=OpenAI API 키를 입력하세요")
+                page.fill("#openai-key", "sk-uitest-openai-0123456789")
+                page.select_option("#openai-model", "gpt-5-mini")
+                self.shot(page, "settings-gpt")
+                page.click(".modal-foot button.primary")
+                page.wait_for_selector(".modal", state="detached")
+                config = self.bridge._config
+                self.assertEqual((config["api_mode"], config["openai_model"]), ("openai", "gpt-5-mini"))
+                self.assertEqual(config["openai_api_key"], "sk-uitest-openai-0123456789")
+                self.assertNotIn("sk-uitest-openai", page.content())
+                page.wait_for_function("document.querySelector('#thread-model').value === 'gpt-5-mini'")
+                self.assertEqual(errors, [])
+            finally:
+                browser.close()
+                self.bridge.save_settings({"api_mode": "chat_completions", "clear_openai_key": True})
+
     def test_settings_show_the_license_source_and_third_party_licenses(self):
         from playwright.sync_api import sync_playwright
         from version import APP_VERSION

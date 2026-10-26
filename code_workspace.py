@@ -11,6 +11,9 @@
   폴더를 다시 검사하고, 원본의 권한 비트를 옮긴다.
 
 외부 변경 감지: 열 때 파일 내용의 SHA-256(base_hash)을 돌려주고, 저장할 때 디스크의 해시가 다르면 ConflictError를 낸다.
+
+원격(SSH) 작업 폴더(1.18): @remote_ok를 붙인 함수는 작업 폴더가 'ssh://…'이면 같은 함수를 서버의 원격 도우미에서 실행한다
+(remote_fs). 그래서 위 규칙이 서버의 파일 시스템에서 그대로 지켜진다. 이 파일은 도우미와 함께 서버로 가므로 Python 3.6에서도 돌아야 한다.
 """
 import codecs
 import errno
@@ -22,6 +25,9 @@ import stat
 import tempfile
 import time
 from pathlib import Path, PurePosixPath
+
+import remote_fs
+from remote_fs import remote_ok
 
 MAX_EDIT_BYTES = 1 * 1024 * 1024        # 이보다 큰 파일은 읽기 전용으로 연다
 MAX_OPEN_BYTES = 8 * 1024 * 1024        # 이보다 큰 파일은 열지 않는다(화면 메모리 보호)
@@ -84,11 +90,19 @@ def sha256(data):
 
 # ---- 경로 ----
 
+def path_of(workspace):
+    """작업 폴더 글 → 경로 객체: 원격이면 RPath, 로컬이면 Path(resolve하지 않는다)."""
+    p = remote_fs.path_of(workspace)
+    return p if isinstance(p, remote_fs.RPath) else Path(p)
+
+
+@remote_ok
 def _real(path):
     """심볼릭 링크·정션을 모두 따라간 실제 경로(없는 부분은 그대로 붙인다)."""
     return Path(os.path.realpath(os.fspath(path)))
 
 
+@remote_ok
 def root_of(workspace):
     if not workspace:
         raise WorkspaceError("작업 폴더가 지정되지 않았습니다. 사이드바 아래의 '작업 폴더'에서 폴더를 고르세요.")
@@ -125,6 +139,7 @@ def _inside(root, real):
     return real == root or root in real.parents
 
 
+@remote_ok
 def resolve(workspace, rel, must_exist=False, allow_root=True):
     """작업 폴더 안의 실제 경로. 링크가 밖을 가리키면 WorkspaceError."""
     root = root_of(workspace)
@@ -140,11 +155,13 @@ def resolve(workspace, rel, must_exist=False, allow_root=True):
     return real
 
 
+@remote_ok
 def rel_of(workspace, path):
     root = root_of(workspace)
     return Path(path).relative_to(root).as_posix() if Path(path) != root else ""
 
 
+@remote_ok
 def _is_link(path):
     """심볼릭 링크 또는 Windows 정션·재분석 지점."""
     try:
@@ -156,6 +173,7 @@ def _is_link(path):
 
 # ---- 목록 ----
 
+@remote_ok
 def list_dir(workspace, rel="", show_hidden=False, excludes=None):
     """폴더 한 단계만(파일 트리를 펼칠 때마다 부른다). 링크는 표시만 하고 따라가지 않는다."""
     excludes = set(DEFAULT_EXCLUDES if excludes is None else excludes)
@@ -189,6 +207,7 @@ def list_dir(workspace, rel="", show_hidden=False, excludes=None):
     return {"path": base, "items": items[:MAX_LIST_ENTRIES], "more": more, "excluded": skipped, "hidden": hidden}
 
 
+@remote_ok
 def walk_files(workspace, show_hidden=False, excludes=None, limit=MAX_SEARCH_FILES):
     """(상대 경로, 실제 경로)를 하나씩. 링크와 제외 폴더는 들어가지 않는다."""
     excludes = set(DEFAULT_EXCLUDES if excludes is None else excludes)
@@ -252,6 +271,7 @@ def looks_binary(raw):
     return control / len(head) > 0.1
 
 
+@remote_ok
 def _read_checked(path, root):
     """검사한 경로의 파일을 열고, 연 핸들이 작업 폴더 안의 그 파일인지 다시 확인한 뒤 바이트를 읽는다.
     (POSIX는 O_NOFOLLOW로 마지막 이름이 링크면 열지 않는다. Windows는 연 뒤에 실제 경로를 다시 확인한다.)"""
@@ -278,6 +298,7 @@ def _read_checked(path, root):
         os.close(fd)
 
 
+@remote_ok
 def read_file(workspace, rel):
     """편집기에 보낼 내용. text는 줄 끝을 \\n으로 맞춘 것이고, 저장할 때 newline으로 되돌린다."""
     path = resolve(workspace, rel, must_exist=True, allow_root=False)
@@ -304,6 +325,7 @@ def read_file(workspace, rel):
     return info
 
 
+@remote_ok
 def current_hash(workspace, rel):
     path = resolve(workspace, rel, allow_root=False)
     if not os.path.lexists(path):
@@ -338,6 +360,7 @@ def _default_mode():
 DEFAULT_MODE = _default_mode()  # 새 파일 권한(보통 0644). 시작할 때 한 번 읽는다(umask 읽기는 스레드에 안전하지 않다)
 
 
+@remote_ok
 def atomic_write(path, data, mode_from=None):
     """같은 폴더의 임시 파일에 쓰고 os.replace로 바꾼다. 실패하면 원본은 그대로이고 임시 파일은 지운다.
     원본의 권한을 옮기고(새 파일은 umask대로), 쓰기 권한이 없는(읽기 전용) 파일은 바꾸지 않는다."""
@@ -368,6 +391,7 @@ def atomic_write(path, data, mode_from=None):
         raise
 
 
+@remote_ok
 def write_file(workspace, rel, text, base_hash, encoding="utf-8", newline="\n", force=False):
     """편집기에서 저장. base_hash가 디스크와 다르면 ConflictError(force면 덮어쓴다). 새 해시와 정보를 돌려준다."""
     path = resolve(workspace, rel, allow_root=False)
@@ -391,6 +415,7 @@ def write_file(workspace, rel, text, base_hash, encoding="utf-8", newline="\n", 
     return {"path": clean, "hash": sha256(data), "size": st.st_size, "mtime": st.st_mtime}
 
 
+@remote_ok
 def create(workspace, rel, kind="file"):
     """새 파일(빈 파일)이나 폴더. 이미 있으면 거절한다."""
     clean = clean_rel(rel)
@@ -409,6 +434,7 @@ def create(workspace, rel, kind="file"):
     return {"path": clean, "dir": kind == "dir"}
 
 
+@remote_ok
 def _entry(workspace, clean):
     """이름 바꾸기·지우기 대상: 마지막 이름이 링크면 링크 자체(따라가지 않음). 어느 경우든 그 이름이 든 폴더의
     실제 경로가 작업 폴더 안이어야 한다(밖을 가리키는 폴더 링크를 거쳐 밖의 파일을 옮기지 못하게)."""
@@ -427,6 +453,7 @@ def _entry(workspace, clean):
     return path
 
 
+@remote_ok
 def rename(workspace, src, dst):
     """이름 바꾸기·옮기기(작업 폴더 안에서만, 덮어쓰지 않는다). 링크는 링크 자체의 이름을 바꾼다."""
     a, b = clean_rel(src), clean_rel(dst)
@@ -442,6 +469,7 @@ def rename(workspace, src, dst):
     return {"path": b}
 
 
+@remote_ok
 def delete_to_trash(workspace, rel, trash_dir):
     """파일을 앱의 휴지통 폴더로 옮긴다(되살릴 수 있게). 폴더는 비어 있을 때만 지운다."""
     clean = clean_rel(rel)
@@ -454,6 +482,8 @@ def delete_to_trash(workspace, rel, trash_dir):
         except OSError:
             raise WorkspaceError("비어 있지 않은 폴더는 지우지 않습니다. 안의 파일을 먼저 지우세요.")
         return {"path": clean, "trash": ""}
+    if not trash_dir:   # 원격(SSH) 작업 폴더: 서버의 ~/.cache/poschat/trash
+        trash_dir = os.path.join(os.path.expanduser("~"), ".cache", "poschat", "trash")
     dest = Path(trash_dir) / time.strftime("%Y%m%d-%H%M%S") / clean
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(path), str(dest))
@@ -462,6 +492,7 @@ def delete_to_trash(workspace, rel, trash_dir):
 
 # ---- 찾기 ----
 
+@remote_ok
 def search(workspace, query, mode="name", regex=False, case=False, show_hidden=False, excludes=None):
     """mode=name: 파일 이름·경로에 query가 든 파일. mode=text: 내용에서 찾기(1MB 이하 텍스트 파일)."""
     query = str(query or "")

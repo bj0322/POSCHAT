@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 "use strict";
 
-/* ---------- POSCHAT Code(1.15): 채팅 옆 코드 편집기 ----------
-   오른쪽 작업 영역(브라우저·논문과 같은 자리)에 파일 트리 + 편집기(CodeMirror 6, web/vendor/codemirror) + 아래 패널
-   (변경 검토 · Git · 실행)을 둔다. 파일 읽기·쓰기·Git·실행은 모두 Python(code_api.py)이 하고, 작업 폴더 밖에는 닿지 않는다.
-   화면을 닫거나 다른 화면(브라우저·논문)으로 바꿔도 열린 탭과 저장하지 않은 내용은 그대로 남는다(숨기기만 한다).
-   v1.16 Lab이 다시 쓸 수 있게 편집기(codeEditorTab)와 실행 패널(codeRunPanel)을 나눠 둔다. */
+/* ---------- POSCHAT Code(1.15): 코드 편집기 ----------
+   하나의 전체 화면(1.17.2)에 왼쪽 패널(파일 · Git · 변경 검토, 1.18) + 편집기(CodeMirror 6, web/vendor/codemirror) +
+   아래 패널(터미널, 1.18 — web/code-term.js)을 둔다. 작업 폴더는 로컬 폴더 또는 SSH 서버의 폴더(1.18 — web/code-ssh.js). 파일 읽기·쓰기·Git·터미널은 모두 Python(code_api.py)이 한다.
+   화면을 닫거나 다른 화면으로 바꿔도 열린 탭·저장하지 않은 내용·터미널은 그대로 남는다(숨기기만 한다).
+   v1.16 Lab이 다시 쓸 수 있게 편집기(codeEditorTab)를 나눠 둔다. */
 
 Object.assign(ICONS, {
   code: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m8 7-5 5 5 5"/><path d="m16 7 5 5-5 5"/><path d="m14 4-4 16"/></svg>',
@@ -24,8 +24,8 @@ Object.assign(ICONS, {
 
 const CODE = {
   open: false, state: null, tabs: [], active: null, seq: 0, tree: new Map(), expanded: new Set([""]),
-  bottom: "review", bottomOpen: true, git: null, gitBusy: false, gitPick: new Set(), runs: [], runOut: new Map(),
-  runShown: null, filesOpen: true, search: null, dark: false, ready: false, loadingTree: false,
+  side: "files", bottomOpen: true, git: null, gitBusy: false, gitPick: new Set(), runs: [],
+  filesOpen: true, search: null, dark: false, ready: false, loadingTree: false,
 };
 const CODE_PRESETS = [
   ["explain", "코드 설명"], ["bug", "오류 분석"], ["perf", "성능 개선"], ["refactor", "리팩터링 제안"],
@@ -124,6 +124,9 @@ function codeBuild(pane) {
       btn("files", "파일 목록 보이기·숨기기", () => codeToggleFiles(), { id: "code-files-toggle", "aria-pressed": "true" }),
       h("h2", { class: "code-title", id: "code-title" }, "코드"),
       h("small", { class: "code-ws", id: "code-ws" }, ""),
+      // 1.18: SSH 서버의 폴더를 작업 폴더로(web/code-ssh.js)
+      h("button", { class: "btn small code-ssh-btn", id: "code-ssh", type: "button", hidden: true,
+        title: "SSH 서버의 폴더를 코드 화면에서 엽니다", onclick: () => window.sshOpen && sshOpen() }, "SSH"),
       btn("close", "코드 화면 닫고 채팅으로", () => codeLeave())),
     h("div", { class: "code-body", id: "code-body" },
       h("aside", { class: "code-files", id: "code-files", "aria-label": "파일" }),
@@ -134,18 +137,23 @@ function codeBuild(pane) {
         h("div", { class: "code-stack", id: "code-stack" }),
         h("div", { class: "code-statusbar", id: "code-statusbar" }))),
     bottomResizer,
+    // 1.18: 아래 패널은 터미널(web/code-term.js). 변경 검토·Git은 왼쪽 패널의 탭으로 옮겼다
     h("div", { class: "code-bottom", id: "code-bottom" },
-      h("div", { class: "code-bottom-tabs", role: "tablist", "aria-label": "아래 패널" },
-        ...[["review", "변경 검토"], ["git", "Git"], ["run", "실행"]].map(([k, label]) =>
-          h("button", { class: "code-btab", role: "tab", "data-k": k, id: `code-btab-${k}`, onclick: () => codeBottom(k) }, label)),
+      h("div", { class: "code-bottom-tabs", role: "tablist", "aria-label": "터미널" },
+        h("button", { class: "code-bottom-title", type: "button", title: "터미널 열기·접기 (Ctrl+`)", onclick: () => codeBottom("terminal", true) }, "터미널"),
+        h("div", { class: "code-term-tabs", id: "code-term-tabs" }),
+        btn("plus", "새 터미널", () => window.termNew && termNew(), { id: "code-term-new" }),
+        h("button", { class: "btn small", id: "code-term-ask", type: "button", title: "고른 출력(없으면 끝부분)을 채팅에 첨부합니다",
+          onclick: () => window.termAsk && termAsk() }, "AI에게 묻기"),
         h("span", { style: "flex:1" }),
-        btn("minus", "아래 패널 접기·펴기", () => codeBottom(CODE.bottom, true), { id: "code-bottom-toggle" })),
+        btn("minus", "아래 패널 접기·펴기 (Ctrl+`)", () => codeBottom("terminal", true), { id: "code-bottom-toggle" })),
       h("div", { class: "code-bottom-body", id: "code-bottom-body" })));
 }
 
 function codeSetBottom(px) {
   const h0 = Math.round(Math.min(window.innerHeight * 0.7, Math.max(90, px)));
   document.documentElement.style.setProperty("--code-bottom-h", h0 + "px");
+  if (window.termFit) requestAnimationFrame(() => termFit());
   try { localStorage.setItem("poschat.codeBottom", String(h0)); } catch { /* 무시 */ }
 }
 
@@ -204,9 +212,15 @@ async function codeRefreshState() {
   const changed = CODE.state && CODE.state.workspace.path !== st.workspace.path;
   CODE.state = st;
   CODE.runs = st.runs || [];
-  $("#code-ws").textContent = st.workspace.name ? `· ${st.workspace.name}` : "";
-  $("#code-ws").title = st.workspace.path || "";
-  for (const k of ["git", "run"]) $(`#code-btab-${k}`).hidden = !codeFeature(k);
+  const remote = st.remote;
+  const ws = $("#code-ws");
+  ws.textContent = remote ? `· SSH ${remote.label}` : st.workspace.name ? `· ${st.workspace.name}` : "";
+  ws.title = remote ? `${remote.label} (${remote.connected ? "연결됨" : "연결 안 됨"})` : st.workspace.path || "";
+  ws.classList.toggle("remote", !!remote);
+  ws.classList.toggle("offline", !!remote && !remote.connected);
+  $("#code-ssh").hidden = !codeFeature("ssh");
+  $("#code-ssh").classList.toggle("active", !!remote);
+  if (CODE.side !== "files" && !codeFeature(CODE.side)) CODE.side = "files";
   if (changed) {
     if (CODE.tabs.some((t) => t.kind === "file" && t.editor.isDirty())) {
       toast("작업 폴더가 바뀌었습니다. 저장하지 않은 탭은 그대로 둡니다(예전 폴더의 파일)");
@@ -219,20 +233,39 @@ async function codeRefreshState() {
     CODE.git = null;
   }
   codeRenderFiles();
-  if (st.workspace.path && !CODE.tree.has("")) codeLoadDir("");
-  codeBottom(codeFeature(CODE.bottom) || CODE.bottom === "review" ? CODE.bottom : "review");
+  if (codeWsReady() && !CODE.tree.has("")) codeLoadDir("");
+  // 아래 터미널: 사용자가 접어 두었으면 그대로, 펼쳐져 있으면 터미널을 연다(이미 있으면 다시 붙인다)
+  $("#code-pane").classList.toggle("bottom-closed", !CODE.bottomOpen);
+  if (CODE.bottomOpen && CODE.open && window.termEnsure && (codeWsReady() || !st.remote)) termEnsure();
   codeRenderTabs();
 }
 
 /* ---------- 파일 트리 ---------- */
 
+/* 작업 폴더를 쓸 수 있는지(원격이면 연결돼 있어야 한다) */
+function codeWsReady() {
+  const st = CODE.state;
+  return !!(st && st.workspace.path && (!st.remote || st.remote.connected));
+}
+
 function codeRenderFiles() {
   const box = $("#code-files");
   const st = CODE.state;
+  if (st && st.remote && !st.remote.connected) {   // 1.18: 원격 작업 폴더인데 연결이 없다
+    const r = st.remote;
+    box.replaceChildren(h("div", { class: "code-nows" },
+      h("p", {}, h("b", {}, `SSH: ${r.label}`), h("br"),
+        r.state === "connecting" ? "연결 중입니다…" : "서버에 연결돼 있지 않습니다. 다시 연결하면 파일·Git·터미널을 쓸 수 있습니다."),
+      r.message && r.state !== "connecting" ? h("p", { class: "muted" }, r.message) : null,
+      h("button", { class: "btn primary", id: "code-ssh-reconnect", disabled: r.state === "connecting", onclick: () => sshReconnect() }, "다시 연결"),
+      h("button", { class: "btn", onclick: () => sshLocal() }, "로컬 작업 폴더로")));
+    return;
+  }
   if (!st || !st.workspace.path) {
     box.replaceChildren(h("div", { class: "code-nows" },
       h("p", {}, "작업 폴더를 먼저 고르세요. 코드 화면은 작업 폴더 안의 파일만 열고 저장합니다."),
-      h("button", { class: "btn primary", onclick: async () => { await chooseWorkspace(); codeRefreshState(); } }, "작업 폴더 고르기")));
+      h("button", { class: "btn primary", onclick: async () => { await chooseWorkspace(); codeRefreshState(); } }, "작업 폴더 고르기"),
+      codeFeature("ssh") ? h("button", { class: "btn", onclick: () => sshOpen() }, "SSH 서버의 폴더 열기") : null));
     return;
   }
   const tool = (icon, label, onclick, extra = {}) => h("button", { class: "icon-btn", title: label, "aria-label": label,
@@ -246,7 +279,14 @@ function codeRenderFiles() {
     if (e.key === "Escape") { q.value = ""; CODE.search = null; codeRenderTree(); }
   });
   const hidden = st.settings.show_hidden;
-  box.replaceChildren(
+  const side = codeSideTabs();
+  if (CODE.side !== "files") {   // 1.18: 왼쪽 패널의 Git·변경 검토
+    box.replaceChildren(side, h("div", { class: "code-side-body", id: "code-side-body" }));
+    if (CODE.side === "git") codeRenderGit(!CODE.git);
+    else codeRenderReviewList();
+    return;
+  }
+  box.replaceChildren(side,
     h("div", { class: "code-files-bar" },
       tool("plus", "새 파일", () => codeNew("file")),
       tool("folderplus", "새 폴더", () => codeNew("dir")),
@@ -257,6 +297,21 @@ function codeRenderFiles() {
     h("div", { class: "code-search-row" }, q, mode),
     h("div", { class: "code-tree", id: "code-tree", role: "tree", "aria-label": "작업 폴더 파일" }));
   codeRenderTree();
+}
+
+function codeSideTabs() {
+  const n = ((CODE.state && CODE.state.proposals) || []).filter((p) => p.status === "pending").length;
+  const tab = (k, label) => h("button", { class: "code-stab" + (CODE.side === k ? " active" : ""), role: "tab", id: `code-side-${k}`,
+    "aria-selected": String(CODE.side === k), hidden: k !== "files" && !codeFeature(k), onclick: () => codeSide(k) }, label);
+  return h("div", { class: "code-side-tabs", role: "tablist", "aria-label": "왼쪽 패널" },
+    tab("files", "파일"), tab("git", "Git"), tab("review", n ? `변경 검토 (${n})` : "변경 검토"));
+}
+
+/* 왼쪽 패널: 파일 · Git · 변경 검토 */
+function codeSide(k) {
+  CODE.side = k;
+  if (!CODE.filesOpen) codeToggleFiles(true);
+  codeRenderFiles();
 }
 
 async function codeLoadDir(path) {
@@ -772,33 +827,28 @@ async function codePickFiles(current, max) {
   return paths;
 }
 
-/* ---------- 아래 패널 ---------- */
+/* ---------- 아래 패널(1.18: 터미널) ---------- */
 
-function codeBottom(k, toggle = false) {
-  if (toggle && k === CODE.bottom) CODE.bottomOpen = !CODE.bottomOpen;
-  else { CODE.bottom = k; CODE.bottomOpen = true; }
+function codeBottom(k = "terminal", toggle = false) {
+  if (k === "git" || k === "review") return codeSide(k);   // 예전 이름: 왼쪽 패널로 옮겼다
+  CODE.bottomOpen = toggle ? !CODE.bottomOpen : true;
   $("#code-pane").classList.toggle("bottom-closed", !CODE.bottomOpen);
-  for (const b of document.querySelectorAll(".code-btab")) {
-    b.classList.toggle("active", b.dataset.k === CODE.bottom);
-    b.setAttribute("aria-selected", String(b.dataset.k === CODE.bottom));
-  }
-  codeRenderReviewBadge();
-  if (k === "review") codeRenderReviewList();
-  else if (k === "git") codeRenderGit(true);
-  else if (k === "run") codeRunPanel($("#code-bottom-body"));
+  // 사용자가 연 것이면(Ctrl+`·제목 누름) 터미널로 초점을 옮긴다
+  if (CODE.bottomOpen && CODE.open && window.termEnsure) termEnsure().then(() => { if (toggle && window.termFocus) termFocus(); });
 }
 
 /* ---------- 변경 검토 ---------- */
 
 function codeRenderReviewBadge() {
   const n = ((CODE.state && CODE.state.proposals) || []).filter((p) => p.status === "pending").length;
-  const tab = $("#code-btab-review");
+  const tab = $("#code-side-review");
   if (tab) tab.textContent = n ? `변경 검토 (${n})` : "변경 검토";
 }
 
 function codeRenderReviewList() {
-  if (CODE.bottom !== "review") return;
-  const body = $("#code-bottom-body");
+  if (CODE.side !== "review") return;
+  const body = $("#code-side-body");
+  if (!body) return;
   const list = (CODE.state && CODE.state.proposals) || [];
   if (!codeFeature("review")) {
     body.replaceChildren(h("p", { class: "muted code-empty" }, "이 기기에서는 덩어리별 검토를 쓰지 않습니다. 에이전트 수정은 승인 창에서 전체를 받아들이거나 거부합니다."));
@@ -954,11 +1004,12 @@ async function codeGitRefresh(quiet = false) {
     CODE.gitBusy = false;
   }
   codeRenderTree();
-  if (CODE.bottom === "git") codeRenderGit(false);
+  if (CODE.side === "git") codeRenderGit(false);
 }
 
 function codeRenderGit(load) {
-  const body = $("#code-bottom-body");
+  const body = $("#code-side-body");
+  if (!body || CODE.side !== "git") return;
   if (!codeFeature("git")) {
     body.replaceChildren(h("p", { class: "muted code-empty" }, CODE.state && CODE.state.platform === "android"
       ? "안드로이드에서는 Git 기능을 쓸 수 없습니다." : "git이 설치되어 있지 않습니다. https://git-scm.com 에서 설치하세요."));
@@ -1074,126 +1125,10 @@ async function codeGitCommit(message) {
   codeGitRefresh();
 }
 
-/* ---------- 실행 패널(v1.16 Lab에서도 쓴다) ---------- */
-
-function codeRunPanel(body) {
-  if (!codeFeature("run")) {
-    body.replaceChildren(h("p", { class: "muted code-empty" }, "이 기기에서는 명령을 실행할 수 없습니다(PC 앱에서 쓰세요)."));
-    return;
-  }
-  const st = CODE.state;
-  const input = h("input", { type: "text", class: "code-input code-cmd", id: "code-cmd", list: "code-cmd-history",
-    placeholder: "명령 (예: python -m pytest, verilator --lint-only -Wall design.sv)", "aria-label": "실행할 명령",
-    spellcheck: "false", autocomplete: "off" });
-  if (CODE.cmdDraft) input.value = CODE.cmdDraft;
-  input.addEventListener("input", () => { CODE.cmdDraft = input.value; });
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); codeRun(input.value); } });
-  const history = h("datalist", { id: "code-cmd-history" }, ...(st.history || []).map((c) => h("option", { value: c })));
-  const tools = h("div", { class: "code-tools", id: "code-tools" });
-  const runs = CODE.runs.slice(0, 8);
-  const shown = CODE.runs.find((r) => r.id === CODE.runShown) || runs[0];
-  body.replaceChildren(h("div", { class: "code-run" },
-    h("div", { class: "code-run-row" }, input, history,
-      h("button", { class: "btn primary", id: "code-run", onclick: () => codeRun(input.value) }, h("span", { html: ICONS.play }), "실행")),
-    h("p", { class: "muted code-run-note" }, `${st.shell} · 작업 폴더에서 시작합니다. 작업 폴더는 시작 위치일 뿐 격리(샌드박스)가 아닙니다. 실행할 때마다 승인합니다.`),
-    tools,
-    runs.length ? h("div", { class: "code-runs" }, ...runs.map((r) => h("button", { class: "code-run-chip" + (shown && r.id === shown.id ? " active" : ""),
-      title: r.command, onclick: () => { CODE.runShown = r.id; codeRunPanel(body); } },
-      h("span", { class: `code-badge run-${r.status}` }, codeRunLabel(r)), r.command.slice(0, 40)))) : null,
-    shown ? codeRunView(shown) : h("p", { class: "muted code-empty" }, "실행 기록이 없습니다.")));
-  codeLoadTools(tools);
-}
+/* ---------- 명령 실행 기록(에이전트·Lab의 실행 알림) ---------- */
 
 function codeRunLabel(r) {
   return { running: "실행 중", stopping: "멈추는 중", done: `완료 ${r.code}`, failed: `실패 ${r.code}`, stopped: "멈춤", timeout: "시간 초과", error: "오류" }[r.status] || r.status;
-}
-
-function codeRunView(r) {
-  const out = h("pre", { class: "code-run-out", id: "code-run-out", tabindex: "0", "aria-label": "명령 출력" }, CODE.runOut.get(r.id) || "");
-  if (!CODE.runOut.has(r.id) && r.status !== "running") {
-    codeCall(api().code_run_get(r.id), true).then((res) => {
-      if (!res) return;
-      CODE.runOut.set(r.id, res.run.output_tail || "");
-      Object.assign(r, res.run);
-      if ($("#code-run-out") === out) { out.textContent = res.run.output_tail || "(출력 없음)"; codeRunLocations(r); }
-    });
-  }
-  setTimeout(() => { out.scrollTop = out.scrollHeight; }, 0);
-  return h("div", { class: "code-run-view", "data-run": r.id },
-    h("div", { class: "code-run-head" },
-      h("code", {}, r.command),
-      h("span", { class: "muted", id: "code-run-meta" }, codeRunMeta(r)),
-      r.status === "running" ? h("button", { class: "btn danger", id: "code-stop", onclick: () => api().code_run_stop(r.id) }, "중지") : null,
-      h("button", { class: "btn", title: "출력 끝부분과 명령을 채팅에 첨부합니다", onclick: () => codeRunAsk(r) }, "AI에게 출력 묻기")),
-    out,
-    h("div", { class: "code-locs", id: "code-locs" }));
-}
-
-function codeRunMeta(r) {
-  const secs = r.status === "running" ? ((Date.now() / 1000 - r.started).toFixed(0) + "초째") : `${r.seconds}초`;
-  return `${codeRunLabel(r)} · ${secs}${r.truncated ? " · 출력 일부만" : ""}${r.inputs && r.inputs.length ? " · 입력: " + r.inputs.join(", ") : ""}`;
-}
-
-function codeRunLocations(r) {
-  const box = $("#code-locs");
-  if (!box || !r.locations) return;
-  box.replaceChildren(...r.locations.slice(0, 12).map((loc) => h("button", { class: "code-loc", title: loc.text,
-    onclick: () => codeOpenFile(loc.path, loc.line, loc.col) }, `${loc.path}:${loc.line}`)));
-}
-
-async function codeLoadTools(box) {
-  if (!CODE.tools) {
-    const res = await codeCall(api().code_tools(), true);
-    CODE.tools = res ? res.tools : [];
-  }
-  const found = CODE.tools.filter((t) => t.path);
-  const rtl = ["verilator", "iverilog", "yosys"].filter((n) => !found.some((t) => t.name === n));
-  box.replaceChildren(
-    h("span", { class: "muted" }, "설치된 도구: "),
-    ...found.slice(0, 10).map((t) => h("button", { class: "code-tool", title: `${t.path}\n예: ${t.example}`,
-      onclick: () => { const i = $("#code-cmd"); i.value = t.example; CODE.cmdDraft = t.example; i.focus(); } }, t.name)),
-    rtl.length ? h("span", { class: "muted" }, ` · 없음: ${rtl.join(", ")} (POSCHAT에 들어 있지 않습니다. 쓰려면 직접 설치하세요)`) : null);
-}
-
-async function codeRun(command) {
-  command = String(command || "").trim();
-  if (!command) return toast("실행할 명령을 입력하세요");
-  const check = await codeCall(api().code_run_check(command));
-  if (!check) return;
-  const purpose = h("input", { type: "text", class: "code-input", placeholder: "무엇을 하려는지(선택, 기록에 남깁니다)", "aria-label": "실행 목적" });
-  const ok = await codeChoose("명령 실행 승인", h("div", { class: "code-approve" },
-    h("p", {}, "다음 명령을 실행합니다."),
-    h("pre", { class: "diff" }, h("div", {}, `${check.cwd}>\n${check.command}`)),
-    h("p", { class: "muted" }, `셸: ${check.shell} · 제한 시간 ${check.timeout}초${check.inputs.length ? " · 입력 파일: " + check.inputs.join(", ") : ""}`),
-    check.network ? h("p", { class: "code-warn" }, "이 명령은 인터넷(네트워크)을 쓸 수 있습니다.") : null,
-    check.dangers.length ? h("div", { class: "code-warn" }, h("strong", {}, "위험할 수 있는 동작"), h("ul", {}, ...check.dangers.map((d) => h("li", {}, d)))) : null,
-    h("p", { class: "muted" }, "작업 폴더는 명령이 시작하는 위치일 뿐 보안 격리가 아닙니다. 명령은 내 계정 권한으로 PC의 다른 파일에도 닿을 수 있습니다. API 키 같은 비밀 환경 변수는 넘기지 않고, 출력에 보이는 비밀은 가립니다."),
-    purpose),
-  [{ label: "취소", value: false }, { label: "실행", class: check.dangers.length ? "danger" : "primary", value: true }]);
-  if (!ok) return;
-  const res = await codeCall(api().code_run_start(command, check.token, purpose.value));
-  if (!res) return;
-  CODE.runs = [res.run, ...CODE.runs.filter((r) => r.id !== res.run.id)];
-  CODE.runShown = res.run.id;
-  CODE.runOut.set(res.run.id, CODE.runOut.get(res.run.id) || "");
-  CODE.cmdDraft = "";
-  if (!(CODE.state.history || []).includes(command)) CODE.state.history = [command, ...(CODE.state.history || [])].slice(0, 30);
-  if (CODE.bottom === "run") codeRunPanel($("#code-bottom-body"));
-}
-
-async function codeRunAsk(r) {
-  if (S.attach.length >= S.attachLimits.max_files) return toast(`파일은 한 번에 ${S.attachLimits.max_files}개까지 첨부할 수 있습니다`);
-  const res = await codeCall(api().code_run_ask(r.id));
-  if (!res) return;
-  for (const a of res.attachments) S.attach.push({ id: a.id, name: a.name, size: a.size, kind: a.kind, status: "ready", progress: 1 });
-  renderTray();
-  const input = $("#input");
-  if (!input.value.trim()) input.value = res.question;
-  autoresize();
-  updateSend();
-  if (isNarrow()) codeLeave();
-  input.focus();
-  toast("실행 출력을 첨부했습니다");
 }
 
 /* ---------- 백엔드 이벤트 ---------- */
@@ -1213,7 +1148,7 @@ function codeEvent(ev) {
     const tab = CODE.tabs.find((t) => t.kind === "review" && t.proposalId === ev.proposal.id);
     if (tab && tab.data && tab.data.status !== ev.proposal.status) codeOpenReview(ev.proposal.id);
     if (ev.proposal.status === "pending" && ev.new !== false && CODE.open) {
-      codeBottom("review");
+      codeSide("review");
       codeOpenReview(ev.proposal.id);
       toast(`에이전트가 ${ev.proposal.path}을(를) 고치려고 합니다. 덩어리를 골라 적용하세요`);
     }
@@ -1229,36 +1164,38 @@ function codeEvent(ev) {
     const i = CODE.runs.findIndex((x) => x.id === r.id);
     if (i >= 0) CODE.runs[i] = r; else CODE.runs.unshift(r);
     if (ev.kind === "run_exit") {
-      if (CODE.open && CODE.bottom === "run" && (CODE.runShown === r.id || !CODE.runShown)) codeRunPanel($("#code-bottom-body"));
-      setTimeout(() => codeRunLocations(r), 0);
       codeGitRefresh(true);
-      // 1.17.2: 에이전트·! 명령의 결과는 작업 탭(터미널)에 보이므로, 그 탭을 보고 있으면 알리지 않는다
+      // 1.17.2: 에이전트·! 명령의 결과는 작업 탭에 보이므로, 그 탭을 보고 있으면 알리지 않는다
       const inTerminal = String(r.purpose || "").startsWith("Code 에이전트") && window.caVisible && caVisible();
-      if ((!CODE.open || CODE.bottom !== "run") && !inTerminal) toast(`명령이 끝났습니다: ${codeRunLabel(r)}`);
+      if (!inTerminal) toast(`명령이 끝났습니다: ${codeRunLabel(r)}`);
     }
-  } else if (ev.kind === "run_output") {
-    let text = (CODE.runOut.get(ev.id) || "") + ev.text;
-    if (text.length > 2 * 1024 * 1024) text = text.slice(-1024 * 1024);
-    CODE.runOut.set(ev.id, text);
-    const out = $("#code-run-out");
-    if (out && out.closest(".code-run-view")?.dataset.run === ev.id) {
-      const atEnd = out.scrollHeight - out.scrollTop - out.clientHeight < 30;
-      out.textContent = text;
-      if (atEnd) out.scrollTop = out.scrollHeight;
-      const meta = $("#code-run-meta");
-      const r = CODE.runs.find((x) => x.id === ev.id);
-      if (meta && r) meta.textContent = codeRunMeta(r);
-    }
+  } else if (ev.kind === "term_output" || ev.kind === "term_exit") {
+    if (window.termEvent) termEvent(ev);
+  } else if (ev.kind && ev.kind.startsWith("ssh_")) {
+    if (window.sshEvent) sshEvent(ev);
   }
 }
 
 function codeInit() {
   const media = window.matchMedia("(prefers-color-scheme: dark)");
   CODE.dark = media.matches;
-  const onTheme = () => { CODE.dark = media.matches; for (const t of CODE.tabs) if (t.editor) t.editor.setDark(CODE.dark); };
+  const onTheme = () => {
+    CODE.dark = media.matches;
+    for (const t of CODE.tabs) if (t.editor) t.editor.setDark(CODE.dark);
+    if (window.termSetTheme) termSetTheme();
+  };
   if (media.addEventListener) media.addEventListener("change", onTheme);
   $("#btn-code")?.addEventListener("click", () => codeToggle());
   window.addEventListener("focus", () => { if (CODE.open) codeCheckDisk(); });
+  // 1.18: Ctrl+` 터미널 열기·접기(VS Code처럼), 창 크기가 바뀌면 터미널 폭을 다시 맞춘다
+  document.addEventListener("keydown", (e) => {
+    if (!CODE.open || !e.ctrlKey || e.altKey || e.metaKey || e.code !== "Backquote") return;
+    if (e.target && e.target.closest && e.target.closest(".code-term")) return;   // 터미널 안에서는 code-term.js가 처리
+    e.preventDefault();
+    codeBottom("terminal", true);
+  });
+  let fitTimer = null;
+  window.addEventListener("resize", () => { clearTimeout(fitTimer); fitTimer = setTimeout(() => window.termFit && termFit(), 80); });
 }
 
 window.codeShow = codeShow;

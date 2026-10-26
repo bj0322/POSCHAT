@@ -921,6 +921,12 @@ async function caLocalSlash(text) {
       CA.task = null;
       await caSend(arg, null, true);
       return true;
+    case "/report": {   // 1.18: 마지막 답변을 부적절한 응답으로 신고(GitHub 이슈, app.js의 reportAiResponse)
+      const last = task && [...(task.turns || [])].reverse().find((t) => t.role === "assistant" && !t.compacted);
+      if (!last) { caPrint("신고할 답변이 없습니다.", "error"); return true; }
+      if (window.reportAiResponse) reportAiResponse({ content: last.text, model: (CA.state && CA.state.model) || "" });
+      return true;
+    }
     case "/delete":
       if (need() || idle()) return true;
       caAsk({ kind: "delete", title: `'${task.title}' 작업 기록을 지울까요?`, question: "작업 폴더의 파일은 그대로 둡니다(되돌리기용 백업은 지워집니다).",

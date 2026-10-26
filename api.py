@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Beomjoon Kim
 # SPDX-License-Identifier: AGPL-3.0-only
-"""모델 API 호출: POSTECH GenAI와 개인 Claude API(Anthropic).
+"""모델 API 호출: POSTECH GenAI와 개인 Claude API(Anthropic)·개인 GPT API(OpenAI).
 
-네 가지 방식을 지원한다.
+다섯 가지 방식을 지원한다.
 - chat_completions(기본): POSTECH GenAI의 OpenAI 호환 Chat Completions(`.../agent/openai_compatible/a1/v1`).
   GPT·Claude·Gemini를 모델 ID로 고른다. 인증은 x-api-key 헤더(다른 OpenAI 호환 서버를 위해 Bearer도 함께 보낸다).
 - responses: 게이트웨이의 OpenAI Responses API(`.../a<번호>/openai/responses`). 모델을 고를 수 있다.
@@ -11,6 +11,8 @@
 - anthropic(1.11): 사용자가 직접 발급한 Anthropic API 키로 Claude Messages API(api.anthropic.com)를 부른다.
   데스크톱은 공식 Anthropic Python SDK를 쓰고, SDK를 설치할 수 없는 안드로이드(Chaquopy에 pydantic-core·jiter가
   없다)는 같은 요청을 HTTP로 보낸다.
+- openai(1.18): 사용자가 직접 발급한 OpenAI API 키로 OpenAI Responses API(api.openai.com/v1/responses)를 부른다.
+  요청·응답 형식은 responses 방식과 같고 인증만 Bearer 토큰이다. SDK 없이 HTTP로 보낸다(안드로이드도 같다).
 
 stream을 켜면 받은 글자를 on_delta(지금까지의 전체 텍스트)로 넘긴다. OpenAI 방식은 표준 SSE를,
 a1은 문서에 형식이 없어서 SSE·JSON Lines·일반 텍스트를 모두 받아 주고, 실패하면 한 번에 받는 방식으로 다시 요청한다.
@@ -89,7 +91,22 @@ DEFAULT_CHAT_COMPLETIONS_URL = "https://genai.postech.ac.kr/agent/openai_compati
 DEFAULT_MODE = "chat_completions"  # 1.9부터. a1/gpt는 2026년 10월 현재 서버 오류만 돌려준다
 # 개인 Claude API(Anthropic Messages API). 키는 POSTECH 키와 따로 저장한다(config의 anthropic_api_key).
 ANTHROPIC_MODE = "anthropic"
-MODES = ("a1", "responses", "chat_completions", ANTHROPIC_MODE)
+# 1.18 개인 GPT API(OpenAI). 키는 config의 openai_api_key(없으면 환경 변수 OPENAI_API_KEY).
+OPENAI_MODE = "openai"
+MODES = ("a1", "responses", "chat_completions", ANTHROPIC_MODE, OPENAI_MODE)
+OPENAI_BASE_URL = "https://api.openai.com/v1"
+# 기본 목록. '모델 목록 불러오기'로 이 키로 쓸 수 있는 모델을 OpenAI에서 받아 바꾼다.
+OPENAI_MODELS = [
+    ("gpt-5.1", "GPT-5.1 — 권장: 성능과 비용의 균형"),
+    ("gpt-5.2", "GPT-5.2 — 가장 좋은 성능, 비용 높음"),
+    ("gpt-5-mini", "GPT-5 mini — 빠르고 저렴"),
+    ("gpt-4.1-mini", "GPT-4.1 mini — 추론 없음, 저렴"),
+]
+DEFAULT_OPENAI_MODEL = OPENAI_MODELS[0][0]
+OPENAI_LABELS = dict(OPENAI_MODELS)
+# 대화용이 아닌 모델(목록에서 뺀다): 음성·실시간·이미지·검색 전용·임베딩·검열·옛 완성
+_OPENAI_NOT_CHAT = re.compile(r"audio|realtime|transcribe|tts|image|dall-e|embedding|moderation|search|whisper|"
+                              r"instruct|davinci|babbage|codex-mini|computer-use|sora", re.I)
 ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 ANTHROPIC_VERSION = "2026-10-21"  # SDK 2.x의 기본 API 버전과 같게 둔다
 ANTHROPIC_MODELS = [
@@ -132,7 +149,7 @@ def _guard(kind):
 
 @dataclass
 class ApiSettings:
-    mode: str = "a1"               # "a1" | "responses" | "chat_completions" | "anthropic"(설정의 기본값은 DEFAULT_MODE)
+    mode: str = "a1"               # "a1" | "responses" | "chat_completions" | "anthropic" | "openai"(설정의 기본값은 DEFAULT_MODE)
     responses_url: str = ""
     chat_completions_url: str = ""
     model: str = DEFAULT_MODEL
@@ -148,14 +165,20 @@ class ApiSettings:
             chat_completions_url=endpoint_url(config.get("chat_completions_url"), CHAT_COMPLETIONS_PATH)
             or DEFAULT_CHAT_COMPLETIONS_URL,
             model=(config.get("anthropic_model") or DEFAULT_ANTHROPIC_MODEL) if mode == ANTHROPIC_MODE
+            else (config.get("openai_model") or DEFAULT_OPENAI_MODEL) if mode == OPENAI_MODE
             else normalize_model(config.get("model") or DEFAULT_MODEL),
             stream=bool(config.get("stream", True)),
         )
 
 
 def model_config_key(mode):
-    """mode의 기본 모델을 저장하는 설정 이름. POSTECH 방식과 개인 Claude API는 모델 목록이 달라 따로 둔다."""
-    return "anthropic_model" if mode == ANTHROPIC_MODE else "model"
+    """mode의 기본 모델을 저장하는 설정 이름. POSTECH 방식과 개인 Claude·GPT API는 모델 목록이 달라 따로 둔다."""
+    return {ANTHROPIC_MODE: "anthropic_model", OPENAI_MODE: "openai_model"}.get(mode, "model")
+
+
+def default_model(mode):
+    """mode의 기본 모델 ID."""
+    return {ANTHROPIC_MODE: DEFAULT_ANTHROPIC_MODEL, OPENAI_MODE: DEFAULT_OPENAI_MODEL}.get(mode, DEFAULT_MODEL)
 
 
 RESPONSES_PATH = "/responses"
@@ -235,7 +258,7 @@ def list_models(api_key, chat_completions_url, timeout=20):
 
 
 def model_label(model_id):
-    return MODEL_LABELS.get(model_id) or ANTHROPIC_LABELS.get(model_id, model_id)
+    return MODEL_LABELS.get(model_id) or ANTHROPIC_LABELS.get(model_id) or OPENAI_LABELS.get(model_id, model_id)
 
 
 def transcribe(api_key, chat_completions_url, wav_b64, language=None, context="", model=STT_MODEL, timeout=120):
@@ -430,6 +453,8 @@ def _ask_any(api_key, message, timeout, settings, on_delta, cancelled, images, s
     elif settings.mode == ANTHROPIC_MODE:
         text, usage = _ask_anthropic(api_key, message, timeout, settings, on_delta if stream else None, cancelled,
                                      images, cache_prefix)
+    elif settings.mode == OPENAI_MODE:
+        text, usage = _ask_openai(api_key, message, timeout, settings, on_delta if stream else None, cancelled, images)
     elif settings.mode == "chat_completions":
         text, usage = _ask_chat_completions(api_key, message, timeout, settings,
                                             on_delta if stream else None, cancelled, images)
@@ -746,18 +771,33 @@ def list_anthropic_models(api_key, timeout=20):
 
 # ---- OpenAI Responses ----
 
-def _ask_responses(api_key, message, timeout, settings, on_delta, cancelled, images=None):
-    if not settings.responses_url:
-        raise ApiError("모델 선택(Responses API)을 쓰려면 설정에서 Responses API 주소를 입력하세요.")
+def _responses_payload(model, message, images, stream):
     content = message
     if images:
         content = [{"role": "user", "content": [{"type": "input_text", "text": message}] + [
             {"type": "input_image", "image_url": f"data:{mime};base64,{data}"} for mime, data in images]}]
-    payload = {"model": settings.model, "input": content, "stream": bool(on_delta), "store": False}
-    if not settings.model.startswith("gpt-4"):
+    payload = {"model": model, "input": content, "stream": bool(stream), "store": False}
+    if _reasoning_model(model):
         payload["reasoning"] = {"effort": REASONING_EFFORT}
+    return payload
+
+
+def _reasoning_model(model):
+    """추론(reasoning.effort)을 받는 모델: GPT-5 계열·o 계열. GPT-4 계열과 '...-chat-...'(채팅 전용)은 받지 않는다."""
+    m = str(model or "").lower()
+    return not m.startswith(("gpt-4", "chatgpt")) and "-chat" not in m
+
+
+def _ask_responses(api_key, message, timeout, settings, on_delta, cancelled, images=None):
+    if not settings.responses_url:
+        raise ApiError("모델 선택(Responses API)을 쓰려면 설정에서 Responses API 주소를 입력하세요.")
+    payload = _responses_payload(settings.model, message, images, on_delta)
     headers = {"x-api-key": api_key, "Content-Type": "application/json"}
     response = _post(settings.responses_url, headers, payload, timeout, stream=bool(on_delta))
+    return _responses_result(response, on_delta, cancelled)
+
+
+def _responses_result(response, on_delta, cancelled):
     if on_delta and not _is_json(response):
         try:
             return _read_stream(response, on_delta, cancelled)
@@ -790,6 +830,72 @@ def _response_text(data):
     if isinstance(data.get("message"), str):
         return data["message"]
     return None
+
+
+# ---- 개인 GPT API(OpenAI, 1.18) ----
+
+def _openai_headers(api_key, **extra):
+    return {"Authorization": f"Bearer {api_key}", **extra}
+
+
+def _openai_status_error(status, detail=""):
+    """OpenAI API 오류를 사용자가 알아들을 말로. detail은 서버가 준 오류 JSON의 앞부분."""
+    message = ""
+    try:
+        message = (json.loads(detail).get("error") or {}).get("message") or ""
+    except (ValueError, AttributeError):
+        message = detail
+    message = str(message)[:300]
+    if status == 401:
+        return ApiError("OpenAI API 키가 올바르지 않습니다(401). 설정 → API 방식 '일반 AI 모델 (GPT)'에서 키를 확인하세요.")
+    if status == 403:
+        return ApiError(f"이 OpenAI 키로는 이 모델이나 기능을 쓸 수 없습니다(403): {message}")
+    if status == 404:
+        return ApiError(f"OpenAI에 없는 모델이거나 이 키로 쓸 수 없는 모델입니다(404). 설정에서 '모델 목록 불러오기'로 확인하세요: {message}")
+    if status == 429:
+        return ApiError(f"OpenAI 사용 한도에 걸렸거나 잔액이 부족합니다(429). 잠시 뒤 다시 하거나 OpenAI 결제 설정을 확인하세요: {message}")
+    return ApiError(f"OpenAI API 오류 {status}: {message}")
+
+
+def _ask_openai(api_key, message, timeout, settings, on_delta, cancelled, images=None):
+    if not api_key:
+        raise ApiError("OpenAI API 키가 없습니다. 설정 → API 방식 '일반 AI 모델 (GPT)'에서 키를 입력하세요.")
+    url = f"{OPENAI_BASE_URL}/responses"
+    headers = _openai_headers(api_key, **{"Content-Type": "application/json"})
+    payload = _responses_payload(settings.model, message, images, on_delta)
+    response = _send("POST", url, headers, payload, timeout, stream=bool(on_delta))
+    if response.status_code == 400 and "reasoning" in payload and "reasoning" in response.text[:2000]:
+        payload.pop("reasoning")   # 추론 설정을 받지 않는 모델: 빼고 한 번 더
+        response = _send("POST", url, headers, payload, timeout, stream=bool(on_delta))
+    if response.status_code != 200:
+        detail = response.text[:2000]
+        response.close()
+        raise _openai_status_error(response.status_code, detail)
+    return _responses_result(response, on_delta, cancelled)
+
+
+def list_openai_models(api_key, timeout=20):
+    """이 OpenAI API 키로 쓸 수 있는 대화용 모델 ID(최근에 나온 것 먼저). 음성·이미지·임베딩 전용 모델은 뺀다."""
+    response = _send("GET", f"{OPENAI_BASE_URL}/models", _openai_headers(api_key, Accept="application/json"), timeout=timeout)
+    if response.status_code != 200:
+        raise _openai_status_error(response.status_code, response.text[:2000])
+    try:
+        items = response.json().get("data") or []
+    except (ValueError, AttributeError) as e:
+        raise ApiError(f"모델 목록 형식 오류: {response.text[:300]}") from e
+    rows = []
+    for m in items:
+        mid = m.get("id") if isinstance(m, dict) else None
+        if not isinstance(mid, str) or not re.match(r"(gpt-|chatgpt-|o\d)", mid) or _OPENAI_NOT_CHAT.search(mid):
+            continue
+        rows.append((-(m.get("created") or 0), mid))
+    ids = []
+    for _, mid in sorted(rows):
+        if mid not in ids:
+            ids.append(mid)
+    if not ids:
+        raise ApiError("OpenAI API가 이 키로 쓸 수 있는 대화 모델을 알려 주지 않았습니다.")
+    return ids
 
 
 # ---- 공통 ----

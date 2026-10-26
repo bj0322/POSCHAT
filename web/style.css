@@ -746,3 +746,10 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
   #paper-pane { width: 100%; min-width: 0; flex: 1; }
   .paper-action { padding: 4px 10px; }
 }
+/* 1.18 부적절한 응답 신고(GitHub 이슈) */
+.report-form .field { display: block; margin: 10px 0; }
+.report-form .field > span { display: block; font-weight: 600; margin-bottom: 4px; }
+.report-form select, .report-form textarea { width: 100%; font: inherit; font-size: 13.5px; border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 8px; background: var(--bg); color: var(--text); }
+.report-form textarea { resize: vertical; }
+.report-form input[type=checkbox] { width: auto; margin: 0; }

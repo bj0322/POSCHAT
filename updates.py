@@ -14,6 +14,8 @@ from pathlib import Path
 import requests
 
 REPOSITORY = "bj0322/POSCHAT"
+# Microsoft Store 제품 ID(파트너 센터의 'Store ID', 9N…로 시작). 비어 있으면 Store의 '다운로드 및 업데이트' 화면을 연다.
+STORE_PRODUCT_ID = ""
 RELEASE_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{REPOSITORY}/releases/latest"
 DOWNLOAD_PREFIX = f"https://github.com/{REPOSITORY}/releases/download/"
@@ -147,3 +149,10 @@ def download(installed_version, directory, platform=None, on_progress=None, canc
     finally:
         part.unlink(missing_ok=True)
     return path, release["version"]
+
+
+def store_url():
+    """Store판의 업데이트 안내에서 여는 주소: 제품 페이지(ID가 있으면) 또는 Store의 다운로드 및 업데이트."""
+    if STORE_PRODUCT_ID:
+        return f"ms-windows-store://pdp/?productid={STORE_PRODUCT_ID}"
+    return "ms-windows-store://downloadsandupdates"

@@ -152,6 +152,36 @@ Agent._tool_write/_tool_edit → Agent._save(p, old, new, enc, title, reason)
   `code_agent_keep_branch`는 worktree를 브랜치에 커밋(`--no-verify`)하고 worktree만 지운다. `code_agent_discard`는 지우기만.
 - **백그라운드 명령**: `RunManager`로 시작하고 기다리지 않는다(동시 4개 상한 그대로). `RunRecord.output_tail`은 도는 동안에도 갱신한다. 작업이 끝나면 멈춘다.
 
+## 터미널 (1.18)
+| 파일 | 하는 일 |
+|---|---|
+| `terminal.py` | `TerminalManager`: 셸 열기(작업 폴더, 비밀 환경 변수 빼기)·쓰기·크기·닫기(프로세스 트리)·끝부분 200KB. `_PosixPty`(pty·select, 새 세션) / `_WinPty`(pywinpty의 낮은 수준 `winpty.PTY`, ConPTY). `selfcheck()`(설치본 진단) |
+| `code_api.py` | `code_term_open/write/resize/close`, `code_terms`(다시 붙이기), `code_term_ask`(채팅 첨부), 이벤트 `term_output`·`term_exit` |
+| `web/code-term.js` | xterm.js 6(`web/vendor/xterm`, fit 애드온)로 아래 패널의 터미널 탭들. 키 입력은 차례대로 하나씩 보낸다(js_api 호출은 순서를 보장하지 않음). 열기 응답보다 먼저 온 출력은 모아 두었다가 붙인다 |
+| `web/code.js` | 아래 패널 = 터미널, 왼쪽 패널 = 파일·Git·변경 검토 탭(`CODE.side`, `codeSide`). 예전 실행 패널(`codeRunPanel`)은 없앴다 |
+
+- 출력은 읽는 스레드가 약 30ms마다(조용해지면 바로) 모아 `_push`로 보낸다. ui_events 큐를 거치므로 UI 스레드를 막지 않는다(B1).
+- 자동으로 열 때는 초점을 가져가지 않는다(작업 탭 입력 칸이 먼저). 터미널을 누르거나 Ctrl+`·+ 로 열면 초점을 옮긴다.
+- Windows 배포본은 `--collect-all winpty`로 `_winpty.pyd`·`conpty.dll`·`OpenConsole.exe`를 싣는다. CI는 설치본 selftest의 `terminal: OK`(실제 셸 한 줄)를 본다.
+
+## SSH 원격 작업 폴더 (1.18)
+VS Code Remote-SSH처럼 코드 화면의 작업 폴더를 SSH 서버의 폴더로 바꾼다. 서버에는 python3만 있으면 된다.
+
+| 파일 | 하는 일 |
+|---|---|
+| `remote_fs.py` | 원격 경로: 글 `ssh://<연결>/<절대 경로>`(설정·작업 기록)와 `RPath`(pathlib 흉내, 파일 작업은 서버에). `@remote_ok`: 인자에 원격 경로가 있으면 같은 함수를 서버에서 실행. 연결 목록(register), 값 주고받기(경로·바이트·stat·예외) |
+| `remote_helper.py` | 서버에서 도는 도우미(Python 3.6+). JSON 한 줄 요청을 스레드로 처리: `code_workspace`·`code_git`·`code_project` 함수, `fs.*`(RPath), `agent.search`, `runner.*`, `proc.*`(명령 실행·출력 이벤트·프로세스 그룹 끝내기) |
+| `remote_client.py` | 앱 쪽: `HelperClient`(요청·답·이벤트), `RemoteProc`(Popen처럼 — RunManager가 그대로 씀), `bundle()`(도우미와 모듈 소스, 설치본은 `_MEIPASS/remote`), `remote_command()`(어떤 로그인 셸이든 /bin/sh로 python3을 찾음), 시험용 `LocalHelper` |
+| `ssh_remote.py` | paramiko 연결(데스크톱 전용): ~/.ssh/config, 호스트 키 확인(앱 known_hosts), 인증(에이전트·키·keyboard-interactive·암호, 부분 성공), ProxyJump(direct-tcpip)·ProxyCommand, 도우미 채널, 터미널(`SshShell`, pty 채널) |
+| `ssh_api.py` | Bridge 믹스인: `code_ssh_connect`(뒤 스레드) → `ssh_state`·`ssh_prompt` 이벤트, `code_ssh_answer`·`browse`·`open`·`local`·`disconnect`. `_code_ws_opt()`가 코드 화면의 작업 폴더(원격이면 ssh://…) |
+| `web/code-ssh.js` | SSH 창(서버·최근 폴더·폴더 고르기), 호스트 키·암호·OTP 창, 끊김 안내 |
+
+- 원격이 되는 곳: `code_workspace`·`code_git`·`code_project`의 공개 함수(@remote_ok), `code_runner.RunManager.start`(RemoteProc), `terminal.TerminalManager.open`
+  (SshShell), `agent.Agent`(workspace가 RPath — `_iter_files`·list·search는 서버에서 한 번에, 문서는 받아 와서 읽음), `code_agent`(되돌리기 백업은 로컬 데이터 폴더).
+- 도우미 묶음은 Python 3.6 문법만 쓴다(`tests/test_remote.py`가 ast로 검사, 3.6의 `subprocess.run(capture_output=)`은 시작 코드가 맞춘다).
+- 시험: `tests/test_remote.py`(LocalHelper로 SSH 없이 같은 도우미), `tests/test_ssh.py`·`tests/fake_ssh.py`(paramiko 서버 모드로 인증·호스트 키·점프 호스트·터미널), `tests/test_code_ui.py`의 `test_ssh_remote_folder`.
+- 설치본 진단: `ssh: OK`(paramiko·cryptography·bcrypt·pynacl 서명), `remote: OK`(도우미 소스가 들어 있음).
+
 ## Code 에이전트 3 (1.17.2) — 터미널처럼
 | 파일 | 하는 일 |
 |---|---|
