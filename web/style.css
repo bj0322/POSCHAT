@@ -754,7 +754,35 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .report-form textarea { resize: vertical; }
 .report-form input[type=checkbox] { width: auto; margin: 0; }
 
-/* PLMS 강좌·자료 목록 */
-.plms-list { display: grid; gap: 8px; margin-top: 12px; }
-.plms-list .btn { text-align: left; white-space: normal; overflow-wrap: anywhere; }
-.plms-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 45vh; overflow: auto; font: inherit; }
+/* PLMS 수업·자료 화면 (1.18.5) */
+.plms-note { color: var(--text-3); font-size: 12.5px; margin: 6px 0; overflow-wrap: anywhere; }
+.plms-crumbs { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; min-width: 0; }
+.plms-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.plms-head h3 { margin: 6px 0; }
+.plms-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0 12px; }
+.plms-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin: 8px 0 14px; }
+.plms-card { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; text-align: left; padding: 12px 14px; font: inherit;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+.plms-card:hover { background: var(--hover); }
+.plms-card-title { font-weight: 600; overflow-wrap: anywhere; }
+.plms-chip { display: inline-block; flex: none; font-size: 11.5px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+  background: var(--bubble); color: var(--text-2); border: 1px solid var(--border); }
+.plms-chip.on { background: var(--add-bg); color: var(--add-fg); border-color: transparent; }
+.plms-filters { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; }
+.plms-filter { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  background: var(--bg); color: var(--text-2); border: 1px solid var(--border); }
+.plms-filter:hover { background: var(--hover); }
+.plms-filter.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.plms-group { border: 1px solid var(--border); border-radius: 10px; margin: 0 0 8px; background: var(--bg); }
+.plms-group > summary { cursor: pointer; padding: 9px 12px; font-weight: 600; font-size: 13.5px; }
+.plms-group[open] > summary { border-bottom: 1px solid var(--border); }
+.plms-group > .plms-cards, .plms-group > .plms-text { margin: 8px; }
+.plms-rows { display: grid; }
+.plms-group .plms-rows { padding: 4px; }
+.plms-row { display: flex; align-items: center; gap: 10px; text-align: left; font: inherit; padding: 8px 10px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--text); cursor: pointer; min-width: 0; }
+.plms-row:hover { background: var(--hover); }
+.plms-row .plms-chip { min-width: 3.4em; text-align: center; }
+.plms-row-title { overflow-wrap: anywhere; }
+.plms-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 45vh; overflow: auto; font: inherit; line-height: 1.6;
+  background: var(--bubble); border-radius: 10px; padding: 12px 14px; margin: 8px 0; }

@@ -76,8 +76,10 @@ BROWSER_ACTION_DOC = (
     '{"action": "browser_screenshot"}  보이는 화면 캡처(사용자에게 보임)\n'
     '{"action": "browser_back"} / {"action": "browser_forward"} / {"action": "browser_refresh"}  뒤로·앞으로·새로 고침')
 PLMS_ACTION_DOC = (
-    '{"action":"plms_courses"}  로그인한 사용자의 참여 수업 목록. PLMS 요청은 이 목록부터 확인하세요.\n'
-    '{"action":"plms_course","course_id":"123"}  참여 수업의 글·공지 게시판·자료 링크 목록.\n'
+    '{"action":"plms_courses"}  로그인한 사용자의 참여 수업 목록. PLMS 요청은 이 목록부터 확인하세요. '
+    '각 수업의 status는 current(이번 학기)·future(예정)·past(지난 학기)·unknown이고 current가 앞에 옵니다. '
+    '사용자가 학기를 따로 말하지 않으면 current(없으면 unknown) 수업만 다루고, 지난 학기 수업은 요청할 때만 다루세요.\n'
+    '{"action":"plms_course","course_id":"123"}  참여 수업의 글·공지 게시판·자료 링크 목록(항목마다 kind: notice·board·file·folder·assign·page·link·syllabus와 section(주차·주제)).\n'
     '{"action":"plms_read","course_id":"123","url":"수업에서 찾은 주소","parent":[],"query":"","offset":0}  '
     '공지·자료 본문과 첨부 링크 읽기(PDF·Office·한글·텍스트, 20MB까지). 게시판·폴더 안의 링크는 parent에 '
     '수업에서 대상까지 거친 상위 링크를 순서대로 넣으세요(최대 4개). next_offset이 있으면 이어 읽을 수 있습니다. '

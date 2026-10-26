@@ -71,6 +71,69 @@ class PlmsTests(unittest.TestCase):
         self.assertNotIn("private-cookie", json.dumps(doc))
         self.assertNotIn("secretkey", json.dumps(doc))
 
+    def test_course_status_and_ordering(self):
+        now = 1_800_000_000
+        day = 86400
+        self.assertEqual(plms.course_status(now - 30 * day, now + 90 * day, now), "current")
+        self.assertEqual(plms.course_status(now - 200 * day, now - 30 * day, now), "past")
+        self.assertEqual(plms.course_status(now + 60 * day, now + 150 * day, now), "future")
+        self.assertEqual(plms.course_status(now - 300 * day, 0, now), "past")  # 종료일이 없는 오래된 수업
+        self.assertEqual(plms.course_status(now - 20 * day, 0, now), "current")
+        self.assertEqual(plms.course_status(0, 0, now), "unknown")
+        self.assertEqual(plms.course_status("x", None, now), "unknown")
+        import time
+        t = time.time()
+        rows = [{"id": 21, "fullname": "지난 수업", "startdate": t - 300 * day, "enddate": t - 150 * day},
+                {"id": 22, "fullname": "이번 수업", "startdate": t - 20 * day, "enddate": t + 100 * day},
+                {"id": 23, "fullname": "날짜 없음"}]
+        self.pages[O + "/my/"] = Response('<script>M.cfg={"userid":42,"sesskey":"secretkey"}</script>')
+        with patch.object(plms.requests.Session, "post", return_value=Response(json.dumps([{"data": {"courses": rows}}]), "application/json")):
+            found = self.client.courses()
+        self.assertEqual([c["title"] for c in found], ["이번 수업", "날짜 없음", "지난 수업"])
+        self.assertEqual([c["status"] for c in found], ["current", "unknown", "past"])
+        self.assertTrue(found[0]["term"].endswith("학기"))
+
+    def test_course_items_have_kind_and_section(self):
+        self.pages[O + "/course/view.php?id=7"] = Response(
+            '<nav><a href="/mod/forum/view.php?id=9">공지사항</a></nav>'
+            '<li class="section"><h3 class="sectionname"><span>1주차 · 개요</span></h3>'
+            '<a href="/mod/resource/view.php?id=10">강의 PDF</a><a href="/mod/assign/view.php?id=12">과제 1</a></li>'
+            '<li class="section"><h3 class="sectionname">2주차</h3><a href="/mod/folder/view.php?id=13">참고자료</a></li>')
+        items = self.client.course("7")["items"]
+        self.assertEqual([(i["kind"], i["section"]) for i in items], [
+            ("notice", ""), ("file", "1주차 · 개요"), ("assign", "1주차 · 개요"), ("folder", "2주차")])
+
+    def test_saved_account_is_private_and_autologin_is_limited(self):
+        self.assertIsNone(plms.credentials())
+        with self.assertRaises(plms.PlmsError):
+            plms.save_credentials("id", "")
+        plms.save_credentials(" student ", "pw!\"</script>")
+        self.assertEqual(plms.credentials(), ("student", 'pw!"</script>'))
+        self.assertEqual(plms.saved_username(), "student")
+        self.assertTrue(plms.login_host_ok("https://sso.postech.ac.kr/login"))
+        for url in ["http://plms.postech.ac.kr/", "https://postech.ac.kr.evil.test/", "https://evilpostech.ac.kr/",
+                    "https://user@plms.postech.ac.kr/", "https://evil.test/?u=plms.postech.ac.kr"]:
+            self.assertFalse(plms.login_host_ok(url), url)
+        script = plms.fill_script("student", 'pw!"</script>')
+        self.assertIn(json.dumps('pw!"</script>'), script)
+        self.assertIn("postech", script)  # 스크립트 안에서도 주소를 한 번 더 확인한다
+        # 자동 입력은 로그인당 한 번만 보낸다. 다른 사이트에서는 스크립트를 돌리지 않는다.
+        runs = []
+        state = {"url": "https://sso.postech.ac.kr/login", "loading": False}
+        def run(script, ok):
+            runs.append(state["url"])
+            return "submitted" if ok(state["url"]) else "blocked"
+        fake = SimpleNamespace(state=state, run_script=run)
+        self.assertEqual(plms.autologin(fake, lambda: False, interval=0), "submitted")
+        self.assertEqual(len(runs), 1)
+        state["url"] = "https://evil.test/login"
+        runs.clear()
+        self.assertEqual(plms.autologin(fake, lambda: False, timeout=0.05, interval=0.01), "timeout")
+        self.assertEqual(runs, [])
+        plms.clear_credentials()
+        self.assertEqual(plms.autologin(fake, lambda: False), "no-credentials")
+        self.assertNotIn("student", json.dumps(self.client.courses()))
+
     def test_pdf_redirect_and_extraction(self):
         from pypdf import PdfWriter
         stream = io.BytesIO()
