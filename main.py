@@ -116,6 +116,8 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
         # 1.15(B1): 화면 이벤트는 전용 스레드가 순서대로 보낸다. _push는 막지 않으므로 UI 스레드에서 불러도 된다.
         self._events = ui_events.EventPump(self._send_event)
         self._busy = False
+        self._browser_owner = None  # 화면 하나를 여러 에이전트가 동시에 조작하지 않게 한다
+        self._chat_runs = {}  # 대화별 실행·취소·이번 실행 허용
         self._run_id = 0
         self._cancel = threading.Event()
         self._pending = {}            # confirm id -> [Event, decision]
@@ -257,6 +259,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
             "workspace": self._workspace_info(),
             "skills": self._skills(),
             "busy": self._busy,
+            "running_threads": list(self._chat_runs.copy()),
             "config": {
                 "agent_mode": self._config.get("agent_mode", True),
                 "history_messages": self._config.get("history_messages", 20),
@@ -356,6 +359,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
 
     def delete_thread(self, thread_id):
         with self._lock:
+            self.stop(thread_id)
             storage.delete_thread(thread_id)
         return storage.list_threads()
 
@@ -1117,8 +1121,6 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
         attachment_ids = [str(a) for a in attachment_ids or []]
         if not text and not attachment_ids:
             return {"ok": False, "error": "메시지가 비어 있습니다."}
-        if self._busy:
-            return {"ok": False, "error": "이전 응답을 기다리는 중입니다."}
         workspace = self._workspace()
         task, forced, command = text or "첨부한 파일을 살펴보고 내용을 알려 주세요.", None, None
 
@@ -1147,6 +1149,8 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
             return {"ok": False, "error": "Local Only 정책이라 이 대화의 Cloud 모델을 부르지 않습니다. 대화 위의 모델을 '자동' 또는 로컬 모델로 바꾸세요."}
 
         with self._lock:
+            if thread_id in self._chat_runs:
+                return {"ok": False, "error": "이 대화의 응답을 기다리는 중입니다."}
             thread = storage.load_thread(thread_id)
             if thread is None:
                 return {"ok": False, "error": "대화를 찾을 수 없습니다."}
@@ -1163,17 +1167,37 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
             self._busy = True
             self._run_id += 1
             run_id = self._run_id
-            self._cancel.clear()
-            self._session_allow.clear()  # 1.10: "이번 실행 동안 모두 허용"은 실행이 끝나면 사라진다
+            self._chat_runs[thread_id] = {"id": run_id, "cancel": threading.Event(), "allow": set()}
 
         threading.Thread(target=self._work, daemon=True,
                          args=(run_id, thread_id, history, task, bool(agent_mode), forced, api_key, workspace,
                                attached, command)).start()
         return {"ok": True, "message": msg, "title": thread["title"]}
 
-    def _work(self, run_id, thread_id, history, task, agent_mode, forced, api_key, workspace, attached=(), command=None):
+    def _work(self, run_id, thread_id, *args):
+        run = self._chat_runs[thread_id]
+        run["mcp"] = mcp_client.Manager()
+        try:
+            self._chat_work(run_id, thread_id, *args)
+        except Exception as e:
+            if not run["cancel"].is_set():
+                self._add(thread_id, "error", f"{type(e).__name__}: {e}")
+        finally:
+            run["mcp"].shutdown()
+            with self._lock:
+                if self._browser_owner is run:
+                    self._browser_owner = None
+                if self._chat_runs.get(thread_id) is run:
+                    self._chat_runs.pop(thread_id)
+                self._busy = bool(self._chat_runs)
+            self._push({"type": "done", "thread_id": thread_id, "workspace": self._workspace_info()})
+
+    def _chat_work(self, run_id, thread_id, history, task, agent_mode, forced, api_key, workspace, attached=(), command=None):
+        run = self._chat_runs[thread_id]
+        manager = run["mcp"]
+
         def alive():
-            return run_id == self._run_id and not self._cancel.is_set()
+            return self._chat_runs.get(thread_id) is run and not run["cancel"].is_set()
 
         def on_status(text):
             if alive():
@@ -1206,6 +1230,10 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
                                    area="agent" if agent_mode and workspace else "chat")
         block_tools = engine is not None and adaptive_engine.local_only(self._config) and \
             adaptive_engine.settings(self._config)["local_only_tools"] == "block"
+        with self._lock:
+            browser = self._browser_for_agent() if self._browser_owner is None else None
+            if browser is not None:
+                self._browser_owner = run
         agent = Agent(
             api_key=api_key,
             workspace=workspace,
@@ -1214,20 +1242,20 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
             history_messages=int(self._config.get("history_messages", 20)),
             on_status=on_status,
             on_tool=on_tool,
-            confirm=lambda kind, title, detail: self._confirm(thread_id, kind, title, detail, alive),
+            confirm=lambda kind, title, detail: self._confirm(thread_id, kind, title, detail, alive, run["allow"]),
             cancelled=lambda: not alive(),
             thread_id=thread_id,
             share_threads=bool(self._config.get("share_threads", True)),
-            mcp=(lambda: self._mcp.ensure(self._config, workspace, on_status)) if agent_mode and workspace and not block_tools else None,
+            mcp=(lambda: manager.ensure(self._config, workspace, on_status)) if agent_mode and workspace and not block_tools else None,
             api_settings=self._thread_api_settings(thread),
             on_delta=on_delta,
             ai_memory_state=thread.get("ai_memory"),
             on_ai_memory_state=save_ai_memory_state,
             policy=connectors.Policy(dict(self._config)),
-            browser=self._browser_for_agent(),
+            browser=browser,
             paper=self._paper_for_agent(),
             # 1.15: Code 화면이 열려 있으면 파일 수정은 승인 창 대신 Code 화면의 변경 검토(덩어리별)로
-            review=lambda *a: self._code_review_edit(thread_id, alive, workspace, *a),
+            review=lambda *a: self._code_review_edit(thread_id, alive, workspace, *a, session_allow=run["allow"]),
             # 1.16 브라우저 에이전트: 진행 상황은 브라우저 막대와 채팅에, 일시정지는 브라우저 막대의 버튼
             browser_progress=lambda info: self._push({"type": "browser", "kind": "agent", "thread_id": thread_id, **info}),
             browser_paused=self._browser_pause_event(),
@@ -1282,9 +1310,6 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
                              model=thread.get("model") if engine is not None else agent.api_settings.model,
                              ms=int((time.monotonic() - started) * 1000),
                              outcome=outcome, steps=agent.steps, tools=len(agent.tools_run), routed=engine is not None)
-            if run_id == self._run_id:
-                self._busy = False
-                self._push({"type": "done", "thread_id": thread_id, "workspace": self._workspace_info()})
             self._sync_schedule(20)  # 대화가 끝나면 잠시 뒤 동기화(켰을 때만)
 
     def _thread_api_settings(self, thread):
@@ -1297,26 +1322,29 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
             settings.model = allowed[0][0]
         return settings
 
-    def _confirm(self, thread_id, kind, title, detail, alive):
+    def _confirm(self, thread_id, kind, title, detail, alive, session_allow=None):
         """kind: edit(파일 수정)·run(명령·외부 도구)·write(커넥터 쓰기)는 설정으로 자동 허용할 수 있고,
         send(전송)·destructive(삭제)·exec(코드 실행)·site(브라우저 에이전트의 사이트 승인)는 설정과 관계없이 매번 묻는다."""
+        session_allow = self._session_allow if session_allow is None else session_allow
         permission = self._config.get("permission", "ask")
         always_ask = kind in connectors.ALWAYS_ASK
         if not always_ask and (permission == "auto_all" or (permission == "auto_edit" and kind == "edit")
-                               or kind in self._session_allow):
+                               or kind in session_allow):
             return True
         if not alive():
             return False
         cid = uuid.uuid4().hex
-        entry = [threading.Event(), "deny"]
+        entry = [threading.Event(), "deny", thread_id]
         self._pending[cid] = entry
         self._push({"type": "confirm", "id": cid, "thread_id": thread_id, "kind": kind, "title": title, "detail": detail,
                     "allow_session": not always_ask})
-        entry[0].wait()
+        while not entry[0].wait(0.1):
+            if not alive():
+                break
         self._pending.pop(cid, None)
         if entry[1] == "always":
             if not always_ask:
-                self._session_allow.add(kind)
+                session_allow.add(kind)
             return alive()
         return entry[1] == "allow" and alive()
 
@@ -1326,14 +1354,15 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
             entry[1] = decision
             entry[0].set()
 
-    def stop(self):
-        self._cancel.set()
-        if getattr(self, "_browser_paused", None) is not None:
-            self._browser_paused.clear()  # 일시정지 중이어도 멈춘다
-        for entry in list(self._pending.values()):
-            entry[1] = "deny"
-            entry[0].set()
-        self._busy = False
+    def stop(self, thread_id=None):
+        with self._lock:
+            for tid, run in self._chat_runs.items():
+                if thread_id is None or tid == thread_id:
+                    run["cancel"].set()
+            for entry in list(self._pending.values()):
+                if thread_id is None or (len(entry) > 2 and entry[2] == thread_id):
+                    entry[1] = "deny"
+                    entry[0].set()
         return True
 
 
@@ -1539,6 +1568,7 @@ def run_app():
         webview.start(debug=os.environ.get("POSTECH_CHAT_DEBUG") == "1")
     finally:
         bridge._events.stop()  # 창이 닫혔다: 더 보내지 않는다(보내는 중인 evaluate_js를 오래 기다리지 않는다)
+        bridge.stop()  # 모든 채팅의 승인 대기·실행을 취소한다
         bridge._po_shutdown()
         bridge._ca_shutdown()  # Code 에이전트 작업을 멈춘다
         bridge.adaptive_pull_cancel()  # 1.17: 받던 로컬 모델이 있으면 멈춘다(Ollama가 다음에 이어 받는다)

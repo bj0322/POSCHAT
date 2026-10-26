@@ -100,6 +100,100 @@ class CodeAgentUiTests(unittest.TestCase):
         page.wait_for_timeout(60)
         page.press("#ca-input", "Enter")
 
+    def test_parallel_chats_preserve_streams_and_stop_current_only(self):
+        """대화를 오가도 스트리밍·보내기·중지는 현재 대화에만 적용된다."""
+        import threading
+        import time
+        import agent
+        from playwright.sync_api import sync_playwright
+
+        release = threading.Event()
+        def run(worker, history, task, *args):
+            worker.on_delta(task + " 출력")
+            while not release.wait(0.02) and not worker.cancelled():
+                pass
+            return task + " 답변"
+
+        with patch.object(agent.Agent, "run", run), sync_playwright() as p:
+            browser, page, errors = self.open(p)
+            try:
+                page.evaluate("newThread()")
+                first = page.evaluate("S.currentId")
+                page.fill("#input", "동시 채팅 하나")
+                page.click("#btn-send")
+                page.wait_for_function("S.busy")
+                page.evaluate("newThread()")
+                second = page.evaluate("S.currentId")
+                self.assertNotEqual(first, second)
+                page.fill("#input", "동시 채팅 둘")
+                page.click("#btn-send")
+                page.wait_for_function("S.runningThreads.size === 2")
+                page.evaluate("id => openThread(id)", first)
+                page.wait_for_selector("#streaming:has-text('동시 채팅 하나 출력')")
+                self.assertNotIn("동시 채팅 둘 출력", page.inner_text("#messages"))
+                page.click("#btn-send")
+                page.wait_for_function("S.runningThreads.size === 1 && !S.busy")
+                self.assertFalse(self.bridge._chat_runs[second]["cancel"].is_set())
+                page.evaluate("id => openThread(id)", second)
+                page.wait_for_selector("#streaming:has-text('동시 채팅 둘 출력')")
+                release.set()
+                page.wait_for_function("S.runningThreads.size === 0")
+                self.assertIn("동시 채팅 둘 답변", page.inner_text("#messages"))
+                self.assertNotIn("동시 채팅 하나 답변", page.inner_text("#messages"))
+                self.assertFalse(errors, errors)
+            finally:
+                release.set()
+                self.bridge.stop()
+                end = time.monotonic() + 3
+                while self.bridge._chat_runs and time.monotonic() < end:
+                    time.sleep(0.01)
+                browser.close()
+
+    def test_parallel_sessions_keep_selected_output_and_stop(self):
+        """새 세션·전환·중지가 실행 중인 다른 작업을 건드리지 않는다."""
+        import threading
+        import time
+        import agent
+        from playwright.sync_api import sync_playwright
+
+        release = threading.Event()
+        def run(worker, history, task, *args):
+            while not release.wait(0.02) and not worker.cancelled():
+                pass
+            return task + " 완료"
+
+        with patch.object(agent.Agent, "run", run), sync_playwright() as p:
+            browser, page, errors = self.open(p)
+            try:
+                page.wait_for_selector("#ca-new-session")
+                self.send(page, "/new")
+                self.send(page, "동시 첫 작업")
+                page.wait_for_function("caRunning()")
+                first = page.evaluate("CA.task.id")
+                page.click("#ca-new-session")
+                page.wait_for_function("CA.task === null")
+                self.send(page, "동시 둘째 작업")
+                page.wait_for_function("Object.keys(CA.state.running_tasks).length === 2")
+                second = page.evaluate("CA.task.id")
+                index = page.evaluate("CA.state.tasks.findIndex(t => t.id === " + __import__('json').dumps(first) + ") + 1")
+                page.select_option("#ca-sessions", str(index))
+                page.wait_for_function("id => CA.task.id === id", arg=first)
+                page.press("#ca-input", "Escape")
+                page.wait_for_function("!caRunning()")
+                self.assertIn(second, self.bridge.code_agent_state()["running_tasks"])
+                self.assertFalse(self.bridge._ca_run(second)["cancel"].is_set())
+                release.set()
+                page.wait_for_function("Object.keys(CA.state.running_tasks).length === 0")
+                self.assertEqual(page.evaluate("CA.task.id"), first)
+                self.assertFalse(errors, errors)
+            finally:
+                release.set()
+                self.bridge._ca_shutdown()
+                end = time.monotonic() + 3
+                while self.bridge._ca_running and time.monotonic() < end:
+                    time.sleep(0.01)
+                browser.close()
+
     def test_agent_task_flow(self):
         from playwright.sync_api import sync_playwright
 

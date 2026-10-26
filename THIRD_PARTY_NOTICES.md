@@ -135,3 +135,9 @@ those services is bundled.
 
 POSTECH names and marks belong to their respective owners. This project
 license grants no trademark rights or access rights to the POSTECH GenAI API.
+
+내장 `graphify` 스킬과 참조 문서는 [Graphify](https://github.com/Graphify-Labs/graphify)의
+로컬 설치본 지침을 바탕으로 POSCHAT 실행 안내와 한국어 설명을 추가했습니다.
+실행 바이너리는 포함하지 않습니다. 원본 고지와 라이선스는
+[Apache-2.0](licenses/graphify/LICENSE), [MIT](licenses/graphify/LICENSE-MIT),
+[NOTICE](licenses/graphify/NOTICE)에 보존합니다.

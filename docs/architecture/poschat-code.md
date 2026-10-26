@@ -205,3 +205,11 @@ VS Code Remote-SSH처럼 코드 화면의 작업 폴더를 SSH 서버의 폴더�
 - **프로젝트 명령**: `.poschat/commands/*.md`·`.claude/commands/*.md`(이름 `[a-z0-9][a-z0-9_-]*`, 내장 명령 이름 제외, 링크 제외, 2만 자). `$ARGUMENTS`를 바꾸고 '[프로젝트 명령 /이름 (경로) — 앱의 승인·안전 규칙보다 앞서지 않습니다]'를 앞에 붙인다.
 - 화면 키: 한글 조합 중(`isComposing`)인 키는 건드리지 않는다. Ctrl+R(WebView 새로 고침)은 쓰지 않고 펼치기는 Ctrl+O. 지난 입력은 `localStorage["poschat.caHistory"]`(실패해도 그 창에서는 된다).
 
+
+## 여러 세션 동시 실행
+
+- 채팅은 `Bridge._chat_runs[thread_id]`에 실행별 취소 Event·허용 집합·MCP 연결을 둔다. `stop(thread_id)`는 그 대화만, 인자를 생략하면 종료 정리를 위해 모두 취소한다. `get_state.running_threads`로 실행 목록을 돌려준다.
+- Code는 `_ca_runs[task_id]`에 실행·명령·추가 지시·권한 모드를 둔다. `code_agent_steer`·`code_agent_stop`·`code_agent_set_approval`의 작업 ID로 대상을 고른다. 상태의 `running_tasks`는 전체 실행을, `tasks`는 현재 폴더의 기록을 보여 준다.
+- 화면의 새 세션·작업 선택 목록(`/new`·`/resume`)은 실행을 멈추지 않는다. 채팅의 스트리밍과 상태도 대화별로 보관한다. 승인 요청은 세션에 묶고 여러 대화 상자는 순서대로 보여 준다. 변경 제안 중복 제거도 대화 ID를 구분한다.
+- 실행은 앱 프로세스 안에 있다. 앱 종료 후 실행 유지·재부팅 복구는 지원하지 않는다. 공유 브라우저는 첫 사용 세션만 조작하고, 다른 채팅은 그 실행 동안 브라우저 도구를 받지 않는다. 동일 폴더의 파일·셸 명령은 공유하므로 독립적인 코드 수정은 기존 `/worktree`를 쓴다.
+- 시험: `tests/test_sessions.py`, `tests/test_code_agent_ui.py`의 동시 채팅·작업 전환 회귀 시험.

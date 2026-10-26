@@ -51,6 +51,11 @@ const S = {
   thread: null,
   busy: false,
   busyThread: null,
+  runningThreads: new Set(),
+  chatStreams: new Map(),
+  chatStatus: new Map(),
+  confirmQueue: [],
+  confirmActive: null,
   status: "",
   workspace: { path: "", name: "", has_init: false },
   skills: [],
@@ -208,7 +213,7 @@ function renderSidebar() {
     }
     const item = h("div", { class: "thread" + (t.id === S.currentId ? " active" : ""), title: t.title },
       h("span", { class: "t-title" }, t.title),
-      S.busy && S.busyThread === t.id ? h("span", { class: "spinner-dot" }) : null,
+      S.runningThreads.has(t.id) ? h("span", { class: "spinner-dot" }) : null,
       h("span", { class: "t-actions" },
         h("button", { title: "이름 변경", html: ICONS.pencil, onclick: (e) => { e.stopPropagation(); startRename(item, t); } }),
         h("button", { title: "삭제", html: ICONS.trash, onclick: (e) => { e.stopPropagation(); deleteThread(t); } }),
@@ -269,6 +274,11 @@ async function openThread(id, leave = true) {
   if (!thread) return refreshThreads();
   S.currentId = id;
   S.thread = thread;
+  S.busy = S.runningThreads.has(id);
+  S.busyThread = S.busy ? id : null;
+  S.status = S.chatStatus.get(id) || "생각하는 중...";
+  endStreaming();
+  updateSend();
   // 다른 화면이 열려 있으면(leave=false) 대화는 뒤에서 준비만 하고, 제목·대화 선택 표시·초점은 그 화면을 닫을 때 돌아온다
   const inView = !leave && ((typeof PAGE !== "undefined" && PAGE.id) || (typeof PO !== "undefined" && PO.open)
     || (typeof CODE !== "undefined" && CODE.open));
@@ -277,6 +287,7 @@ async function openThread(id, leave = true) {
   renderSidebar();
   if (inView) document.querySelectorAll(".thread.active").forEach((t) => t.classList.remove("active"));
   renderMessages();
+  if (S.chatStreams.has(id)) showStreaming(S.chatStreams.get(id));
   if (inView) return;
   if (isNarrow()) setCollapsed(true);
   else $("#input").focus();  // 휴대폰에서는 키보드가 화면을 가리지 않게 자동으로 띄우지 않는다
@@ -694,13 +705,8 @@ function renderWorkspaceChip() {
 
 async function send() {
   if (S.busy) {
-    await api().stop();
-    S.busy = false;
-    S.busyThread = null;
-    $("#typing")?.remove();
-    updateSend();
-    renderSidebar();
-    toast("중지했습니다");
+    await api().stop(S.currentId);
+    toast("이 대화를 멈추는 중입니다");
     return;
   }
   const input = $("#input");
@@ -736,7 +742,8 @@ async function send() {
     return toast(res.ok ? "기억했습니다. 모든 대화에서 참고합니다" : "이미 기억하고 있는 내용입니다");
   }
   hideSlash();
-  const res = await api().send(S.currentId, text, $("#agent-toggle").checked, ready.map((a) => a.id));
+  const sentId = S.currentId;
+  const res = await api().send(sentId, text, $("#agent-toggle").checked, ready.map((a) => a.id));
   if (!res.ok) {
     toast(res.error);
     if (res.need_key) showSettings();
@@ -747,14 +754,17 @@ async function send() {
   renderTray();
   input.value = "";
   autoresize();
+  const runtime = await api().get_state();
+  S.runningThreads = new Set(runtime.running_threads || []);
+  if (S.currentId !== sentId) { updateSend(); refreshThreads(); return; }
   S.thread.messages.push(res.message);
   S.thread.title = res.title;
   $("#chat-title").textContent = res.title;
-  S.busy = true;
-  S.busyThread = S.currentId;
+  S.busy = S.runningThreads.has(sentId);
+  S.busyThread = S.busy ? sentId : null;
   S.status = "생각하는 중...";
   appendMessage(res.message);
-  $("#messages").append(typingNode());
+  await openThread(sentId, false);
   scrollToBottom(true);
   updateSend();
   refreshThreads();
@@ -813,15 +823,18 @@ function pickSlash(i) {
 /* ---------- 백엔드 이벤트 ---------- */
 window.onBackendEvent = (ev) => {
   if (ev.type === "message") {
+    if (ev.message.role === "assistant" || ev.message.role === "error") S.chatStreams.delete(ev.thread_id);
     if (ev.thread_id === S.currentId && S.thread) {
       if (ev.message.role === "assistant") endStreaming();
       S.thread.messages.push(ev.message);
       appendMessage(ev.message);
     }
   } else if (ev.type === "delta") {
+    S.chatStreams.set(ev.thread_id, ev.text);
     if (ev.thread_id === S.currentId && S.thread) showStreaming(ev.text);
   } else if (ev.type === "status") {
-    S.status = ev.text;
+    S.chatStatus.set(ev.thread_id, ev.text);
+    if (ev.thread_id === S.currentId) S.status = ev.text;
     const st = $("#status-text");
     if (st && ev.thread_id === S.currentId) st.textContent = ev.text;
   } else if (ev.type === "confirm") {
@@ -847,11 +860,18 @@ window.onBackendEvent = (ev) => {
   } else if (ev.type === "adaptive") {
     if (window.adaptiveEvent) adaptiveEvent(ev);
   } else if (ev.type === "done") {
-    if (window.adaptiveDone) adaptiveDone();
-    S.busy = false;
-    S.busyThread = null;
-    endStreaming();
-    $("#typing")?.remove();
+    S.confirmQueue = S.confirmQueue.filter((c) => c.thread_id !== ev.thread_id);
+    if (S.confirmActive && S.confirmActive.thread_id === ev.thread_id) S.confirmActive.modal.close();
+    S.runningThreads.delete(ev.thread_id);
+    S.chatStreams.delete(ev.thread_id);
+    S.chatStatus.delete(ev.thread_id);
+    S.busy = S.runningThreads.has(S.currentId);
+    S.busyThread = S.busy ? S.currentId : null;
+    if (ev.thread_id === S.currentId) {
+      if (window.adaptiveDone) adaptiveDone();
+      endStreaming();
+      $("#typing")?.remove();
+    }
     if (ev.workspace) S.workspace = ev.workspace;
     updateSend();
     refreshThreads();
@@ -975,6 +995,8 @@ const CONFIRM_TEXT = {
 function showConfirm(ev) {
   // 1.17.2: Code 에이전트의 승인은 '작업' 탭이 보이면 터미널 안의 선택지로 묻는다(CLI처럼). 안 보이면 이 창으로
   if (ev.source === "code_agent" && window.caConfirm && caConfirm(ev)) return;
+  if (S.confirmActive) { S.confirmQueue.push(ev); return; }
+  S.confirmActive = ev;
   const isRun = ev.kind !== "edit";
   const [intro, alwaysLabel] = CONFIRM_TEXT[ev.kind] || CONFIRM_TEXT.run;
   const body = h("div", {},
@@ -987,8 +1009,8 @@ function showConfirm(ev) {
     api().resolve_confirm(ev.id, decision);
     close(decision);
   };
-  modal({
-    title: ev.title,
+  ev.modal = modal({
+    title: `${(S.threads.find((t) => t.id === ev.thread_id) || {}).title || ev.session_title || "작업"} · ${ev.title}`,
     body,
     wide: true,
     buttons: [
@@ -998,7 +1020,12 @@ function showConfirm(ev) {
       ...(ev.remember ? [{ label: `허용 · '${ev.remember}' 다시 묻지 않기`, action: answer("remember") }] : []),
       { label: "허용", class: "primary", action: answer("allow") },
     ],
-    onClose: () => { if (!answered) api().resolve_confirm(ev.id, "deny"); },
+    onClose: () => {
+      if (!answered) api().resolve_confirm(ev.id, "deny");
+      S.confirmActive = null;
+      const next = S.confirmQueue.shift();
+      if (next) showConfirm(next);
+    },
   });
 }
 
@@ -1942,7 +1969,8 @@ async function init() {
   bindUI();
   const state = await api().get_state();
   applyState(state);
-  S.busy = state.busy;
+  S.runningThreads = new Set(state.running_threads || []);
+  S.busy = S.runningThreads.has(S.currentId);
   // 시작할 때 첫 대화를 여는 동안 사용자가 이미 코드·Lab 등을 열었으면 그대로 둔다(닫으면 화면이 저절로 사라진다)
   if (S.threads.length) await openThread(S.threads[0].id, false);
   else await newThread(false);
