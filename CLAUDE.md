@@ -20,9 +20,9 @@
   제3자 파일은 `web/vendor/`와 `licenses/`, 고지는 `THIRD_PARTY_NOTICES.md`.
 
 ## 규칙
-- **플랫폼**: 안드로이드 앱은 사용자가 따로 요청하지 않으면 기능을 맞추지 않는다(데스크톱만). 공유 모듈 목록·CI android 작업은 그대로 유지하고, 안 되는 기능은 막는다.
+- **플랫폼(2026-10-26 사용자 결정)**: 앞으로 Windows·macOS 데스크톱만 개발·빌드한다. Android APK 빌드·에뮬레이터 CI·업로드·릴리스는 하지 않는다. 기존 Android 소스는 보관한다. 사용자가 다시 요청하기 전에는 Android 기능 맞추기나 빌드를 재개하지 않는다. [AGENT.md](AGENT.md)에도 같은 결정을 기록했다.
 - 화면 글·주석·문서는 한국어, 쉬운 말(주변 코드의 말투를 따른다). 커밋 메시지도 한국어.
-- 새 Python 모듈은 `android/app/build.gradle.kts`의 공유 모듈 목록에 더한다(`tests/test_connectors.py`가 검사). 데스크톱 전용 모듈은 그 테스트의 제외 목록에.
+- 새 Python 모듈은 데스크톱 기준으로 추가한다. Android 빌드를 위한 공유 모듈 목록 동기화는 요구하지 않는다.
 - 안드로이드 Python은 3.11: f-string 식 안에 백슬래시를 쓰지 않는다.
 - 웹페이지·PDF 같은 외부 콘텐츠에 앱 권한(js_api·파일·실행·MCP·API 키)을 주지 않는다. 사용자 요구사항이다(docs/security.md).
 - 커밋·PR·코드에 모델 ID를 적지 않는다. 커밋 끝에:
@@ -45,9 +45,9 @@ python tools/license_check.py repo               # SPDX·고지 점검
 ## 릴리스 절차(사용자가 요청할 때만)
 1. 작업 브랜치에서 `version.py`, `docs/release-notes/vX.Y.Z.md`, README 첫 줄·기능 표, `web/app.js` 사용법 가이드를 고친다.
 2. 푸시만으로는 CI가 돌지 않는다. PR을 열거나 `build.yml`을 workflow_dispatch로 실행한다.
-3. CI(license·tests·ui·windows·macos·android·browser-spike)가 모두 통과하면 PR을 머지한다.
-4. main에서 `build.yml`을 workflow_dispatch로 `release=vX.Y.Z` 입력과 함께 실행 → 태그·릴리스·자산 10개
-   (POSCHAT-Setup.exe, POSCHAT-Store-Setup.exe, POSCHAT-mac.dmg, POSCHAT.apk, 서명 파일 .sig 3개와 옛 이름 PostechChat-* 사본 3개).
+3. CI(license·tests·ui·windows·macos·browser-spike)가 모두 통과하면 PR을 머지한다.
+4. main에서 `build.yml`을 workflow_dispatch로 `release=vX.Y.Z` 입력과 함께 실행 → 태그·릴리스·데스크톱 자산 7개
+   (POSCHAT-Setup.exe, POSCHAT-Store-Setup.exe, POSCHAT-mac.dmg, 서명 파일 .sig 2개와 옛 이름 PostechChat-* 사본 2개).
    앱은 업데이트 서버(`updates.UPDATE_BASE_URL` = `https://pidstech.com`, [docs/update-server.md](docs/update-server.md))에서 받는다. 서버가 10분마다 GitHub 릴리스를 가져오므로 릴리스 뒤 `curl https://pidstech.com/api/releases/latest`와 옛 주소 `http://3.38.118.65/api/releases/latest`에서 새 태그가 보이는지 확인한다. 태그는 모든 사용자에게
    자동 업데이트로 나가므로 사용자 승인 없이 만들지 않는다. 한 번 올린 릴리스 자산은 바꾸지 않는다(Store 제출 주소, 정책 10.2.9).
 5. 머지 뒤 작업 브랜치는 `git fetch origin main && git checkout -B <브랜치> origin/main`으로 다시 시작한다.

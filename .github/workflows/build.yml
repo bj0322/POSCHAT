@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 name: Build installer
 
-# PR과 수동 실행: Windows 설치 파일, macOS 디스크 이미지, Android APK를 빌드하고, 각각 자가 진단(Windows·macOS)과
-# 에뮬레이터 계측 테스트(Android)까지 확인한 뒤 결과물(artifact)로 올린다.
+# PR과 수동 실행: Windows 설치 파일과 macOS 디스크 이미지를 빌드하고 자가 진단 뒤 결과물(artifact)로 올린다.
+# 사용자 결정(2026-10-26): Android APK 빌드·에뮬레이터 시험·배포는 하지 않는다.
 # v로 시작하는 태그(예: v1.2.0)를 push하거나, 수동 실행 때 release에 태그 이름을 넣으면
-# 세 결과물을 그 태그의 GitHub Release에 첨부한다(수동 실행은 실행한 커밋에 태그를 만든다).
+# 데스크톱 결과물을 그 태그의 GitHub Release에 첨부한다(수동 실행은 실행한 커밋에 태그를 만든다).
 on:
   pull_request:
   workflow_dispatch:
@@ -278,72 +278,8 @@ jobs:
           name: POSCHAT-mac
           path: release/POSCHAT-mac.dmg
 
-  android:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      # Chaquopy는 앱에 넣는 것과 같은 버전의 Python(3.11)으로 빌드한다.
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - uses: gradle/actions/setup-gradle@v4
-
-      - name: Build APK
-        working-directory: android
-        run: ./gradlew --no-daemon assembleRelease
-
-      - name: Free disk space for the emulator
-        # Android 14 에뮬레이터는 데이터 영역에 7GB 넘게 필요하다. 이 작업에서 쓰지 않는 큰 도구를 지운다.
-        run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/local/lib/node_modules
-          df -h /
-
-      - name: Enable KVM for the emulator
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Instrumented tests on an emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          # Android 14 이미지: 기본 WebView가 앱 화면의 최신 JavaScript를 지원한다(Android 11 이미지의 WebView는 너무 오래됐다).
-          api-level: 34
-          target: google_apis
-          arch: x86_64
-          disk-size: 4096M
-          disable-animations: true
-          # 오디오를 끄지 않는다(-noaudio 없음): PO노트 녹음 시험이 에뮬레이터의 가상 마이크를 연다
-          emulator-options: -no-window -gpu swiftshader_indirect -no-boot-anim -no-snapshot
-          # 휴대폰 음성 인식 측정값(PoschatBench)을 남기고, 실패하면 앱·화면·Python 로그도 남긴다
-          script: cd android && ./gradlew --no-daemon connectedDebugAndroidTest && adb logcat -d -s PoschatBench:I || { adb logcat -d -s Poschat:V PoschatWeb:V PoschatBench:I python.stdout:V python.stderr:V AndroidRuntime:E TestRunner:V chromium:W DEBUG:V libc:F cr_AwContents:V ActivityManager:W AudioRecord:V | tail -400; exit 1; }
-
-      - name: Collect APK
-        run: |
-          cp android/app/build/outputs/apk/release/app-release.apk POSCHAT.apk
-          python tools/license_check.py package POSCHAT.apk
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: POSCHAT-Android
-          path: POSCHAT.apk
-
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: android-test-reports
-          path: android/app/build/reports/androidTests/
-
   publish:
-    needs: [license, tests, ui, windows, macos, android, browser-spike]
+    needs: [license, tests, ui, windows, macos, browser-spike]
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release != '')
     runs-on: ubuntu-latest
     steps:
@@ -366,7 +302,7 @@ jobs:
           TAG: ${{ inputs.release || github.ref_name }}
         run: |
           python -m pip install requests cryptography
-          python tools/update_sign.py sign --tag "$TAG" dist/POSCHAT-Setup.exe dist/POSCHAT-mac.dmg dist/POSCHAT.apk
+          python tools/update_sign.py sign --tag "$TAG" dist/POSCHAT-Setup.exe dist/POSCHAT-mac.dmg
 
       - name: Publish release
         env:
@@ -384,10 +320,9 @@ jobs:
           # 1.9.1~1.10.0 앱의 자동 업데이트는 예전 파일 이름(PostechChat-*)을 찾으므로 같은 파일을 그 이름으로도 올린다
           cp dist/POSCHAT-Setup.exe dist/PostechChat-Setup.exe
           cp dist/POSCHAT-mac.dmg dist/PostechChat-mac.dmg
-          cp dist/POSCHAT.apk dist/PostechChat.apk
           # 1.18: POSCHAT-Store-Setup.exe는 Microsoft Store 제출용(파트너 센터에 이 버전의 주소를 넣는다). 앱의 자동 업데이트는 받지 않는다
-          gh release create "$TAG" dist/POSCHAT-Setup.exe dist/POSCHAT-Store-Setup.exe dist/POSCHAT-mac.dmg dist/POSCHAT.apk \
-            dist/POSCHAT-Setup.exe.sig dist/POSCHAT-mac.dmg.sig dist/POSCHAT.apk.sig \
-            dist/PostechChat-Setup.exe dist/PostechChat-mac.dmg dist/PostechChat.apk \
+          gh release create "$TAG" dist/POSCHAT-Setup.exe dist/POSCHAT-Store-Setup.exe dist/POSCHAT-mac.dmg \
+            dist/POSCHAT-Setup.exe.sig dist/POSCHAT-mac.dmg.sig \
+            dist/PostechChat-Setup.exe dist/PostechChat-mac.dmg \
             --repo "$GITHUB_REPOSITORY" --title "POSCHAT $TAG" --target "$GITHUB_SHA" \
             --notes-file notes.md --generate-notes
