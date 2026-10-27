@@ -54,7 +54,7 @@ async function poOpen() {
   $("#btn-po").classList.add("active");
   if (window.renderBrowserBar) renderBrowserBar();
   document.querySelectorAll(".thread.active").forEach((t) => t.classList.remove("active"));
-  if (isNarrow()) setCollapsed(true);
+  setCollapsed(true);
   await poRefresh();
   if (PO.note) await poLoadNote(PO.note.id);
   renderPo();

@@ -91,6 +91,41 @@ class CodeAgentTests(unittest.TestCase):
             {"action": "done", "answer": "calc.py의 add를 고쳤고 테스트가 통과했습니다."},
         ]
 
+    def test_context7_available_to_code_agent_and_closed(self):
+        server = types.SimpleNamespace(name="context7", tools=[{
+            "name": "query-docs", "description": "문서 조회", "inputSchema": {"properties": {}}
+        }], builtin=False, connector="")
+        with patch.object(code_agent.mcp_client, "Manager") as cls:
+            manager = cls.return_value
+            manager.ensure.return_value = [server]
+            task, fake = self.run_task([{"action": "done", "answer": "끝"}])
+        self.assertEqual(task["status"], "done")
+        self.assertIn("context7.query-docs", fake.prompts[0])
+        self.assertEqual(manager.ensure.call_args.kwargs["names"], {"context7"})
+        manager.shutdown.assert_called_once()
+
+    def test_context7_external_override_can_be_disabled(self):
+        with patch.object(code_agent.mcp_client, "load_external", return_value=({"context7": {"command": "custom"}}, "")):
+            self.bridge.set_mcp_enabled("context7", False)
+            self.assertFalse(self.bridge._mcp.specs(self.bridge._config, str(self.ws))["context7"]["enabled"])
+            self.bridge.set_mcp_enabled("context7", True)
+            self.assertTrue(self.bridge._mcp.specs(self.bridge._config, str(self.ws))["context7"]["enabled"])
+            self.bridge.set_mcp_enabled("context7", False)
+        self.bridge.set_mcp_enabled("context7", True)
+        self.assertTrue(self.bridge._mcp.specs(self.bridge._config, str(self.ws))["context7"]["enabled"])
+
+    def test_plan_mode_does_not_start_or_invoke_context7(self):
+        self.bridge._config.setdefault("code", {})["agent_approval"] = "plan"
+        with patch.object(code_agent.mcp_client, "Manager") as cls:
+            task, _ = self.run_task([{"action": "done", "answer": "계획"}])
+        self.assertEqual(task["status"], "done")
+        cls.return_value.ensure.assert_not_called()
+        cls.return_value.shutdown.assert_called_once()
+        instance = object.__new__(code_agent.CodeAgent)
+        instance.mode = "plan"
+        with self.assertRaises(agent.ToolError):
+            instance._tool_mcp("context7.query-docs", {})
+
     def test_task_plans_edits_runs_and_records(self):
         task, fake = self.run_task(self.fix_steps())
         self.assertEqual(task["status"], "done")

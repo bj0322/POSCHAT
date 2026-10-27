@@ -24,6 +24,43 @@ class PlmsUiTests(unittest.TestCase):
     open = smoke.UiSmokeTests.open
     shot = smoke.UiSmokeTests.shot
 
+    def test_duplicate_courses_and_pdf_viewer(self):
+        import base64
+        import io
+        from pypdf import PdfWriter
+        from playwright.sync_api import sync_playwright
+
+        writer = PdfWriter()
+        writer.add_blank_page(width=300, height=400)
+        writer.add_blank_page(width=300, height=400)
+        stream = io.BytesIO()
+        writer.write(stream)
+        course = {"id": "7", "title": "물리학", "status": "current", "term": ""}
+        item = {"title": "강의 PDF", "url": plms.ORIGIN + "/mod/resource/view.php?id=10", "kind": "file", "section": ""}
+        def read(action, **kwargs):
+            if action == "courses":
+                return [course, {**course, "id": "007"}]
+            if action == "course":
+                return {**course, "items": [item], "text": ""}
+            if action == "preview":
+                return {"kind": "pdf", "data": base64.b64encode(stream.getvalue()).decode("ascii")}
+            return {"title": "강의 PDF", "text": "추출한 글", "file_type": "pdf", "items": [], "next_offset": None}
+        with patch.object(self.bridge, "_plms_read", side_effect=read), sync_playwright() as p:
+            bw, page, errors = self.open(p)
+            try:
+                page.evaluate("plmsPanel()")
+                page.get_by_role("button", name="내 수업 불러오기", exact=True).click()
+                page.wait_for_selector("#plms-content h3:has-text('이번 학기 수업 1개')")
+                page.get_by_role("button", name="물리학", exact=True).click()
+                page.get_by_role("button", name="강의 PDF", exact=False).click()
+                page.wait_for_selector(".plms-preview canvas")
+                page.wait_for_selector(".plms-preview:has-text('1 / 2쪽')")
+                page.get_by_role("button", name="다음 쪽", exact=True).click()
+                page.wait_for_selector(".plms-preview:has-text('2 / 2쪽')")
+                self.assertEqual(errors, [])
+            finally:
+                bw.close()
+
     def test_login_courses_notice_agent_and_disconnect(self):
         from playwright.sync_api import sync_playwright
 

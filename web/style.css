@@ -481,7 +481,10 @@ pre.bib div { white-space: pre-wrap; }
 .stat span { font-size: 12px; color: var(--text-3); }
 
 /* ---------- 좁은 화면(휴대폰 앱) ---------- */
+.paper-sidebar-open { display: none; }
+.plms-pdf-canvas { display: block; max-width: 100%; height: auto; margin: 10px auto; background: white; }
 @media (max-width: 720px) {
+  #app.collapsed .paper-sidebar-open { display: grid; }
   #app { height: 100vh; height: 100dvh; }
   #sidebar {
     position: fixed; top: 0; bottom: 0; left: 0; z-index: 40; width: min(300px, 85vw);

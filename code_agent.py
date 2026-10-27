@@ -29,6 +29,7 @@ import code_runner
 import code_workspace as cw
 import connectors
 import documents
+import mcp_client
 import remote_fs
 import storage
 from agent import ACTION_DOCS, MAX_READ_CHARS, Agent, ToolError, _truncate
@@ -263,6 +264,10 @@ class CodeAgent(Agent):
     def _read_only(self, what):
         if self.mode == "plan":
             raise ToolError(f"계획 모드라 {what}하지 않습니다. 읽기·검색으로 조사한 뒤 done의 answer에 계획(바꿀 파일·방법·확인 방법)을 쓰세요.")
+
+    def _tool_mcp(self, tool, args=None, **extra):
+        self._read_only("MCP 도구를 실행")
+        return super()._tool_mcp(tool, args, **extra)
 
     def _confirm_download(self, rel, url, size):
         self._read_only("파일을 받")
@@ -909,17 +914,22 @@ class CodeAgentApi:
             if alive() or summary.startswith("▶"):
                 self._ca_step(task_id, summary, detail, agent.current_tool if agent is not None else None)
 
+        manager = mcp_client.Manager()
+        block_mcp = adaptive_engine.local_only(self._config) and adaptive_engine.settings(self._config)["local_only_tools"] == "block"
+        mcp_workspace = None if remote_fs.is_remote(root) else str(root)
         agent = CodeAgent(
             api_key=api_key, workspace=root, agent_mode=True,
             max_steps=int((self._config.get("code") or {}).get("agent_max_steps") or 40),
             history_messages=20, on_status=on_status,
             on_tool=on_tool,
             confirm=confirm, cancelled=lambda: not alive(), thread_id=None, share_threads=False,
-            mcp=None, api_settings=self._thread_api_settings({}), on_delta=None,
+            mcp=(lambda: manager.ensure(self._config, mcp_workspace, on_status, names={"context7"}))
+            if not block_mcp and mode != "plan" else None,
+            api_settings=self._thread_api_settings({}), on_delta=None,
             plms=bool(self._config.get("plms_enabled")) and not (
                 adaptive_engine.local_only(self._config) and adaptive_engine.settings(self._config)["local_only_tools"] == "block"),
             plms_reader=lambda action, **kwargs: self._plms_read(action, cancelled=lambda: not alive(), **kwargs),
-            policy=None, browser=None, paper=None, review=self._ca_review(task_id, lambda: running.get("mode") or mode, alive),
+            policy=connectors.Policy(dict(self._config)), browser=None, paper=None, review=self._ca_review(task_id, lambda: running.get("mode") or mode, alive),
             runner=self._code_runner(), on_plan=on_plan, on_run=on_run,
             # 1.17: 자동 선택을 켰으면 엔진을 거친다. 코드 수정 단계는 '중요·위험'이라 Cloud 먼저, Local Only면 로컬 모델로
             engine=self._make_engine({"model": "auto"}, api_key, lambda: not alive(), area="code_agent"),
@@ -939,6 +949,7 @@ class CodeAgentApi:
         except Exception as e:  # API 오류 등
             status, answer = "error", f"오류: {type(e).__name__}: {e}"
         finally:
+            manager.shutdown()
             end_mode = running.get("mode") or mode
 
             def finish(t):

@@ -669,10 +669,13 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
         name = str(name)
         with self._lock:
             # 추천 서버는 기본이 꺼짐이라 켠 것을, 나머지는 기본이 켜짐이라 끈 것을 기록한다
-            key, on = ("mcp_enabled", enabled) if name in mcp_client.preset_servers() else ("mcp_disabled", not enabled)
+            external, _ = mcp_client.load_external()
+            key, on = ("mcp_enabled", enabled) if name in mcp_client.preset_servers() and name not in external else ("mcp_disabled", not enabled)
             names = set(self._config.get(key, []))
             (names.add if on else names.discard)(name)
             self._config[key] = sorted(names)
+            other = "mcp_disabled" if key == "mcp_enabled" else "mcp_enabled"
+            self._config[other] = [n for n in self._config.get(other, []) if n != name]
             storage.save_config(self._config)
         return self.get_mcp()
 

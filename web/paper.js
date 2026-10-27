@@ -103,7 +103,7 @@ async function paperShow() {
   $("#app").classList.add("paper-open");
   $("#btn-paper")?.classList.add("active");
   $("#btn-paper")?.setAttribute("aria-pressed", "true");
-  if (isNarrow()) setCollapsed(true);
+  setCollapsed(true);
   if (PAPER.doc && PAPER.pdf) return paperRenderReader();
   const st = await paperCall(api().paper_state());
   PAPER.state = st;
@@ -124,6 +124,8 @@ function paperLeave() {
 
 function paperHeader(title, ...extra) {
   return h("div", { class: "paper-head" },
+    h("button", { class: "icon-btn paper-sidebar-open", title: "사이드바 열기", "aria-label": "사이드바 열기",
+      html: ICONS.sidebar, onclick: () => setCollapsed(false) }),
     h("h2", { class: "paper-title", id: "paper-title", title }, title),
     ...extra,
     h("button", { class: "icon-btn", title: "논문 화면 닫기", "aria-label": "논문 화면 닫기", html: ICONS.close,

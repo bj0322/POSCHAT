@@ -84,7 +84,7 @@ function pageOpen(id) {
   $("#chat-title").textContent = PAGES[id].title;
   $(PAGES[id].button)?.classList.add("active");
   document.querySelectorAll(".thread.active").forEach((t) => t.classList.remove("active"));
-  if (isNarrow()) setCollapsed(true);
+  setCollapsed(true);
   if (window.renderBrowserBar) renderBrowserBar();
   renderPage();
 }
@@ -363,7 +363,7 @@ async function renderMcpPanel(panel, st) {
       "MCP 서버는 에이전트가 쓸 수 있는 도구를 더해 줍니다. 내장 서버로 Word·PowerPoint·Excel 문서를 만들고 고치고, ",
       "논문을 찾아 읽고(paper), Notion 페이지를 다루고(notion, 설정에 토큰 필요), ",
       "웹페이지를 읽고 검색할 수 있습니다(firecrawl, 설정에 키 필요). 파일은 작업 폴더 안의 것만 다룹니다. ",
-      "추천 서버(playwright: 브라우저 자동화)는 PC에 Node.js가 있으면 켜서 씁니다. ",
+      "추천 서버(playwright: 브라우저 자동화, context7: 라이브러리 문서 검색)는 PC에 Node.js가 있으면 켜서 씁니다. ",
       "다른 MCP 서버는 설정 파일(mcp.json)에 Claude Desktop과 같은 형식으로 추가합니다. 커넥터의 서버는 커넥터 탭에서 켭니다."),
     list,
     st.config_error ? h("p", { class: "mcp-error" }, st.config_error) : null,

@@ -44,6 +44,7 @@ BUILTIN_SERVERS = {
     "firecrawl": "웹페이지를 마크다운으로 읽기·웹 검색·사이트 지도·여러 쪽 크롤링(설정에 Firecrawl API 키 필요)",
 }
 PLAYWRIGHT_VERSION = "0.0.83"  # 같은 동작이 유지되도록 버전을 고정한다
+CONTEXT7_VERSION = "4.4.4"
 
 
 def preset_servers():
@@ -57,6 +58,10 @@ def preset_servers():
         "command": "npx", "args": args,
         "description": "브라우저 자동화(Microsoft Playwright): 페이지 열기·클릭·입력·스크린샷. PC에 Node.js 필요",
     }}
+    presets["context7"] = {
+        "command": "npx", "args": ["-y", f"@upstash/context7-mcp@{CONTEXT7_VERSION}"],
+        "description": "Context7 라이브러리 문서 검색. Node.js 20.18.1 이상과 인터넷 필요",
+    }
     if shutil.which("github-mcp-server"):
         # GitHub 공식 MCP 서버(Go 바이너리)가 설치돼 있을 때만. 기본은 읽기 전용이고 토큰은 GitHub 커넥터의 것을 쓴다.
         presets["github-official"] = {
@@ -342,9 +347,11 @@ class Manager:
             spec["cwd"] = workspace or None
         return specs
 
-    def ensure(self, config, workspace, on_status=None):
+    def ensure(self, config, workspace, on_status=None, names=None):
         """켜진 서버를 모두 연결된 상태로 만든다. 연결된 서버 목록을 돌려준다."""
         specs = self.specs(config, workspace)
+        if names is not None:
+            specs = {name: spec for name, spec in specs.items() if name in names}
         with self._ensure_lock:  # 동시에 불려도 같은 서버를 두 번 띄우지 않는다
             stale = []
             with self._lock:

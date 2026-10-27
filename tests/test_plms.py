@@ -71,6 +71,21 @@ class PlmsTests(unittest.TestCase):
         self.assertNotIn("private-cookie", json.dumps(doc))
         self.assertNotIn("secretkey", json.dumps(doc))
 
+    def test_duplicate_course_ids_are_normalized(self):
+        self.pages[O + "/my/"] = Response(
+            '<script>M.cfg={"userid":42,"sesskey":"secretkey"}</script>'
+            '<a href="/course/view.php?id=0007">물리학</a><a href="/course/view.php?id=7">물리학</a>')
+        with patch.object(plms.requests.Session, "post", return_value=Response(
+                json.dumps([{"data": {"courses": [{"id": 7, "fullname": "물리학"}]}}]), "application/json")):
+            courses = self.client.courses()
+        self.assertEqual([c["id"] for c in courses], ["7"])
+
+    def test_course_reports_truncated_links(self):
+        self.pages[O + "/course/view.php?id=7"] = Response("".join(
+            f'<a href="/mod/resource/view.php?id={i}">자료 {i}</a>' for i in range(1, 403)))
+        course = self.client.course("7")
+        self.assertEqual((len(course["items"]), course["items_total"], course["items_truncated"]), (400, 402, True))
+
     def test_course_status_and_ordering(self):
         now = 1_800_000_000
         day = 86400
@@ -275,6 +290,53 @@ class PlmsTests(unittest.TestCase):
         doc = self.client.read("7", O + "/mod/resource/view.php?id=10")
         self.assertTrue(doc["url"].endswith("lecture.pdf"))
         self.assertIn("페이지", doc["text"])
+        self.assertEqual(doc["file_type"], "pdf")
+        import base64
+        preview = self.client.preview("7", O + "/mod/resource/view.php?id=10")
+        self.assertEqual(preview["kind"], "pdf")
+        self.assertEqual(base64.b64decode(preview["data"]), stream.getvalue())
+        with self.assertRaises(plms.PlmsError):
+            self.client.preview("7", O + "/pluginfile.php/999/secret.pdf")
+
+    def test_course_answer_reports_actual_read_count(self):
+        a = agent.Agent("test", None, True, 5, 5, lambda _: None, lambda *_: None, lambda *_: False, lambda: False,
+                        plms=True, plms_reader=lambda action, **kw: getattr(self.client, action)(**kw))
+        answers = iter([{"action": "plms_course", "course_id": "7"}, {"action": "done", "answer": "정리"}])
+        with patch.object(a, "_ask", side_effect=lambda *args, **kwargs: json.dumps(next(answers))):
+            answer = a.run([], "수업 전체 정리")
+        self.assertIn("수업 1개, 자료·게시글 0개", answer)
+        self.assertIn("아직 열지 않은 항목은 2개", answer)
+        self.assertIn("전체", agent.PLMS_ACTION_DOC)
+
+    def test_powerpoint_preview_checks_type_and_enrollment(self):
+        target = O + "/pluginfile.php/42/course/1/lecture.pptx"
+        self.pages[O + "/course/view.php?id=7"] = Response(f'<a href="{target}">슬라이드</a>')
+        self.pages[target] = Response(b"PK\x03\x04sample", "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+        self.assertEqual(self.client.preview("7", target)["kind"], "pptx")
+        self.pages[target] = Response(b"not a presentation", "application/octet-stream")
+        with self.assertRaises(plms.PlmsError):
+            self.client.preview("7", target)
+        self.pages[target] = Response(b"PK\x03\x04sample", "application/octet-stream")
+        with self.assertRaises(plms.PlmsError):
+            self.client.preview("99", target)
+
+        legacy = O + "/pluginfile.php/42/course/1/lecture.ppt"
+        self.pages[O + "/course/view.php?id=7"] = Response(f'<a href="{legacy}">슬라이드</a>')
+        self.pages[legacy] = Response(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1slide", "application/vnd.ms-powerpoint")
+        self.assertEqual(self.client.preview("7", legacy)["kind"], "ppt")
+        self.assertIn("추출할 수 없습니다", self.client.read("7", legacy)["text"])
+
+    def test_powerpoint_opens_in_system_viewer(self):
+        import base64
+        import browser_api
+        api = browser_api.BrowserApi()
+        preview = {"kind": "pptx", "data": base64.b64encode(b"PK\x03\x04slide").decode("ascii")}
+        with patch.object(api, "_plms_read", return_value=preview), patch("sys.platform", "win32"), \
+                patch("os.startfile", create=True) as start:
+            result = api.plms_open_presentation("7", O + "/mod/resource/view.php?id=10")
+        self.assertTrue(result["ok"])
+        self.assertEqual(Path(start.call_args.args[0]).read_bytes(), b"PK\x03\x04slide")
+        api._plms_previews[0].cleanup()
 
     def test_ajax_only_dashboard(self):
         self.pages[O + "/my/"] = Response('<script>M.cfg={"userid":42,"sesskey":"secretkey"}</script>')
