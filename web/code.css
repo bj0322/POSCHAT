@@ -6,6 +6,7 @@
 #code-pane { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
 #code-pane[hidden] { display: none; }
 #app.code-open #main { display: none; }
+#app:not(.collapsed) #code-sidebar-open { display: none; }
 
 .code-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 6px 8px; border-bottom: 1px solid var(--border); }
 .code-head .icon-btn, .code-toolbar .icon-btn, .code-files-bar .icon-btn { width: 30px; height: 30px; }

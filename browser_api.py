@@ -238,6 +238,42 @@ class BrowserApi:
         return self._plms_call(lambda: {"document": self._plms_read("read", course_id=course_id, url=url,
                                                                   query=query, offset=offset, parent=parent)})
 
+    def plms_preview(self, course_id, url, parent=""):
+        return self._plms_call(lambda: {"preview": self._plms_read("preview", course_id=course_id, url=url, parent=parent)})
+
+    def plms_open_presentation(self, course_id, url, parent=""):
+        """사용자가 고른 PowerPoint만 임시 파일로 열고, 앱을 종료하면 정리한다."""
+        def go():
+            import base64
+            import os
+            import subprocess
+            import sys
+            import tempfile
+            from pathlib import Path
+            import plms
+
+            preview = self._plms_read("preview", course_id=course_id, url=url, parent=parent)
+            if preview["kind"] not in ("ppt", "pptx"):
+                raise plms.PlmsError("PowerPoint 파일이 아닙니다.")
+            folder = tempfile.TemporaryDirectory(prefix="poschat-plms-view-")
+            path = Path(folder.name) / ("PLMS-강의자료." + preview["kind"])
+            path.write_bytes(base64.b64decode(preview["data"], validate=True))
+            try:
+                if sys.platform == "win32":
+                    os.startfile(str(path))
+                elif sys.platform == "darwin":
+                    subprocess.Popen(["open", str(path)])
+                else:
+                    raise plms.PlmsError("PowerPoint 앱으로 열기는 Windows와 macOS에서 지원합니다.")
+            except Exception:
+                folder.cleanup()
+                raise
+            if not hasattr(self, "_plms_previews"):
+                self._plms_previews = []
+            self._plms_previews.append(folder)
+            return {}
+        return self._plms_call(go)
+
     def plms_disconnect(self):
         def go():
             with self._lock:

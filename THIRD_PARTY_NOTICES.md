@@ -141,3 +141,8 @@ license grants no trademark rights or access rights to the POSTECH GenAI API.
 실행 바이너리는 포함하지 않습니다. 원본 고지와 라이선스는
 [Apache-2.0](licenses/graphify/LICENSE), [MIT](licenses/graphify/LICENSE-MIT),
 [NOTICE](licenses/graphify/NOTICE)에 보존합니다.
+
+내장 `strategic-compact` 스킬은 [ECC](https://github.com/affaan-m/ECC)의
+`skills/strategic-compact`(버전 `25278e7d7b6cf6e6a4e7a6c8e10f14ff22f0eb5b`)를
+POSCHAT의 `/compact`에 맞게 수정한 것입니다. 원본 저작권과 라이선스는
+[MIT 라이선스](licenses/ecc/LICENSE)에 보존합니다. ECC의 훅은 포함하지 않습니다.

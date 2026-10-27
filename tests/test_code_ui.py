@@ -253,6 +253,7 @@ class CodeUiTests(unittest.TestCase):
                 page.wait_for_selector("#attach-tray:has-text('터미널 출력')")
                 self.assertIn("터미널 출력", page.input_value("#input"))
                 # 다시 열면 같은 터미널이 그대로 있다. exit로 끝내면 알린다
+                page.click("#btn-expand")
                 page.click("#btn-code")
                 page.wait_for_selector(".code-term:not([hidden]) .xterm")
                 self.assertEqual(page.evaluate("TERM.sessions.length"), 1)
@@ -288,6 +289,7 @@ class CodeUiTests(unittest.TestCase):
                 self.assertTrue(page.is_visible("#code-pane"))
                 self.assertTrue(page.is_hidden("#main"))
                 self.assertEqual(page.locator(".thread.active").count(), 0)
+                page.click("#code-sidebar-open")
                 page.click("#btn-new")                                            # 사용자가 고르면 채팅으로 간다
                 page.wait_for_selector("#code-pane", state="hidden")
                 self.assertEqual(errors, [])
@@ -305,10 +307,12 @@ class CodeUiTests(unittest.TestCase):
                 page.click(".code-tabpane:not([hidden]) .cm-line >> nth=0")
                 page.keyboard.type("// 저장 안 함 ")
                 page.wait_for_selector(".code-tab.active.dirty")
+                page.click("#code-sidebar-open")
                 page.click("#btn-paper")
                 page.wait_for_selector("#paper-pane:not([hidden])")
                 self.assertTrue(page.is_hidden("#code-pane"))
                 self.assertEqual(page.get_attribute("#btn-code", "aria-pressed"), "false")
+                page.click("#btn-expand")
                 page.click("#btn-code")
                 page.wait_for_selector("#code-pane:not([hidden])")
                 self.assertTrue(page.is_hidden("#paper-pane"))
@@ -318,6 +322,7 @@ class CodeUiTests(unittest.TestCase):
                 self.assertTrue(page.is_hidden("#main"))
                 self.assertEqual(page.locator("#code-full, #code-resizer").count(), 0)
                 # 새 채팅으로 가면 코드 화면이 닫히고, 다시 열면 탭·저장하지 않은 내용이 그대로다
+                page.click("#code-sidebar-open")
                 page.click("#btn-new")
                 page.wait_for_selector("#code-pane", state="hidden")
                 self.assertTrue(page.is_visible("#main"))

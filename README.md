@@ -1,6 +1,6 @@
 # POSCHAT
 
-버전 1.18.6 — **PLMS를 브라우저 없이 백그라운드에서 로그인·조회**, 채팅 에이전트가 바로 PLMS 조회. [릴리스 노트](docs/release-notes/v1.18.6.md) · [이전 버전 기록](#버전-기록)
+버전 1.18.7 — **PLMS 자료 미리보기와 AI 확인 범위**, 작업 화면에서 사이드바 자동 접기. [릴리스 노트](docs/release-notes/v1.18.7.md) · [이전 버전 기록](#버전-기록)
 
 POSTECH GenAI API(기본) 또는 본인의 Claude·OpenAI(GPT) API 키를 쓰는 Windows·macOS 데스크톱 챗봇 POSCHAT입니다(1.10까지의 이름은 POSTECH GenAI Chat). PIDS Tech. 팀이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 소프트웨어 라이선스(AGPL-3.0-only, 과거 버전은 MIT)는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
 
@@ -73,7 +73,7 @@ Releases의 `POSCHAT-mac.dmg`를 받아 엽니다. Apple Silicon(M1 이후) 맥�
 | 에이전트의 인터넷 조사 | 에이전트에게 조사를 맡기면 웹 검색(`web_search`)·웹페이지·PDF 읽기(`web_fetch`)·저자별 논문 목록(`paper_search`)·파일 받기(`web_download`)로 직접 찾습니다. 끄기는 **연결·도구 → 기능** ([릴리스 노트](docs/release-notes/v1.18.1.md), 1.18.1) |
 | Code 에이전트(작업 맡기기) | **코드** → 맨 앞 **작업** 탭(터미널). 할 일을 쓰고 Enter. 계획·diff·실행 출력, 이어서 지시, 바뀐 파일 되돌리기 ([사용법](docs/code-editor-guide.md#code-에이전트-작업-맡기기-116), 1.16). 권한 모드(계획·전체 자동), 다시 묻지 않기, 작업 중 추가 지시, `/init` `/review` `/test` `/plan` `/undo` `/compact`, AGENTS.md, 격리 작업 공간(git worktree) (1.17.1). 터미널 화면·기록 안 승인·Shift+Tab·Esc·`!` `#` `@`·`/resume` `/status` `/diff` 등·프로젝트 명령 ([사용법](docs/code-editor-guide.md#code-에이전트-3-터미널처럼-쓰기-1172), 1.17.2) |
 | Lab(실험 기록·비교·AI 분석) | 왼쪽 위 **Lab**. 실험·Run, 승인 실행, 재현성 기록, 결과 가져오기, 지표·그래프·비교, AI 분석 ([사용법](docs/lab-guide.md), 1.16) |
-| PLMS | 사이드바 **PLMS → SSO 로그인 → 내 수업 불러오기**(설정에 계정을 저장하면 로그인 창을 자동으로 채움, 이번 학기 수업이 먼저). 수업 화면에서 공지·자료·과제별로 보고, 참여 수업·공지·자료를 읽고 에이전트에게 정리 요청(PDF·Office·한글·텍스트, 20MB까지). [사용법·한계](docs/plms-guide.md) |
+| PLMS | 사이드바 **PLMS → SSO 로그인 → 내 수업 불러오기**. 수업별 공지·자료를 보고 PDF 미리보기, PowerPoint 앱 열기, 에이전트 정리를 사용합니다(자료 20MB까지). [사용법·한계](docs/plms-guide.md) |
 | 브라우저 에이전트 | 브라우저를 연 채 에이전트에게 웹 작업을 맡기면 페이지를 직접 조작합니다. 브라우저 막대에서 일시정지·멈춤 ([보안](docs/browser-agent-security.md), 1.16) |
 | 코드(전체 화면 편집기) | 왼쪽 위 **코드**(1.17.2부터 하나의 전체 화면). 파일 트리·편집·저장(Ctrl+S), 선택한 코드 AI에게 묻기, 에이전트 변경 덩어리별 검토, Git 상태·차이·스테이지·커밋(왼쪽 Git 탭) ([사용법](docs/code-editor-guide.md), 1.15). 아래 패널은 진짜 터미널(PowerShell·로그인 셸, **Ctrl+`**) ([사용법](docs/code-editor-guide.md#터미널-118), 1.18) |
 | 논문(채팅 옆 PDF) | 왼쪽 위 **논문**. PDF 열기·arXiv 번호, 선택한 부분·이 쪽·영역 잘라 묻기, 논문 요약, 라이브러리 논문 비교표 (1.14) |
@@ -246,6 +246,9 @@ MCP(Model Context Protocol)는 AI 도구를 연결하는 표준입니다. 에이
 | 서버 | 내용 |
 |---|---|
 | `playwright` | [Microsoft Playwright MCP](https://github.com/microsoft/playwright-mcp)(`@playwright/mcp@0.0.83`). 브라우저를 열어 페이지 이동·클릭·입력·스크린샷·폼 채우기. Windows에서는 설치된 Edge를 씁니다. 스냅숏·스크린샷은 작업 폴더의 `.playwright-mcp/`에 저장됩니다. 모든 조작은 명령 실행처럼 승인을 받습니다. |
+| `context7` | [Context7 MCP](https://github.com/upstash/context7)(`@upstash/context7-mcp@4.4.4`). 라이브러리 이름을 찾고 관련 문서를 조회합니다. Node.js 20.18.1 이상과 인터넷이 필요합니다. 키 없이도 제한적으로 쓸 수 있으며, 조회할 질문이 Context7에 전달됩니다. Code 작업에서도 사용할 수 있습니다. |
+
+Context7은 **연결·도구 → MCP 서버**에서 켠 뒤, 에이전트 모드나 Code 작업에서 “Context7으로 라이브러리 문서를 찾아줘”라고 요청합니다. Code의 계획 모드에서는 MCP 서버를 실행하지 않습니다. 처음 연결할 때 npm에서 고정된 버전의 서버를 내려받습니다. API 키를 쓸 경우 `mcp.json`에서 같은 이름의 서버 설정으로 덮어쓸 수 있습니다. 이 파일의 키는 평문으로 저장됩니다. Local Only에서 외부 도구를 차단하면 Context7도 사용하지 않습니다.
 
 #### 논문 읽기 (`paper`)
 
@@ -316,13 +319,15 @@ description: 회의 녹취를 회의록 형식으로 정리할 때 사용
 
 스킬을 읽는 위치는 다음과 같습니다. 이름이 같으면 아래쪽이 우선합니다.
 
-1. 앱 내장: `summarize`(문서 요약), `code-review`(코드 검토), `paper-reading`(논문을 나눠 읽고 쉽게 설명), `paper-compare`(논문 비교), `ponytail`(가장 작은 변경으로 문제 해결), `graphify`(코드·문서의 관계 그래프와 구조 탐색)
+1. 앱 내장: `summarize`(문서 요약), `code-review`(코드 검토), `paper-reading`(논문을 나눠 읽고 쉽게 설명), `paper-compare`(논문 비교), `ponytail`(가장 작은 변경으로 문제 해결), `graphify`(코드·문서의 관계 그래프와 구조 탐색), `strategic-compact`(긴 작업의 맥락 요약), `rtk`(명령 출력 줄이기)
 2. 사용자 공용: `%APPDATA%\PostechChat\skills\`. 앱의 **스킬 → 새 스킬 만들기**로 템플릿을 만들 수 있습니다.
 3. 작업 폴더 전용: `<작업 폴더>\skills\`
 
 `/ponytail 요청`으로 간결한 개발 지침을 불러옵니다. 기본은 `full`이며, `/ponytail lite`, `/ponytail ultra`로 수준을 바꾸고 `/ponytail off`로 현재 대화에서 끌 수 있습니다. 이 모드는 AI가 따르는 지침입니다.
 
 `/graphify 요청`으로 관계 그래프 생성·조회 지침을 불러옵니다. Graphify 실행 도구와 Python 환경은 별도로 필요하며, 설치·분석 명령은 기존 실행 승인 절차를 따릅니다.
+
+`rtk` 스킬은 별도로 설치한 [RTK OSS](https://github.com/rtk-ai/rtk)를 명시적으로 호출해 지원되는 명령의 출력을 줄입니다. macOS는 `brew install rtk-ai/tap/rtk-oss`, Windows는 [릴리스](https://github.com/rtk-ai/rtk/releases)에서 `rtk-oss-x86_64-pc-windows-msvc.zip`을 받아 풀고 `rtk.exe`를 PATH에 추가하세요. 설치 뒤 `rtk --version`, `rtk gain`을 확인하고 앱을 다시 시작하세요. Code 작업에서는 “RTK로 Git 상태를 확인해 줘”처럼 요청할 수 있습니다. 원격 작업은 원격 컴퓨터에도 설치해야 합니다. 명령은 기존 승인 절차를 따르며, RTK의 출력은 일부 생략될 수 있으므로 필요하면 원래 명령으로 다시 확인합니다. RTK 실행 파일은 앱에 포함되지 않고 자동으로 설치되지 않습니다.
 
 ### 여러 세션 동시에 실행하기
 
@@ -443,6 +448,7 @@ py -3 -m venv .venv
 
 각 버전의 자세한 내용은 [docs/release-notes](docs/release-notes)에 있습니다.
 
+- 1.18.7 — **PLMS 자료 보기와 확인 범위**: 중복 수업 정리, PDF 미리보기·PowerPoint 열기, 에이전트 확인 범위 표시. 사이드바 자동 접기와 Context7 추천 서버·RTK/ECC 스킬 안내. [릴리스 노트](docs/release-notes/v1.18.7.md)
 - 1.18.6 — **PLMS 백그라운드 접근**: 저장된 계정으로 화면에 브라우저를 붙이지 않고 로그인·조회하고, 채팅의 에이전트도 브라우저를 열지 않아도 PLMS 자료를 가져옴(StonePASS가 필요할 때만 브라우저를 보임). [릴리스 노트](docs/release-notes/v1.18.6.md)
 - 1.18.5 — **PLMS 개선**: 이번 학기 수업을 먼저 보이고 지난 학기는 접음, 설정에 PLMS 계정을 저장하면 SSO 로그인 창을 자동으로 채움(StonePASS는 직접), 수업 화면을 종류 칩·주차별 묶음으로 정리. [릴리스 노트](docs/release-notes/v1.18.5.md)
 - 1.18.4 — **PLMS 연결**: 내장 브라우저 SSO 로그인 후 참여 수업·공지·강의자료 조회, 에이전트 도구. **여러 세션 동시 실행**, ponytail·graphify 내장 스킬, Windows·macOS 전용 빌드. [릴리스 노트](docs/release-notes/v1.18.4.md)

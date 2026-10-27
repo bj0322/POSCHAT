@@ -145,6 +145,35 @@ class SidebarUiTests(unittest.TestCase):
                 self.assertGreaterEqual(m["visible"], 5, m)
                 self.assertTrue(m["bottomInside"], m)
                 self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth"), 390)
+                page.click("#btn-paper")
+                page.wait_for_selector(".paper-sidebar-open", state="visible")
+                page.click(".paper-sidebar-open")
+                self.assertFalse(page.evaluate("document.querySelector('#app').classList.contains('collapsed')"))
+                self.assertEqual(errors, [])
+            finally:
+                browser.close()
+
+    def test_opening_views_collapses_sidebar_and_can_reopen_it(self):
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser, page, errors = self.page(p, 1366, 768)
+            try:
+                page.route("**/api/browser_show", lambda route: route.fulfill(json={"ok": True}))
+                page.route("**/api/browser_hide", lambda route: route.fulfill(json={"ok": True}))
+                page.evaluate("BR.available = true; document.querySelector('#btn-browser').hidden = false")
+                page.click("#btn-browser")
+                page.wait_for_function("document.querySelector('#app').classList.contains('collapsed')")
+                self.assertTrue(page.is_visible("#btn-expand"))
+                page.click("#btn-expand")
+                self.assertFalse(page.evaluate("document.querySelector('#app').classList.contains('collapsed')"))
+                page.click("#btn-research")
+                self.assertTrue(page.evaluate("document.querySelector('#app').classList.contains('collapsed')"))
+                page.click("#btn-expand")
+                page.click("#btn-code")
+                page.wait_for_selector("#code-sidebar-open", state="visible")
+                page.click("#code-sidebar-open")
+                self.assertFalse(page.evaluate("document.querySelector('#app').classList.contains('collapsed')"))
                 self.assertEqual(errors, [])
             finally:
                 browser.close()

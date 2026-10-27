@@ -102,7 +102,7 @@ async function browserToggle() {
     renderBrowserBar();
     return;
   }
-  if (isNarrow()) setCollapsed(true);
+  setCollapsed(true);
   setTimeout(() => $("#browser-address")?.focus(), 50);
 }
 
@@ -224,9 +224,10 @@ function plmsPanel() {
       ? `저장된 계정(${saved})으로 브라우저를 열지 않고 알아서 로그인합니다. ‘내 수업 불러오기’만 누르세요. StonePASS 같은 추가 인증이 필요할 때만 오른쪽에 브라우저가 열립니다. 채팅의 에이전트도 같은 방식으로 PLMS를 조회합니다.`
       : "내장 브라우저에서 POSTECH SSO·StonePASS 인증을 직접 마친 뒤 ‘내 수업 불러오기’를 누르세요. 설정에 계정을 저장해 두면 브라우저를 열지 않고 자동으로 로그인합니다."),
     h("p", { class: "plms-note" }, "요청한 공지·자료는 선택한 AI 서비스로 전송될 수 있습니다. 비밀번호·인증 코드·쿠키는 AI에 보내지 않습니다."));
-  let generation = 0, closed = false, courses = null;
+  let generation = 0, closed = false, courses = null, previewCleanup = null;
   // replaceChildren은 null을 "null" 글자로 넣는다: 빈 칸은 걸러서 넣는다
-  const put = (...nodes) => content.replaceChildren(...nodes.flat().filter((n) => n != null && n !== false));
+  const clearPreview = () => { if (previewCleanup) { previewCleanup(); previewCleanup = null; } };
+  const put = (...nodes) => { clearPreview(); content.replaceChildren(...nodes.flat().filter((n) => n != null && n !== false)); };
   const showError = (message) => put(h("p", { role: "alert" }, message));
   const call = async (fn, render, busy = "PLMS에서 읽는 중…") => {
     const current = ++generation;
@@ -255,6 +256,7 @@ function plmsPanel() {
 
   /* 수업 목록: 이번 학기를 먼저, 지난 학기는 접어 둔다 */
   const showCourses = (list) => {
+    list = [...new Map(list.map((c) => [String(c.id).replace(/^0+(?=\d)/, ""), c])).values()];
     courses = list;
     const card = (c) => h("button", { class: "plms-card", onclick: () => openCourse(c) },
       h("span", { class: "plms-card-title" }, c.title),
@@ -294,7 +296,7 @@ function plmsPanel() {
       h("div", { class: "plms-crumbs" }, h("button", { class: "btn", onclick: () => showCourses(courses) }, "← 수업 목록")),
       h("div", { class: "plms-head" }, h("h3", {}, c.title), c.term ? chip(c.term, c.status === "current" ? "on" : "") : null),
       h("div", { class: "plms-actions" },
-        h("button", { class: "btn primary", onclick: () => ask(`PLMS 수업 ${c.title} (course_id=${c.id})의 공지와 강의자료를 확인해서 정리해 줘. 원문 링크도 알려 줘.`) }, "에이전트에게 수업 정리 맡기기")),
+        h("button", { class: "btn primary", onclick: () => ask(`PLMS 수업 ${c.title} (course_id=${c.id})의 공지와 강의자료 목록을 끝까지 확인하고 각 자료와 하위 항목을 읽어 정리해 줘. 확인하지 못한 자료와 이유, 확인한 범위 및 원문 링크를 밝혀 줘.`) }, "에이전트에게 수업 정리 맡기기")),
       h("div", { class: "plms-filters", role: "group", "aria-label": "항목 종류" }, PLMS_FILTERS.filter((f) => f[0] === "all" || count(f[2])).map(([key, label, names]) =>
         h("button", { class: "plms-filter" + (key === filter ? " on" : ""), "aria-pressed": String(key === filter),
           onclick: () => renderCourse(course, c, key) }, `${label} ${count(names)}`))),
@@ -304,11 +306,62 @@ function plmsPanel() {
   const openCourse = (course) => call(() => api().plms_course(course.id), (res) => renderCourse(course, { ...res.course, term: course.term, status: course.status }));
 
   /* 자료 화면 */
+  const preview = async (course, item, parents, container, kind) => {
+    try {
+      const res = await api().plms_preview(course.id, item.url, parents);
+      if (!container.isConnected) return;
+      if (!res?.ok || res.preview?.kind !== kind) throw new Error(res?.error || "미리보기를 불러오지 못했습니다.");
+      const raw = atob(res.preview.data), bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      if (kind === "pptx" || kind === "ppt") {
+        const blob = new Blob([bytes], { type: kind === "ppt" ? "application/vnd.ms-powerpoint" : "application/vnd.openxmlformats-officedocument.presentationml.presentation" });
+        const link = h("a", { class: "btn", href: URL.createObjectURL(blob), download: `PLMS-강의자료.${kind}` }, "PowerPoint 파일 받기");
+        previewCleanup = () => URL.revokeObjectURL(link.href);
+        container.replaceChildren(h("p", { class: "plms-note" }, "PowerPoint 또는 호환 앱에서 원본 슬라이드를 볼 수 있습니다."),
+          h("div", { class: "plms-actions" }, h("button", { class: "btn primary", onclick: async () => {
+            const opened = await api().plms_open_presentation(course.id, item.url, parents);
+            toast(opened?.ok ? "PowerPoint 앱에 열기를 요청했습니다." : (opened?.error || "PowerPoint 파일을 열지 못했습니다."));
+          } }, "PowerPoint 앱에서 열기"), link));
+        return;
+      }
+      const lib = await paperLib();
+      const base = new URL("vendor/pdfjs/", location.href).href;
+      const pdf = await lib.getDocument({ data: bytes, cMapUrl: base + "cmaps/", cMapPacked: true,
+        standardFontDataUrl: base + "standard_fonts/", wasmUrl: base + "wasm/", isEvalSupported: false,
+        enableXfa: false, disableAutoFetch: true }).promise;
+      let number = 1;
+      const canvas = h("canvas", { class: "plms-pdf-canvas", "aria-label": "PDF 페이지" });
+      const label = h("span", { class: "plms-note", role: "status" });
+      const prev = h("button", { class: "btn", onclick: () => render(number - 1) }, "이전 쪽");
+      const next = h("button", { class: "btn", onclick: () => render(number + 1) }, "다음 쪽");
+      let rendering = false;
+      const render = async (n) => {
+        if (rendering || n < 1 || n > pdf.numPages) return;
+        rendering = true; prev.disabled = next.disabled = true;
+        try {
+          number = n;
+          const page = await pdf.getPage(n), unit = page.getViewport({ scale: 1 });
+          const viewport = page.getViewport({ scale: Math.min(2, Math.max(0.5, (container.clientWidth - 20) / unit.width)) });
+          canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
+          await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+          label.textContent = `${number} / ${pdf.numPages}쪽`;
+        } catch (e) { label.textContent = "PDF 페이지를 표시하지 못했습니다."; }
+        finally { rendering = false; prev.disabled = number <= 1; next.disabled = number >= pdf.numPages; }
+      };
+      if (!container.isConnected) { pdf.destroy(); return; }
+      previewCleanup = () => { pdf.destroy(); };
+      container.replaceChildren(h("div", { class: "plms-actions" }, prev, label, next), canvas);
+      await render(1);
+    } catch (e) {
+      if (container.isConnected) container.replaceChildren(h("p", { role: "alert" }, e.message || "미리보기를 불러오지 못했습니다."));
+    }
+  };
   const read = (course, c, item, parents, back) => call(() => api().plms_read(course.id, item.url, "", 0, parents), (res) => {
     const data = res.document;
     const here = () => renderDoc(data);
     const renderDoc = (d) => {
       const progress = d.total_chars ? `${Math.min(d.offset + d.text.length, d.total_chars).toLocaleString()} / ${d.total_chars.toLocaleString()}자` : "";
+      const viewer = ["pdf", "ppt", "pptx"].includes(d.file_type) ? h("div", { class: "plms-preview" }, "자료를 불러오는 중…") : null;
       put(
         h("div", { class: "plms-crumbs" }, h("button", { class: "btn", onclick: back }, "← 돌아가기"),
           h("span", { class: "plms-note" }, `${c.title} › ${item.title}`)),
@@ -318,15 +371,17 @@ function plmsPanel() {
           d.next_offset == null ? null : h("button", { class: "btn", onclick: () => call(
             () => api().plms_read(course.id, item.url, "", d.next_offset, parents), (r) => renderDoc(r.document)) }, "이어서 읽기"),
           progress ? h("span", { class: "plms-note" }, progress) : null),
-        h("pre", { class: "plms-text" }, d.text),
+        viewer,
+        d.text ? h("details", { class: "plms-group", open: !viewer }, h("summary", {}, "추출한 글 보기"), h("pre", { class: "plms-text" }, d.text)) : null,
         (d.items || []).length ? h("h4", {}, "이 자료 안의 항목") : null,
         (d.items || []).length ? h("div", { class: "plms-rows" }, d.items.map((child) =>
           row(child.title, PLMS_KINDS[child.kind] || "기타", () => read(course, c, child, [...parents, item.url], here)))) : null);
+      if (viewer) preview(course, item, parents, viewer, d.file_type);
     };
     renderDoc(data);
   });
   const { close } = modal({ title: "PLMS 수업·공지·자료", wide: true, body: content,
-    onClose: () => { closed = true; ++generation; }, buttons: [
+    onClose: () => { closed = true; ++generation; clearPreview(); }, buttons: [
       { label: saved ? "로그인" : "SSO 로그인", action: async (dismiss) => {
         if (saved) {  // 저장된 계정: 화면에 브라우저를 붙이지 않고 로그인한다
           return call(() => api().plms_login(), () => call(() => api().plms_courses(), (res) => showCourses(res.courses)),

@@ -155,7 +155,7 @@ class SessionTests(unittest.TestCase):
 
     def test_bundled_skills_are_discoverable(self):
         skills = agent.discover_skills('')
-        for name in ('ponytail', 'graphify'):
+        for name in ('ponytail', 'graphify', 'strategic-compact', 'rtk'):
             self.assertEqual(skills[name].source, '내장')
             self.assertTrue(skills[name].description)
             self.assertTrue(skills[name].body)

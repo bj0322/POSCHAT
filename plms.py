@@ -6,6 +6,7 @@
 StonePASS(2단계) 인증은 계속 사용자가 직접 한다. 저장한 비밀번호는 모델·대화 기록·화면 상태로 나가지 않는다.
 """
 import json
+import base64
 import re
 import tempfile
 import time
@@ -485,7 +486,8 @@ class Client:
             p = urlsplit(item["url"])
             cid = parse_qs(p.query).get("id", [""])[0]
             if p.path == "/course/view.php" and cid.isdigit() and int(cid) > 1:
-                courses[cid] = {"id": cid, "title": item["title"], "url": item["url"], "status": "unknown", "term": ""}
+                cid = str(int(cid))
+                courses[cid] = {"id": cid, "title": item["title"], "url": ORIGIN + "/course/view.php?id=" + cid, "status": "unknown", "term": ""}
         # 새 Moodle 대시보드는 수강 목록을 AJAX로 늦게 불러온다. 허용된 조회 함수 하나만 사용한다.
         key = re.search(r'["\']sesskey["\']\s*:\s*["\']([a-zA-Z0-9]+)', raw)
         listed = False
@@ -516,7 +518,8 @@ class Client:
                     p = urlsplit(item["url"])
                     cid = parse_qs(p.query).get("id", [""])[0]
                     if p.path == "/course/view.php" and cid.isdigit() and int(cid) > 1:
-                        courses[cid] = {"id": cid, "title": item["title"], "url": item["url"], "status": "unknown", "term": ""}
+                        cid = str(int(cid))
+                        courses[cid] = {"id": cid, "title": item["title"], "url": ORIGIN + "/course/view.php?id=" + cid, "status": "unknown", "term": ""}
             except PlmsError:
                 if not listed:
                     raise PlmsError("내 수업 목록을 불러오지 못했습니다. PLMS의 내 강좌 화면을 확인하세요.") from None
@@ -534,10 +537,11 @@ class Client:
         items = [x for x in links(raw, final) if urlsplit(x["url"]).path != "/course/view.php"
                  and urlsplit(x["url"]).path not in ("/", "/my/")]
         return {"id": cid, "title": course["title"], "url": final, "text": text[:PAGE_CHARS], "items": items[:400],
+                "items_total": len(items), "items_truncated": len(items) > 400, "text_truncated": len(text) > PAGE_CHARS,
                 "status": course["status"], "term": course["term"]}
 
-    def read(self, course_id, url, query="", offset=0, parent=""):
-        """수강 중인 수업에서 찾은 링크만 읽는다. 게시판·폴더는 상위 링크를 지정해 한 단계 더 탐색한다."""
+    def _material(self, course_id, url, parent=""):
+        """수강 중인 수업에서 찾은 링크만 읽는다."""
         target = safe_url(url)
         course = self.course(course_id)
         candidates = {x["url"] for x in course["items"]}
@@ -553,24 +557,49 @@ class Client:
         if target not in candidates and target != course["url"]:
             raise PlmsError("수업에서 찾은 자료 주소만 읽을 수 있습니다. 수업 목록의 링크와 parent를 확인하세요.")
         final, headers, body = self._request(target)
+        return course, target, final, headers, body
+
+    @staticmethod
+    def _suffix(final, headers):
+        ctype = headers.get("Content-Type", "").lower()
+        suffix = Path(unquote(urlsplit(final).path)).suffix.lower()
+        if suffix not in documents.DOCUMENT_EXTS | {".ppt", ".txt", ".md", ".csv"}:
+            m = re.search(r'\.(pdf|docx|pptx|ppt|xlsx|xlsm|hwp|hwpx|txt|md|csv)\b', headers.get("Content-Disposition", ""), re.I)
+            suffix = "." + m[1].lower() if m else (".pdf" if "application/pdf" in ctype else "")
+        return suffix
+
+    def preview(self, course_id, url, parent=""):
+        _, _, final, headers, body = self._material(course_id, url, parent)
+        suffix = self._suffix(final, headers)
+        if suffix == ".pdf" and b"%PDF" in body[:1024]:
+            kind = "pdf"
+        elif suffix == ".pptx" and body.startswith(b"PK\x03\x04"):
+            kind = "pptx"
+        elif suffix == ".ppt" and body.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
+            kind = "ppt"
+        else:
+            raise PlmsError("PDF 또는 PowerPoint 파일을 확인하지 못했습니다.")
+        return {"kind": kind, "data": base64.b64encode(body).decode("ascii")}
+
+    def read(self, course_id, url, query="", offset=0, parent=""):
+        course, target, final, headers, body = self._material(course_id, url, parent)
         ctype = headers.get("Content-Type", "").lower()
         title = next((x["title"] for x in course["items"] if x["url"] == target), "PLMS 자료")
         items = []
+        suffix = ""
         if "html" in ctype:
             raw = body.decode("utf-8", errors="replace")
             if re.search(r'type\s*=\s*["\']password', raw, re.I):
                 raise PlmsLoginRequired("PLMS 로그인이 만료되었습니다. 다시 로그인하세요.")
             title, text, _ = html_to_text(raw, final)
-            items = links(raw, final)[:400]
+            items = links(raw, final)
         else:
             # 서버 파일명을 경로로 쓰지 않고 확장자만 취한다. 임시 파일은 읽은 즉시 지운다.
-            disposition = headers.get("Content-Disposition", "")
-            suffix = Path(urlsplit(final).path).suffix.lower()
-            if suffix not in documents.DOCUMENT_EXTS | {".txt", ".md", ".csv"}:
-                m = re.search(r'\.(pdf|docx|pptx|xlsx|xlsm|hwp|hwpx|txt|md|csv)\b', disposition, re.I)
-                suffix = "." + m[1].lower() if m else (".pdf" if "application/pdf" in ctype else "")
+            suffix = self._suffix(final, headers)
             if suffix in {".txt", ".md", ".csv"}:
                 text = body.decode("utf-8-sig", errors="replace")
+            elif suffix == ".ppt":
+                text = "(이전 PowerPoint 형식은 글을 추출할 수 없습니다. 원본을 호환 앱에서 열어 확인하세요.)"
             elif suffix in documents.DOCUMENT_EXTS:
                 try:
                     with tempfile.TemporaryDirectory(prefix="poschat-plms-") as folder:
@@ -588,4 +617,4 @@ class Client:
                 start = max(0, index - 1000)
         return {"title": title, "url": final, "text": text[start:start + PAGE_CHARS], "offset": start,
                 "total_chars": len(text), "next_offset": start + PAGE_CHARS if start + PAGE_CHARS < len(text) else None,
-                "items": items}
+                "items": items[:400], "items_total": len(items), "file_type": suffix.lstrip("."), "items_truncated": len(items) > 400}

@@ -21,6 +21,15 @@ CONFIG = {"connectors": {"github": {"enabled": True}, "gmail": {"enabled": True}
 
 
 class ConnectorServerIntegrationTests(unittest.TestCase):
+    def test_context7_is_opt_in_and_filtered(self):
+        with isolated_app_dir():
+            manager = mcp_client.Manager()
+            self.assertFalse(manager.specs({}, None)["context7"]["enabled"])
+            with patch.object(manager, "_start") as start:
+                manager.ensure({"mcp_enabled": ["context7"]}, None, names={"context7"})
+            self.assertEqual([c.args[0] for c in start.call_args_list], ["context7"])
+            self.assertIn(mcp_client.CONTEXT7_VERSION, start.call_args.args[1]["args"][-1])
+
     def check_manager(self, manager, ws):
         servers = {s.name: s for s in manager.ensure(CONFIG, ws)}
         status = {s["name"]: s for s in manager.status(CONFIG, ws)["servers"]}

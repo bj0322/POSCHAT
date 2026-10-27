@@ -121,6 +121,7 @@ function codeBuild(pane) {
   });
   pane.append(
     h("div", { class: "code-head" },
+      btn("sidebar", "사이드바 열기", () => setCollapsed(false), { id: "code-sidebar-open" }),
       btn("files", "파일 목록 보이기·숨기기", () => codeToggleFiles(), { id: "code-files-toggle", "aria-pressed": "true" }),
       h("h2", { class: "code-title", id: "code-title" }, "코드"),
       h("small", { class: "code-ws", id: "code-ws" }, ""),
@@ -180,7 +181,8 @@ async function codeShow() {
   document.querySelectorAll(".thread.active").forEach((t) => t.classList.remove("active"));  // 다른 화면처럼 대화 선택을 뺀다
   $("#btn-code")?.classList.add("active");
   $("#btn-code")?.setAttribute("aria-pressed", "true");
-  if (isNarrow()) { setCollapsed(true); if (CODE.tabs.length) codeToggleFiles(false); }
+  setCollapsed(true);
+  if (isNarrow() && CODE.tabs.length) codeToggleFiles(false);
   if (!window.CM) {
     $("#code-stack").replaceChildren(h("p", { class: "muted code-empty" }, "편집기 모듈(CodeMirror)을 불러오지 못했습니다."));
     return;
