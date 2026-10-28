@@ -1,6 +1,6 @@
 # POSCHAT 로드맵과 다음 작업 (v1.16부터)
 
-마지막 갱신: 2026-10-27, v1.18.7 개발 시점. 작업 지침은 저장소 최상위 [CLAUDE.md](../CLAUDE.md).
+마지막 갱신: 2026-10-28, v1.18.8 개발 시점. 작업 지침은 저장소 최상위 [CLAUDE.md](../CLAUDE.md).
 
 **플랫폼 정책(2026-10-26, 사용자 결정)**: 앞으로 데스크톱(Windows·macOS)만 개발·빌드한다. Android APK 빌드·에뮬레이터 CI·업로드·릴리스는 중단한다. 기존 Android 소스는 보관하지만 새 기능을 맞추거나 공유 모듈 목록을 동기화하지 않는다. 사용자가 다시 요청하기 전에는 Android 빌드를 재개하지 않는다.
 
@@ -12,10 +12,11 @@
 | 1.14 | 논문 읽기(POSCHAT Paper) | 릴리스 |
 | 1.15 | B1 수정(ui_events 큐) + POSCHAT Code(편집기·변경 검토·Git·실행) | 릴리스 |
 | 1.16 | Code 에이전트(작업 탭), POSCHAT Lab, AI 브라우저 에이전트, 사이드바 정리, 보안 검토 반영(사이트 승인 kind `site`, `.git` 수정 금지) | 릴리스 |
-| 1.17 | Adaptive Hybrid AI Engine: 로컬 AI(Ollama)·자동 모델 선택(4정책)·3단계(경량 Cloud·프런티어 상담)·품질 검증·승격·비용 통계·벤치마크 | 릴리스(3단계·캐싱은 기본 꺼짐, 실제 모델 측정은 남음) |
+| 1.17 | Adaptive Hybrid AI Engine: 로컬 AI(Ollama)·자동 모델 선택(4정책)·3단계(경량 Cloud·프런티어 상담)·품질 검증·승격·비용 통계·벤치마크 | 릴리스(3단계는 기본 꺼짐, 캐싱은 1.18.8부터 기본 켜짐, 실제 모델 측정은 남음) |
 | 1.17.1 | Code 에이전트 2(Claude Code·Codex처럼): 권한 모드 4가지·다시 묻지 않기 규칙·작업 중 지시·슬래시 명령·지시별 되돌리기·AGENTS.md·격리 작업 공간(git worktree)·새 도구, 손익분기 실험 도구 | 릴리스 |
 | 1.17.2 | Code 에이전트 3(터미널처럼, 사용자 요청 '완벽히 CLI처럼'): 작업 탭 전체를 Claude Code 같은 터미널로 — `● Read(…) ⎿` 기록·줄 번호 diff·접힌 출력(Ctrl+O), 기록 안의 승인 선택지(1·2·3·Esc, 거부하며 다르게 하라고 알리기), Shift+Tab 모드(작업 중에도), Esc 멈춤·Esc 두 번 되돌리기, ↑↓ 지난 입력, `/`·`@` 자동 완성, `!명령`·`#메모`·`@파일`, 프로젝트 명령(.poschat/.claude commands), /clear /resume /status /diff /revert /todos /permissions /memory /worktree /apply /keep /discard /delete. 코드는 채팅과 나누지 않는 하나의 전체 화면 | 릴리스 |
 | 1.18.1 | 에이전트 인터넷 도구(web_search·web_fetch·paper_search 저자별·web_download, `web_research.py`, 에이전트가 만든 주소는 승인·내부망 차단), `/usage`(채팅·작업 탭), 작업 탭 아래 회색 띠 없앰 | 릴리스 |
+| 1.18.8 | PLMS를 베타로 표시(사이드바 맨 아래·베타 배지), 토큰 효율(프롬프트 줄이기·프롬프트 캐싱 기본 켜짐), 대화 검색 색인(`thread_index.py`), 공용 `net.py` 분리, graphify 출력 정리 | 실제 앱에서 토큰 절감폭·PLMS 손 확인 남음 |
 | 1.18.7 | PLMS 수업 중복 제거·PDF 미리보기·PowerPoint 열기·AI 확인 범위 표시, 작업 화면에서 사이드바 자동 접기, Context7·RTK·ECC 안내 | 실제 학교 계정·Windows·macOS 앱 손 확인 남음 |
 | 1.18.6 | PLMS 백그라운드: 저장된 계정으로 숨은 웹 뷰에서 로그인·조회(브라우저 안 열림), 채팅 에이전트가 브라우저 없이 PLMS 조회, 실패 시 10분 재시도 차단 | 실제 학교 계정 SSO·StonePASS 손 확인 남음 |
 | 1.18.5 | PLMS 개선: 이번 학기 수업 먼저·지난 학기 접기, 설정에 저장한 계정으로 로그인 창 자동 입력(StonePASS는 직접), 수업 화면(종류 칩·주차별) 재구성 | 실제 학교 계정 자동 입력·학기 구분 손 확인 남음 |
@@ -39,7 +40,7 @@
 - 분석 결과로 `adaptive_cost`의 기본 프로필·승격 확률·상담 비율(지금은 '언제나 상담'으로 봄)을 고치고, 표 정책이 이기면 엔진에 옮긴다.
 
 ### 2. v1.17 뒤: 실제 모델 측정
-v1.17(Adaptive Hybrid AI Engine)은 릴리스했다(사용자 승인, 2026-10-24). 3단계·프롬프트 캐싱은 기본 꺼짐, 단가를 넣으면 손익분기(`adaptive_cost`)로 경로를 고른다. 구조 [architecture/adaptive-ai.md](architecture/adaptive-ai.md), 결과 [adaptive-ai-benchmark-results.md](adaptive-ai-benchmark-results.md).
+v1.17(Adaptive Hybrid AI Engine)은 릴리스했다(사용자 승인, 2026-10-24). 3단계는 기본 꺼짐, 프롬프트 캐싱은 1.18.8부터 기본 켜짐(다단계 작업·상담에서만), 단가를 넣으면 손익분기(`adaptive_cost`)로 경로를 고른다. 구조 [architecture/adaptive-ai.md](architecture/adaptive-ai.md), 결과 [adaptive-ai-benchmark-results.md](adaptive-ai-benchmark-results.md).
 - 사용자 PC에서 `tools/local_ai_check.py`와 `tools/adaptive_benchmark.py --run`(A·B·E·F·G, Cloud 호출 상한)으로 실제 품질·비용을 재고 결과 문서에 적는다.
   성공률 하락이 2%p를 넘는 작업 유형은 `LOCAL_ELIGIBLE`·`LIGHT_DIRECT`에서 뺀다.
 - 실제 Windows·macOS 앱에서 Ollama 연결·모델 받기·정책 창·라우팅 표시·상담을 손으로 확인한다.
