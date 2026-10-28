@@ -1449,7 +1449,7 @@ class Agent:
     def _tool_paper_search(self, query="", author="", affiliation="", source="all", limit=20, author_id="", **_):
         import paper_mcp
         import web_research
-        from office_mcp import ToolFailure
+        from net import ToolFailure
 
         if not self.web:
             raise ToolError("인터넷 도구가 꺼져 있습니다(설정 → 연결·도구의 기능).")

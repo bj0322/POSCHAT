@@ -13,6 +13,9 @@
 - 1.17 Adaptive AI: 모델 호출은 `Agent._ask(prompt, purpose=…)` → `adaptive_engine.AdaptiveEngine`(대화 모델이 `auto`·`local:…`일 때) 또는 `api.ask`.
   라우터 `adaptive_router.py`, 검증 `quality_gate.py`, 로컬 실행기 `local_ai.py`(Ollama). Local Only는 `api.cloud_guard`가 마지막으로 막는다.
   구조 [docs/architecture/adaptive-ai.md](docs/architecture/adaptive-ai.md). 벤치마크 `tools/adaptive_benchmark.py`(데이터는 `tools/adaptive_benchmark_data.py`로 다시 만든다).
+- `ToolFailure`와 공용 HTTP 요청 `http()`는 `net.py`에 있다. MCP 서버가 아닌 모듈(sync·rag·telemetry 등)은 `office_mcp`가 아니라 `net`에서 가져온다(`office_mcp`는 같은 이름을 다시 내보낼 뿐).
+  대화 검색(`storage.search_threads`)은 `thread_index.py`의 SQLite 색인(`thread_index.db`, 지워도 다시 만들어짐)을 쓴다.
+- PLMS는 베타 기능이다: 사이드바 맨 아래, `베타` 표식(`.beta-badge`). 실제 계정으로 확인이 끝나면 표식을 뗀다.
 - Python → 화면 이벤트는 `Bridge._push` → `ui_events.EventPump`(전용 스레드). UI 스레드(네이티브 처리기)에서 `evaluate_js`를 직접 부르지 않는다(B1).
 - 에이전트(`agent.py`)는 JSON 단계(`{"action": ...}`)를 `_tool_<이름>` 메서드로 실행한다. 외부에서 온 글(웹페이지·논문·MCP 결과)은
   `connectors.wrap_untrusted`로 감싼다.

@@ -152,7 +152,7 @@ def _pack(pieces):
 
 def pdf_pieces(path):
     import paper_mcp
-    from office_mcp import ToolFailure
+    from net import ToolFailure
 
     try:
         pages = paper_mcp._pages(Path(path))

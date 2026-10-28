@@ -12,7 +12,8 @@ import ai_memory
 import handoff
 import memory_store
 import office_mcp
-from office_mcp import INT, READ_ONLY, STR, ToolFailure, _root, _schema
+from office_mcp import INT, READ_ONLY, STR, _root, _schema
+from net import ToolFailure
 
 POSCHAT_CLIENT = "postech-genai-chat"
 LOCAL_WRITES = {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False}

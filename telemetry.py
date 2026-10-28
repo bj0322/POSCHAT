@@ -282,7 +282,7 @@ def export_pending(http=None, max_batch=100):
     batch = [item for e in batch_events for item in to_langfuse(e)]
     auth = base64.b64encode(f"{public}:{secret}".encode()).decode("ascii")
     if http is None:
-        from office_mcp import http
+        from net import http
     try:
         r = http("POST", f"{host}/api/public/ingestion", json={"batch": batch},
                  headers={"Authorization": f"Basic {auth}", "Content-Type": "application/json"}, timeout=20)

@@ -7,13 +7,15 @@
 그 밖의 경로는 거부한다. 문서 읽기는 에이전트의 read 단계(documents.py)가 맡는다.
 
 다른 내장 서버(paper_mcp·notion_mcp·firecrawl_mcp)도 이 모듈의 serve()로 돌고,
-여기의 ToolFailure·경로 검사·HTTP 도우미를 함께 쓴다.
+여기의 경로 검사·도구 스키마 도우미를 함께 쓴다. ToolFailure·http는 net.py에 있고 이 모듈이 다시 내보낸다.
 """
 import json
 import os
 import re
 import sys
 from pathlib import Path
+
+from net import ToolFailure, http  # noqa: F401 (다른 모듈이 office_mcp에서 가져가던 이름)
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 SERVER_VERSION = "1.0.0"
@@ -23,10 +25,6 @@ SERVER_VERSION = "1.0.0"
 ROOT = None
 # initialize 때 받은 클라이언트 정보({"name", "version"}). memory 서버가 POSCHAT이 아닌 클라이언트를 거부하는 데 쓴다.
 CLIENT_INFO = {}
-
-
-class ToolFailure(Exception):
-    pass
 
 
 def _root():
@@ -62,33 +60,6 @@ def _existing(path, suffixes):
     if not p.is_file():
         raise ToolFailure(f"파일이 없습니다: {_rel(p)}")
     return p
-
-
-# ---- 네트워크(인터넷을 쓰는 내장 서버 공통) ----
-
-_SESSION = None
-
-
-def http(method, url, timeout=30, **kwargs):
-    """requests 호출. 연결 실패는 ToolFailure로 바꾼다. 응답 상태는 호출한 쪽이 본다."""
-    global _SESSION
-    import requests
-
-    if _SESSION is None:
-        try:
-            import truststore  # Windows 인증서 저장소를 쓴다(학교·회사 프록시 인증서). 안드로이드에는 없다
-
-            truststore.inject_into_ssl()
-        except ImportError:
-            pass
-        from version import APP_VERSION
-
-        _SESSION = requests.Session()
-        _SESSION.headers["User-Agent"] = f"POSCHAT/{APP_VERSION} (+https://github.com/bj0322/POSCHAT)"
-    try:
-        return _SESSION.request(method, url, timeout=timeout, **kwargs)
-    except requests.RequestException as e:
-        raise ToolFailure(f"인터넷 요청에 실패했습니다({url.split('?')[0]}): {type(e).__name__}: {e}")
 
 
 def _save(doc, p):

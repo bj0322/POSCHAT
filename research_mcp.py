@@ -25,7 +25,8 @@ import rag
 import research_library as lib
 import storage
 import vector_store
-from office_mcp import BOOL, INT, READ_ONLY, STR, ToolFailure, _root, _schema, http
+from office_mcp import BOOL, INT, READ_ONLY, STR, _root, _schema
+from net import ToolFailure, http
 
 S2_RECOMMEND = "https://api.semanticscholar.org/recommendations/v1/papers/forpaper"
 ZOTERO = "https://api.zotero.org"

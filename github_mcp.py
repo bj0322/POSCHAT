@@ -18,7 +18,8 @@ from urllib.parse import quote
 import connectors
 import oauth
 import storage
-from office_mcp import INT, READ_ONLY, STR, ToolFailure, _schema, http
+from office_mcp import INT, READ_ONLY, STR, _schema
+from net import ToolFailure, http
 
 API = "https://api.github.com"
 API_VERSION = "2022-11-28"

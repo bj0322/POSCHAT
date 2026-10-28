@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # support.py
 
+import net
 import office_mcp
 import paper_mcp
 import rag
@@ -245,7 +246,7 @@ class VectorStoreTests(unittest.TestCase):
         ])
         index = vector_store.VectorIndex(vector_store.Embedder("https://emb.example/v1/embeddings", "m", "k"),
                                          vector_store.Qdrant("http://127.0.0.1:6333", "poschat"))
-        with patch.object(office_mcp, "http", fake):
+        with patch.object(net, "http", fake):
             index.replace_document("doc1", [(7, "doc1", "ws:x", "가"), (8, "doc1", "ws:x", "나")])
             hits = index.search("질문", ["ws:x", "library"], 5)
         self.assertEqual(hits, [{"chunk_id": 7, "score": 0.5}])

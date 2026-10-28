@@ -12,7 +12,8 @@ import os
 import re
 import time
 
-from office_mcp import INT, READ_ONLY, STR, ToolFailure, _schema, http
+from office_mcp import INT, READ_ONLY, STR, _schema
+from net import ToolFailure, http
 
 API = "https://api.notion.com/v1"
 NOTION_VERSION = "2022-06-28"

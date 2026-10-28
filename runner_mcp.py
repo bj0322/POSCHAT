@@ -31,7 +31,8 @@ import time
 
 import privacy
 import storage
-from office_mcp import INT, STR, ToolFailure, _root, _schema
+from office_mcp import INT, STR, _root, _schema
+from net import ToolFailure
 
 MAX_OUTPUT = 20000
 EXEC = {"readOnlyHint": False, "destructiveHint": True, "openWorldHint": True}

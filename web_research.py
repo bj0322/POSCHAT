@@ -16,7 +16,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
-from office_mcp import ToolFailure, http
+from net import ToolFailure, http
 
 DDG_HTML = "https://html.duckduckgo.com/html/"
 OPENALEX = "https://api.openalex.org"

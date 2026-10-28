@@ -250,7 +250,7 @@ class WorkspaceApi:
     # ---- 연구 라이브러리 (Phase 2) ----
 
     def _research_call(self, fn, *args, **kwargs):
-        from office_mcp import ToolFailure
+        from net import ToolFailure
 
         import research_library
 
@@ -695,12 +695,12 @@ class WorkspaceApi:
         py = dict(auto.get("python") or {})
         detected, error = "", ""
         if not mcp_client.INPROCESS_BUILTIN:
-            import office_mcp
+            import net
             import runner_mcp
 
             try:
                 detected = runner_mcp.interpreter()
-            except office_mcp.ToolFailure as e:
+            except net.ToolFailure as e:
                 error = str(e)
         log = []
         try:
@@ -774,12 +774,12 @@ class WorkspaceApi:
         return {"ok": True, **self.automation_state()}
 
     def python_check(self):
-        import office_mcp
+        import net
         import runner_mcp
 
         try:
             return {"ok": True, "info": runner_mcp.python_info()}
-        except office_mcp.ToolFailure as e:
+        except net.ToolFailure as e:
             return {"ok": False, "error": str(e)}
 
     # ---- 사용량·진단 (Phase 5) ----

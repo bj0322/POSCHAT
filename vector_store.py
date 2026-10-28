@@ -24,7 +24,7 @@ class VectorError(Exception):
 
 
 def _http(method, url, **kwargs):
-    from office_mcp import ToolFailure, http
+    from net import ToolFailure, http
 
     try:
         r = http(method, url, timeout=60, **kwargs)

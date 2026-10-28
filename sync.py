@@ -159,7 +159,7 @@ class DriveBackend:
     def _http(self, method, url, **kwargs):
         import connectors
         import oauth
-        from office_mcp import ToolFailure, http
+        from net import ToolFailure, http
 
         try:
             token = connectors.credential(self.connector)
@@ -262,7 +262,7 @@ class DriveBackend:
 
 def verify_drive(cid="gsync", config=None):
     """커넥터 연결 확인: appDataFolder 목록을 읽을 수 있는지."""
-    from office_mcp import ToolFailure
+    from net import ToolFailure
 
     try:
         files = DriveBackend(cid).list()

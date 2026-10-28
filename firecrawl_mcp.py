@@ -9,7 +9,8 @@
 import os
 import time
 
-from office_mcp import BOOL, INT, READ_ONLY, STR, ToolFailure, _schema, http
+from office_mcp import BOOL, INT, READ_ONLY, STR, _schema
+from net import ToolFailure, http
 
 API = "https://api.firecrawl.dev/v2"
 DEFAULT_CHARS = 12000

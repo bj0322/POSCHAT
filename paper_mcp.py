@@ -17,7 +17,8 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from office_mcp import BOOL, INT, READ_ONLY, STR, ToolFailure, _new_file, _path, _rel, _schema, http
+from office_mcp import BOOL, INT, READ_ONLY, STR, _new_file, _path, _rel, _schema
+from net import ToolFailure, http
 
 ARXIV_API = "https://export.arxiv.org/api/query"
 S2_API = "https://api.semanticscholar.org/graph/v1"

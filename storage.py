@@ -409,28 +409,20 @@ def shared_bigrams(q, text):
 
 
 def search_threads(query, exclude_id=None, limit=3, min_score=0.35, min_shared=4):
-    """다른 대화에서 query와 겹치는 메시지를 찾는다. 대화마다 가장 잘 맞는 메시지 하나씩."""
+    """다른 대화에서 query와 겹치는 메시지를 찾는다. 대화마다 가장 잘 맞는 메시지 하나씩.
+    메시지 본문은 thread_index의 색인에서 찾고, 이긴 대화만 파일에서 읽는다."""
+    import thread_index
+
     q = _bigrams(query)
     if len(q) < 3:
         return []
-    best = {}
-    for p in THREADS_DIR.glob("*.json"):
+    out = []
+    for tid, name, idx, role, score in thread_index.candidates(q, exclude_id, min_score, min_shared)[:limit]:
         try:
-            thread = json.loads(p.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            continue
-        if thread.get("id") == exclude_id:
-            continue
-        for m in thread.get("messages", []):
-            if m.get("role") not in ("user", "assistant"):
-                continue
-            shared = shared_bigrams(q, m["content"][:6000])
-            score = shared / len(q)
-            if shared < min_shared or score < min_score:
-                continue
-            if score > best.get(thread["id"], {}).get("score", 0):
-                best[thread["id"]] = {
-                    "thread_id": thread["id"], "title": thread.get("title", ""), "role": m["role"],
-                    "content": m["content"], "ts": m.get("ts", 0), "score": round(score, 2),
-                }
-    return sorted(best.values(), key=lambda r: r["score"], reverse=True)[:limit]
+            thread = json.loads((THREADS_DIR / name).read_text(encoding="utf-8"))
+            m = thread["messages"][idx]
+        except (OSError, json.JSONDecodeError, KeyError, IndexError):
+            continue  # 찾는 사이에 대화가 바뀌었다
+        out.append({"thread_id": tid, "title": thread.get("title", ""), "role": role,
+                    "content": m["content"], "ts": m.get("ts", 0), "score": round(score, 2)})
+    return out

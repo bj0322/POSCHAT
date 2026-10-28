@@ -75,10 +75,10 @@ def download(url, dest, http=None):
     if not re.match(r"^https?://", str(url or ""), re.I):
         raise PaperError("http·https 주소의 PDF만 받을 수 있습니다.")
     if http is None:
-        from office_mcp import http  # 인증서 저장소·User-Agent를 맞춘 공용 요청
+        from net import http  # 인증서 저장소·User-Agent를 맞춘 공용 요청
     try:
         r = http("GET", url, timeout=60, stream=True)
-    except Exception as e:  # office_mcp.ToolFailure(연결 실패)
+    except Exception as e:  # net.ToolFailure(연결 실패)
         raise PaperError(str(e))
     if getattr(r, "status_code", 200) != 200:
         raise PaperError(f"PDF를 받지 못했습니다(HTTP {r.status_code}).")

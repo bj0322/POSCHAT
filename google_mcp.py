@@ -26,7 +26,8 @@ from pathlib import Path
 import connectors
 import oauth
 import storage
-from office_mcp import BOOL, INT, READ_ONLY, STR, ToolFailure, _root, _schema, http
+from office_mcp import BOOL, INT, READ_ONLY, STR, _root, _schema
+from net import ToolFailure, http
 
 DRIVE = "https://www.googleapis.com/drive/v3"
 UPLOAD = "https://www.googleapis.com/upload/drive/v3/files"
