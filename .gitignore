@@ -53,3 +53,9 @@ node_modules/
 # Graphify가 이 컴퓨터에서 쓰는 실행기·작업 폴더 경로
 graphify-out/.graphify_python
 graphify-out/.graphify_root
+# 다시 만들 수 있는 큰 파일(추출 캐시·시각화). graph.json과 GRAPH_REPORT.md만 저장소에 둔다
+graphify-out/cache/
+graphify-out/graph.html
+graphify-out/20*/
+graphify-out/.graphify_build_state.json
+graphify-out/.graphify_labels.pending.json

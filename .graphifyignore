@@ -1,0 +1,5 @@
+# 제3자 라이브러리(pdf.js·CodeMirror·xterm·KaTeX…)는 그래프에서 뺀다. 노드의 대부분을 차지해 자체 코드 구조가 묻힌다.
+web/vendor/
+licenses/
+tools/codemirror/
+graphify-out/
