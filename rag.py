@@ -347,7 +347,7 @@ def search(query, collections, limit=8, vectors=None, per_doc=3):
             for r in con.execute(
                     f"SELECT c.id, c.doc_id, c.page_start, c.page_end, c.section, c.text, d.path, d.title FROM chunks c "
                     f"JOIN documents d ON d.doc_id = c.doc_id WHERE d.collection IN ({placeholders})", collections):
-                shared = len(q & _bigrams(r["text"])) if q else 0
+                shared = storage.shared_bigrams(q, r["text"]) if q else 0
                 if shared >= max(2, len(q) // 3):
                     scored.append((-shared, r))
             scored.sort(key=lambda x: x[0])

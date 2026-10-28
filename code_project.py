@@ -19,7 +19,7 @@ from pathlib import Path
 from remote_fs import remote_ok
 
 INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md")
-MAX_INSTRUCTION_CHARS = 20000
+MAX_INSTRUCTION_CHARS = 12000   # 단계마다 되풀이해 보내므로 파일 하나당 이만큼만(넘으면 잘랐다고 알린다)
 MAX_RULES = 50
 CHAIN_RE = re.compile(r"&&|\|\||[;|<>`]|\$\(|\n")
 _FLAGS = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
@@ -41,7 +41,9 @@ def instructions(root):
             if p.is_file():
                 text = p.read_text(encoding="utf-8", errors="replace").strip()
                 if text:
-                    out.append((name, text[:MAX_INSTRUCTION_CHARS]))
+                    out.append((name, text[:MAX_INSTRUCTION_CHARS]
+                                + (f"\n... (길어서 {len(text) - MAX_INSTRUCTION_CHARS:,}자를 잘랐습니다. 필요하면 파일을 직접 읽으세요)"
+                                   if len(text) > MAX_INSTRUCTION_CHARS else "")))
         except OSError:
             continue
     return out

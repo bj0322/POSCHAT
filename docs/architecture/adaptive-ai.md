@@ -88,7 +88,7 @@ POSCHAT의 한국어·연구 작업에 그대로 맞는다고 보지 않았다. 
   `cache_creation_input_tokens`; OpenAI 호환은 `prompt_tokens_details.cached_tokens`). `cache_prefix`(글자 수)를 주면 Claude API 요청의 글을 두 블록으로 나눠
   앞 블록에 `cache_control: ephemeral`을 단다. Bridge의 `cloud_ask`는 `(글, 사용량)`을 돌려주고, 엔진은 시도마다 `usage`와 telemetry `cloud_inference`
   (`measured`, 토큰 4종, `cache_prefix`)에 남긴다.
-- 캐시 표시(`prompt_cache` 켬): 상담의 첫 경량 호출은 요청 본문(prompt)을 캐시에 쓰고, 상담 뒤 두 번째 호출(`prompt + 상담 답 + 안내`)은 같은 앞부분을 읽는다.
+- 캐시 표시(`prompt_cache`, 기본 켜짐 — 한 번에 끝나는 대화는 표시하지 않고 다단계 작업·상담에서만 쓴다): 상담의 첫 경량 호출은 요청 본문(prompt)을 캐시에 쓰고, 상담 뒤 두 번째 호출(`prompt + 상담 답 + 안내`)은 같은 앞부분을 읽는다.
   에이전트 단계는 `Agent._agent_loop`의 고정 부분(`static`) 길이를 넘긴다. 엔진을 거치지 않는 대화도 `Agent(prompt_cache=)`로 같다.
 - `adaptive_cost`: 단가 `Prices(input, output, cache_read, cache_write, call)`(100만 토큰당), 토큰 분포 `Profile(T, O, R, Q, C, A, I)`.
   F = f(T, O), 경량 혼자 L = l(T+R, O) + p·F, 상담 K = l(T+R, Q) + f(C, A) + l(T+A+I, O)(캐시면 T 몫은 캐시 쓰기·읽기 단가).

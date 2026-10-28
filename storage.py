@@ -401,6 +401,13 @@ def _bigrams(text):
     return grams
 
 
+def shared_bigrams(q, text):
+    """len(q & _bigrams(text))와 같은 값. 본문의 글자쌍 집합을 만들지 않고 q의 글자쌍이 본문에 있는지만 센다
+    (글자쌍은 낱말 안에서만 만들어지므로 본문에 부분 문자열로 있으면 같은 낱말 안의 쌍이다). 대화·문서가 많을 때 메모리와 시간을 아낀다."""
+    text = text.lower()
+    return sum(1 for g in q if g in text)
+
+
 def search_threads(query, exclude_id=None, limit=3, min_score=0.35, min_shared=4):
     """다른 대화에서 query와 겹치는 메시지를 찾는다. 대화마다 가장 잘 맞는 메시지 하나씩."""
     q = _bigrams(query)
@@ -417,7 +424,7 @@ def search_threads(query, exclude_id=None, limit=3, min_score=0.35, min_shared=4
         for m in thread.get("messages", []):
             if m.get("role") not in ("user", "assistant"):
                 continue
-            shared = len(q & _bigrams(m["content"][:6000]))
+            shared = shared_bigrams(q, m["content"][:6000])
             score = shared / len(q)
             if shared < min_shared or score < min_score:
                 continue

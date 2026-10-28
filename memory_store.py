@@ -265,7 +265,7 @@ def _markdown_hits(query, q_grams):
             line = line.strip().lstrip("-*+ ").strip()
             if not line or line.startswith("#"):
                 continue
-            shared = len(q_grams & storage._bigrams(line))
+            shared = storage.shared_bigrams(q_grams, line)
             if shared >= max(2, len(q_grams) // 4):
                 hits.append((shared, {"key": f"{label}:{line[:60]}", "layer": layer, "source": label, "text": line,
                                       "title": "", "project": "", "kind": "note", "id": "", "updated": 0}))
@@ -299,7 +299,7 @@ def search(query, layers=None, project=None, limit=10, include_threads=True, vec
             if not rows:
                 scored = []
                 for r in con.execute(f"SELECT * FROM entries e WHERE {where}", args):
-                    shared = len(q_grams & storage._bigrams(r["title"] + " " + r["text"]))
+                    shared = storage.shared_bigrams(q_grams, r["title"] + " " + r["text"])
                     if shared >= max(2, len(q_grams) // 4):
                         scored.append((-shared, r))
                 rows = [r for _, r in sorted(scored, key=lambda x: x[0])[:50]]

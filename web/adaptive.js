@@ -424,7 +424,7 @@ async function showAdaptive() {
         "프런티어에는 대화 전체 대신 경량 모델이 고른 짧은 질문과 발췌만 보냅니다(이 대화의 지난 상담 기록과 함께). 상담하면 경량 모델을 한 번 더 부르므로 조금 느려집니다."),
       h("div", { class: "field" }, h("label", {}, "요청 하나에서 상담 최대 횟수"), consultMax),
       check(promptCache, "프롬프트 캐싱",
-        "같은 앞부분(대화·지시)을 서버 캐시에 표시합니다(Claude API). 상담 뒤 경량 모델의 두 번째 호출과 에이전트 단계에서 입력 비용을 줄입니다. " +
+        "같은 앞부분(대화·지시)을 서버 캐시에 표시합니다(Claude API, 기본 켜짐). 여러 단계를 도는 에이전트 작업에서 쓰고, 한 번에 끝나는 대화에는 쓰지 않습니다. 상담 뒤 경량 모델의 두 번째 호출과 에이전트 단계에서 입력 비용을 줄입니다. " +
         "캐시 쓰기는 일반 입력보다 비쌀 수 있고, 짧은 글(모델별 최소 길이 미만)은 캐시되지 않습니다."),
       h("div", { class: "field" }, h("label", {}, "단가 (100만 토큰당 · 두 모델이 같은 단위)"), h("div", { class: "adaptive-scroll" }, priceTable),
         h("div", { class: "row", style: "margin-top:6px" }, h("small", { style: "margin:0" }, "요청 길이(토큰)"), estTokens, calcBtn),

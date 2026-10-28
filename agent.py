@@ -58,9 +58,15 @@ MAX_TREE_ENTRIES = 300
 MAX_READ_CHARS = 12000
 MAX_OBS_CHARS = 6000
 OLD_OBS_CHARS = 500
-RECENT_FULL_STEPS = 6
+RECENT_FULL_STEPS = 4
+STALE_PAGE_CHARS = 300      # 브라우저 단계의 낡은 화면 요약이 진행 기록에 남는 글자 수(더 나중 화면이 있을 때)
+DOC_CACHE_CHARS = 8_000_000  # 읽은 문서 텍스트를 한 실행 동안 기억하는 글자 수 합계
+OLD_MESSAGE_CHARS = 1500    # 이전 대화에서 최근 두 개를 뺀 메시지 하나가 프롬프트에 들어가는 최대 글자 수
+EARLIER_ATTACH_CHARS = 12000  # 이전 메시지 첨부 파일을 매 요청에 다시 넣는 글자 수 합계
+SKILL_LIST_CHARS = 6000     # 스킬 목록(설명 포함)의 최대 글자 수. 넘으면 나머지는 이름만 적는다
 MAX_HISTORY_CHARS = 10000
 MAX_NOTE_CHARS = 6000  # 프롬프트에 넣는 memory.md·USER.md 각각의 최대 글자 수
+NOTE_FULL_CHARS = 2500  # 이보다 긴 memory.md·USER.md는 앞부분과 요청에 맞는 줄만 넣는다
 MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_SEARCH_DOC_BYTES = 20 * 1024 * 1024
 BROWSER_ACTION_DOC = (
@@ -296,6 +302,46 @@ def _compact_action(action):
     return json.dumps(short, ensure_ascii=False)
 
 
+def _relevant_note(text, task):
+    """짧은 노트는 그대로(MAX_NOTE_CHARS까지). 길면 앞부분 절반과 요청에 글자쌍이 많이 겹치는 줄로 NOTE_FULL_CHARS를 채운다.
+    줄 순서는 원래대로 두고, 빠진 분량은 끝에 밝힌다."""
+    if len(text) <= NOTE_FULL_CHARS:
+        return text
+    text = _truncate(text, MAX_NOTE_CHARS)
+    lines = text.splitlines()
+    keep, used = set(), 0
+    for i, line in enumerate(lines):          # 앞부분(제목·핵심 정보가 보통 위에 있다)
+        if used + len(line) > NOTE_FULL_CHARS // 2:
+            break
+        keep.add(i)
+        used += len(line) + 1
+    q = storage._bigrams(task or "")
+    scored = sorted(((storage.shared_bigrams(q, l), i) for i, l in enumerate(lines) if i not in keep and l.strip()), reverse=True)
+    for score, i in scored:
+        if score < 2 or used + len(lines[i]) > NOTE_FULL_CHARS:
+            continue
+        keep.add(i)
+        used += len(lines[i]) + 1
+    kept = "\n".join(lines[i] for i in sorted(keep))
+    return kept + f"\n... (이번 요청과 관련 없는 {len(text) - len(kept):,}자는 생략됨)"
+
+
+_PAGE_STATE_ACTIONS = tuple(f'{{"action": "browser_{n}"' for n in (
+    "open", "snapshot", "click", "type", "select", "scroll", "wait", "back", "forward", "refresh"))
+
+
+def _skill_list(skills):
+    """스킬 목록 한 줄씩. 플러그인으로 스킬이 많아져도 SKILL_LIST_CHARS를 넘으면 나머지는 이름만 적는다."""
+    lines, used = [], 0
+    for s in skills:
+        line = f"- {s.name}: {_truncate(' '.join(s.description.split()), 240)}"
+        if used + len(line) > SKILL_LIST_CHARS:
+            line = f"- {s.name}"
+        used += len(line)
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def _in_git_dir(rel):
     """작업 폴더 안 경로가 .git(폴더나 파일) 아래인지. Windows가 같은 이름으로 여는 꼴('.GIT', '.git.', '.git ', '.git::$INDEX_ALLOCATION',
     8.3 짧은 이름 'GIT~1')도 막는다. .git/config의 core.fsmonitor·hooksPath나 .git/hooks는 다음 git 명령 때 프로그램을 실행한다."""
@@ -452,8 +498,9 @@ class Agent:
         else:
             msgs = []
         lines = []
-        for m in msgs:
-            line = f"{labels[m['role']]}: {m['content']}"
+        for i, m in enumerate(msgs):
+            content = m["content"] if i >= len(msgs) - 2 else _truncate(m["content"], OLD_MESSAGE_CHARS)
+            line = f"{labels[m['role']]}: {content}"
             if m.get("attachments"):
                 line += " [첨부: " + ", ".join(a["name"] for a in m["attachments"]) + "]"
             lines.append(line)
@@ -517,11 +564,11 @@ class Agent:
         profile = storage.note_for_prompt(storage.read_profile()) if storage.profile_exists() else ""
         if profile:
             blocks.append("[사용자 정보 (USER.md) — 답변을 사용자에게 맞추는 데 참고하세요]\n"
-                          + _truncate(profile, MAX_NOTE_CHARS))
+                          + _relevant_note(profile, task))
         memory = storage.note_for_prompt(storage.read_memory_md())
         if memory:
             blocks.append("[기억 (memory.md) — 사용자가 모든 대화에서 쓰도록 저장한 정보]\n"
-                          + _truncate(memory, MAX_NOTE_CHARS))
+                          + _relevant_note(memory, task))
         if self.share_threads:
             related = storage.search_threads(task, exclude_id=self.thread_id)
             if related:
@@ -553,7 +600,7 @@ class Agent:
         recent = history[-self.history_messages:] if self.history_messages else []
         earlier = [a for m in reversed(recent) if m["role"] == "user" for a in m.get("attachments") or []]
         if earlier and budget > 0:
-            block, budget = attachments.prompt_block("이전 메시지에 첨부된 파일의 내용", earlier, budget)
+            block, budget = attachments.prompt_block("이전 메시지에 첨부된 파일의 내용", earlier, min(budget, EARLIER_ATTACH_CHARS))
             if block:
                 self.attachment_blocks.append(block)
         images = [a for a in current if a["kind"] == "image"]
@@ -844,8 +891,7 @@ class Agent:
         if forced_skill:
             parts.append(f"[적용 중인 스킬: {forced_skill.name} — 이 지침에 따라 수행하세요]\n{forced_skill.body}")
         elif self.skills:
-            parts.append("[사용 가능한 스킬]\n" + "\n".join(f"- {s.name}: {_truncate(' '.join(s.description.split()), 240)}"
-                                                         for s in self.skills.values()))
+            parts.append("[사용 가능한 스킬]\n" + _skill_list(self.skills.values()))
         parts += self.context_blocks
         history_text = self._format_history(history)
         if history_text:
@@ -856,10 +902,18 @@ class Agent:
 
     @staticmethod
     def _format_log(log):
+        # 같은 단계(read·list 등)를 나중에 다시 했다면 앞의 결과는 낡았으니 한 줄로 줄인다(같은 글을 두 번 보내지 않는다)
+        last = {action: i for i, (action, _obs) in enumerate(log)}
+        last_page = max((i for i, (action, _obs) in enumerate(log) if action.startswith(_PAGE_STATE_ACTIONS)), default=-1)
         lines = []
         cutoff = len(log) - RECENT_FULL_STEPS
         for i, (action, obs) in enumerate(log):
-            obs = _truncate(obs, OLD_OBS_CHARS if i < cutoff else getattr(obs, "keep", MAX_OBS_CHARS))
+            if last[action] != i and action.startswith(('{"action": "read"', '{"action": "list"')):
+                obs = f"(같은 단계를 {last[action] + 1}번에서 다시 했습니다. 그 결과를 보세요)"
+            elif i < last_page and action.startswith(_PAGE_STATE_ACTIONS):   # 더 나중 화면이 있으니 이 화면의 요소 목록은 낡았다
+                obs = _truncate(obs, STALE_PAGE_CHARS)
+            else:
+                obs = _truncate(obs, OLD_OBS_CHARS if i < cutoff else getattr(obs, "keep", MAX_OBS_CHARS))
             lines.append(f"{i + 1}. {action} →\n{obs}")
         return "\n\n".join(lines)
 
@@ -954,7 +1008,10 @@ class Agent:
             text = _extract_remote(p)
         else:
             text = documents.extract_text(p)
+        self._doc_cache.pop(p, None)
         self._doc_cache[p] = (stamp, text)
+        while len(self._doc_cache) > 1 and sum(len(t) for _s, t in self._doc_cache.values()) > DOC_CACHE_CHARS:
+            self._doc_cache.pop(next(iter(self._doc_cache)))   # 가장 오래된 문서부터 버린다
         return text
 
     def _tool_read(self, path):

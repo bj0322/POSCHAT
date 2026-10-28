@@ -66,7 +66,8 @@ class EngineTests(unittest.TestCase):
         self.calls = []        # (model, prompt)
         self.replies = {LIGHT: [], FRONTIER: []}
         self.events = []
-        self.config = {"adaptive": {"enabled": True, "policy": "balanced", "local_retries": 0, "tiered": True}}
+        self.config = {"adaptive": {"enabled": True, "policy": "balanced", "local_retries": 0, "tiered": True,
+                                  "prompt_cache": False}}   # 캐싱을 따로 시험하는 것 말고는 끈다(가짜 cloud가 cache_prefix를 받지 않는다)
         self.rt = types.SimpleNamespace(candidate=lambda m: (None, "기본 로컬 모델을 고르지 않음"), provider=lambda: None)
 
     def cloud(self, prompt, model, on_delta, images):
@@ -387,8 +388,8 @@ class BridgeTests(unittest.TestCase):
             b._push = lambda ev: ev.get("type") == "done" and done.set()
             b._config.update(anthropic_api_key="k", api_mode="anthropic")
             st = b.adaptive_save({"enabled": True, "light_model": LIGHT, "cloud_model": FRONTIER})
-            self.assertFalse(st["settings"]["tiered"])          # 3단계·캐싱은 켜야 쓴다
-            self.assertFalse(st["settings"]["prompt_cache"])
+            self.assertFalse(st["settings"]["tiered"])          # 3단계는 켜야 쓴다
+            self.assertTrue(st["settings"]["prompt_cache"])   # 다단계 작업의 입력 비용을 줄이려 기본 켜짐
             self.assertFalse(st["economics"]["known"])
             st = b.adaptive_save({"tiered": True, "prompt_cache": True, "prices": {
                 LIGHT: {"input": 1, "output": 5, "cache_read": 0.1}, FRONTIER: {"input": 5, "output": 25},

@@ -36,9 +36,10 @@ DEFAULTS = {
     "light_model": "", "consult": True, "consult_max": 1,
     # tiered: 3단계(경량 모델·상담)를 쓸지. 기본 꺼짐 — 켜야 light_model을 쓴다(설정 → AI 실행 정책 → 3단계 켜기).
     # prompt_cache: 같은 앞부분(대화·지시)을 프롬프트 캐시로 표시(Claude API). 상담의 두 번째 경량 호출·에이전트 단계에서 쓴다.
+    #   기본 켜짐(토큰 효율): 한 번 부르고 끝나는 대화는 캐시 표시를 하지 않고, 여러 단계를 도는 작업에서만 쓴다.
     # prices: {모델: {input, output, cache_read, cache_write, call}} 100만 토큰당 단가(단위는 모두 같게). 경량·프런티어 단가가
     #   모두 있으면 요청마다 손익분기(adaptive_cost)로 경량·상담·프런티어 중 싼 쪽을 고른다. 없으면 크레딧 기준, 그것도 없으면 규칙만.
-    "tiered": False, "prompt_cache": False, "prices": {},
+    "tiered": False, "prompt_cache": True, "prices": {},
     "local": {"endpoint": local_ai.DEFAULT_ENDPOINT, "allow_remote": False, "default_model": "", "num_ctx": 8192, "speed": {}},
     "cloud_model": "", "budget": {"weekly_calls": 0, "weekly_credits": 0}, "max_cost_per_request": 0, "latency": "normal",
     "privacy": {"sensitive_local_only": False, "attachments_to_cloud": True}, "local_only_tools": "allow",
