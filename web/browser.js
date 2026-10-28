@@ -380,7 +380,10 @@ function plmsPanel() {
     };
     renderDoc(data);
   });
-  const { close } = modal({ title: "PLMS 수업·공지·자료", wide: true, body: content,
+  const beta = h("p", { class: "plms-beta", role: "note" }, h("span", { class: "beta-badge" }, "베타"),
+    "PLMS 연결은 베타 기능입니다. 실제 학교 계정에서의 확인이 아직 끝나지 않아 로그인·목록·자료 읽기가 실패하거나 달라질 수 있습니다. 문제가 있으면 PLMS 사이트에서 직접 확인하세요.");
+  const { close } = modal({ title: h("span", {}, "PLMS 수업·공지·자료", h("span", { class: "beta-badge" }, "베타")), wide: true,
+    body: h("div", {}, beta, content),
     onClose: () => { closed = true; ++generation; clearPreview(); }, buttons: [
       { label: saved ? "로그인" : "SSO 로그인", action: async (dismiss) => {
         if (saved) {  // 저장된 계정: 화면에 브라우저를 붙이지 않고 로그인한다

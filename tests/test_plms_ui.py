@@ -61,6 +61,40 @@ class PlmsUiTests(unittest.TestCase):
             finally:
                 bw.close()
 
+    def test_plms_entry_is_beta_and_at_the_bottom_of_features(self):
+        """PLMS는 베타 기능: 기능 버튼 맨 아래에서 한 줄을 모두 쓰고, 보이는 '베타' 표식이 있으며, 창 제목에도 표시한다."""
+        from playwright.sync_api import sync_playwright
+
+        self.bridge._browser_obj = browser.Browser(FakeBackend)
+        with sync_playwright() as p:
+            bw, page, errors = self.open(p)
+            try:
+                page.wait_for_function("!document.querySelector('#btn-plms').hidden")
+                geo = page.evaluate("""() => {
+                  const feats = [...document.querySelectorAll('.sb-features > button')].filter((b) => !b.hidden);
+                  const btn = document.querySelector('#btn-plms'), badge = btn.querySelector('.beta-badge');
+                  const br = btn.getBoundingClientRect(), gr = badge.getBoundingClientRect();
+                  const others = feats.filter((b) => b !== btn).map((b) => b.getBoundingClientRect());
+                  return { last: feats[feats.length - 1] === btn, text: badge.textContent, w: gr.width, h: gr.height,
+                           below: others.every((r) => r.bottom <= br.top + 1), inside: gr.right <= br.right + 1 && gr.left >= br.left,
+                           aria: btn.getAttribute('aria-label') };
+                }""")
+                self.assertTrue(geo["last"])
+                self.assertEqual(geo["text"], "베타")
+                self.assertGreater(geo["w"], 16)
+                self.assertGreater(geo["h"], 10)
+                self.assertTrue(geo["below"], "PLMS가 다른 기능 버튼보다 아래에 있어야 한다")
+                self.assertTrue(geo["inside"])
+                self.assertIn("베타", geo["aria"])
+                self.shot(page, "plms-beta-sidebar")
+                page.click("#btn-plms")
+                self.assertIn("베타", page.inner_text(".modal-head h2"))
+                self.assertIn("베타 기능", page.inner_text(".plms-beta"))
+                self.assertEqual([e for e in errors if "favicon" not in e], [])
+            finally:
+                bw.close()
+                self.bridge._browser_obj = None
+
     def test_login_courses_notice_agent_and_disconnect(self):
         from playwright.sync_api import sync_playwright
 

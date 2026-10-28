@@ -21,6 +21,8 @@
   --add-fg: #1a7f37;
   --del-bg: #fdecea;
   --del-fg: #b42318;
+  --beta-bg: #fff1c2;
+  --beta-fg: #7a4b00;
   --shadow: 0 0 0 1px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.08);
   --font: "Pretendard", "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
   --mono: "Cascadia Code", Consolas, "D2Coding", monospace;
@@ -44,6 +46,8 @@
     --add-fg: #6fdd8b;
     --del-bg: #3a1614;
     --del-fg: #ff8a80;
+    --beta-bg: #4a3a0c;
+    --beta-fg: #ffd866;
     --shadow: 0 0 0 1px rgba(255,255,255,.06), 0 4px 16px rgba(0,0,0,.4);
   }
 }
@@ -103,6 +107,17 @@ svg { width: 18px; height: 18px; flex: none; }
 .sb-features .new-chat.po-entry { min-width: 0; gap: 7px; padding: 7px 8px; font-size: 13.5px; margin-top: 0; }
 .sb-features .new-chat svg { width: 17px; height: 17px; }
 .sb-label { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 베타 기능 표식(PLMS). 사이드바 기능 묶음의 맨 아래 한 줄을 모두 쓰고 배지는 오른쪽 끝에 둔다 */
+.beta-badge {
+  flex: none; margin-left: 6px; padding: 0 7px; border-radius: 999px; font-size: 11px; font-weight: 700; line-height: 18px;
+  letter-spacing: .02em; background: var(--beta-bg); color: var(--beta-fg); border: 1px solid currentColor;
+}
+.sb-features .plms-entry { grid-column: 1 / -1; }
+.sb-features .plms-entry .beta-badge { margin-left: auto; }
+.plms-beta { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 10px; padding: 8px 10px; border-radius: 10px;
+  background: var(--beta-bg); color: var(--beta-fg); font-size: 13px; line-height: 1.5; }
+.plms-beta .beta-badge { margin-left: 0; margin-top: 1px; background: transparent; }
+h2 .beta-badge { vertical-align: middle; margin-left: 8px; }
 .group-title { font-size: 12px; font-weight: 600; color: var(--text-3); padding: 14px 10px 6px; }
 .thread {
   position: relative; display: flex; align-items: center;

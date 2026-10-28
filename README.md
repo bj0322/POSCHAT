@@ -73,7 +73,7 @@ Releases의 `POSCHAT-mac.dmg`를 받아 엽니다. Apple Silicon(M1 이후) 맥�
 | 에이전트의 인터넷 조사 | 에이전트에게 조사를 맡기면 웹 검색(`web_search`)·웹페이지·PDF 읽기(`web_fetch`)·저자별 논문 목록(`paper_search`)·파일 받기(`web_download`)로 직접 찾습니다. 끄기는 **연결·도구 → 기능** ([릴리스 노트](docs/release-notes/v1.18.1.md), 1.18.1) |
 | Code 에이전트(작업 맡기기) | **코드** → 맨 앞 **작업** 탭(터미널). 할 일을 쓰고 Enter. 계획·diff·실행 출력, 이어서 지시, 바뀐 파일 되돌리기 ([사용법](docs/code-editor-guide.md#code-에이전트-작업-맡기기-116), 1.16). 권한 모드(계획·전체 자동), 다시 묻지 않기, 작업 중 추가 지시, `/init` `/review` `/test` `/plan` `/undo` `/compact`, AGENTS.md, 격리 작업 공간(git worktree) (1.17.1). 터미널 화면·기록 안 승인·Shift+Tab·Esc·`!` `#` `@`·`/resume` `/status` `/diff` 등·프로젝트 명령 ([사용법](docs/code-editor-guide.md#code-에이전트-3-터미널처럼-쓰기-1172), 1.17.2) |
 | Lab(실험 기록·비교·AI 분석) | 왼쪽 위 **Lab**. 실험·Run, 승인 실행, 재현성 기록, 결과 가져오기, 지표·그래프·비교, AI 분석 ([사용법](docs/lab-guide.md), 1.16) |
-| PLMS | 사이드바 **PLMS → SSO 로그인 → 내 수업 불러오기**. 수업별 공지·자료를 보고 PDF 미리보기, PowerPoint 앱 열기, 에이전트 정리를 사용합니다(자료 20MB까지). [사용법·한계](docs/plms-guide.md) |
+| PLMS (베타) | 사이드바 맨 아래 **PLMS(베타 표시) → SSO 로그인 → 내 수업 불러오기**. 수업별 공지·자료를 보고 PDF 미리보기, PowerPoint 앱 열기, 에이전트 정리를 사용합니다(자료 20MB까지). [사용법·한계](docs/plms-guide.md) |
 | 브라우저 에이전트 | 브라우저를 연 채 에이전트에게 웹 작업을 맡기면 페이지를 직접 조작합니다. 브라우저 막대에서 일시정지·멈춤 ([보안](docs/browser-agent-security.md), 1.16) |
 | 코드(전체 화면 편집기) | 왼쪽 위 **코드**(1.17.2부터 하나의 전체 화면). 파일 트리·편집·저장(Ctrl+S), 선택한 코드 AI에게 묻기, 에이전트 변경 덩어리별 검토, Git 상태·차이·스테이지·커밋(왼쪽 Git 탭) ([사용법](docs/code-editor-guide.md), 1.15). 아래 패널은 진짜 터미널(PowerShell·로그인 셸, **Ctrl+`**) ([사용법](docs/code-editor-guide.md#터미널-118), 1.18) |
 | 논문(채팅 옆 PDF) | 왼쪽 위 **논문**. PDF 열기·arXiv 번호, 선택한 부분·이 쪽·영역 잘라 묻기, 논문 요약, 라이브러리 논문 비교표 (1.14) |
