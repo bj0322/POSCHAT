@@ -1,0 +1,20 @@
+requests>=2.28
+anthropic>=2.3  # 1.11 개인 Claude API(공식 SDK). 안드로이드에는 없다(api.py가 HTTP로 직접 보낸다)
+truststore>=0.9
+cryptography>=42  # 동기화(sync.py)의 종단간 암호화(AES-256-GCM)
+keyring>=24  # 커넥터 토큰을 OS 보안 저장소(자격 증명 관리자·키체인)에 둔다. 없으면 앱 전용 파일
+pywebview>=5.0
+comtypes>=1.2; sys_platform == "win32"  # 설치 프로그램의 바로가기 생성(빌드할 때만 필요)
+pywinpty>=3.0; sys_platform == "win32"  # 1.18 Code 화면 터미널(ConPTY). macOS·Linux는 표준 pty를 쓴다
+paramiko>=3.5  # 1.18 코드 화면의 SSH 원격 작업 폴더(ssh_remote.py). 안드로이드에는 없다
+# 문서 읽기(documents.py)와 내장 오피스 MCP 서버(office_mcp.py)
+pypdf>=4.0
+olefile>=0.46
+openpyxl>=3.1
+python-docx>=1.1
+python-pptx>=1.0
+# PO노트의 마이크 녹음과 로컬 음성 인식(stt.py). 안드로이드 앱은 같은 버전의 sherpa-onnx C 라이브러리를 쓴다
+# (android/app/build.gradle.kts, sherpa_capi.VERSION). 버전을 올릴 때는 셋을 함께 올린다.
+numpy>=1.26
+sounddevice>=0.5
+sherpa-onnx==1.13.8

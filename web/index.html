@@ -1,0 +1,134 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 Beomjoon Kim -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>POSCHAT</title>
+  <link rel="stylesheet" href="vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="vendor/xterm/xterm.css">
+  <link rel="stylesheet" href="code.css">
+  <link rel="stylesheet" href="lab.css">
+  <link rel="stylesheet" href="adaptive.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="sb-top">
+      <div class="brand"><div class="logo">P</div><span>POSCHAT</span></div>
+      <button class="icon-btn" id="btn-collapse" title="사이드바 닫기" data-icon="sidebar"></button>
+    </div>
+    <button class="new-chat" id="btn-new"><span data-icon="edit"></span>새 채팅</button>
+    <!-- 1.16: 기능 버튼은 2열로 묶어 채팅 목록에 세로 공간을 더 준다(전체 이름은 title·aria-label) -->
+    <div class="sb-features" role="group" aria-label="기능">
+      <button class="new-chat po-entry" id="btn-po" aria-label="PO노트" title="PO노트: 강의를 녹음해 받아 적고, 강의 자료와 함께 필기 노트를 만듭니다">
+        <span data-icon="mic"></span><span class="sb-label">PO노트</span><span class="rec-dot" id="po-rec-dot" hidden></span>
+      </button>
+      <button class="new-chat po-entry" id="btn-browser" aria-pressed="false" aria-label="브라우저" title="브라우저: 채팅 옆에 웹페이지를 열고, 보고 있는 페이지를 AI에게 묻거나 에이전트에게 조작을 맡깁니다">
+        <span data-icon="globe"></span><span class="sb-label">브라우저</span>
+      </button>
+      <button class="new-chat po-entry" id="btn-paper" aria-pressed="false" aria-label="논문" title="논문: 채팅 옆에 논문 PDF를 열고, 선택한 문장·쪽·그림을 AI에게 묻습니다">
+        <span data-icon="paper"></span><span class="sb-label">논문</span>
+      </button>
+      <button class="new-chat po-entry" id="btn-code" aria-pressed="false" aria-label="코드" title="코드: 작업 폴더의 코드를 전체 화면으로 열어 고치고, 에이전트에게 작업을 맡기고, 명령을 실행합니다">
+        <span data-icon="code"></span><span class="sb-label">코드</span>
+      </button>
+      <button class="new-chat po-entry" id="btn-lab" aria-label="Lab(실험 기록)" title="Lab: 실험 조건·코드 버전·환경·결과를 기록하고, 여러 실행을 비교하고, AI에게 해석을 묻습니다">
+        <span data-icon="flask"></span><span class="sb-label">Lab</span>
+      </button>
+      <button class="new-chat po-entry" id="btn-research" aria-label="연구 라이브러리" title="연구 라이브러리: 논문 라이브러리·BibTeX·작업 폴더 문서 검색">
+        <span data-icon="book"></span><span class="sb-label">라이브러리</span>
+      </button>
+      <button class="new-chat po-entry" id="btn-auto" aria-label="에이전트 자동화" title="에이전트 자동화: 에이전트의 Python·Jupyter 실행과 원격 서버(SSH) 실행">
+        <span data-icon="terminal"></span><span class="sb-label">자동화</span>
+      </button>
+      <button class="new-chat po-entry" id="btn-plugins" aria-label="플러그인" title="플러그인: 직무별 스킬 묶음(Anthropic Knowledge Work Plugins) 설치·관리">
+        <span data-icon="blocks"></span><span class="sb-label">플러그인</span>
+      </button>
+      <!-- 베타 기능: 실제 학교 계정 확인이 끝나지 않아 맨 아래에 두고 '베타' 표식을 단다 -->
+      <button class="new-chat po-entry plms-entry" id="btn-plms" aria-label="PLMS (베타)" title="PLMS (베타 기능): SSO 로그인 후 참여 수업·공지·강의자료를 읽고 에이전트에게 묻습니다. 아직 시험 중이라 동작이 불안정할 수 있습니다">
+        <span data-icon="paper"></span><span class="sb-label">PLMS</span><span class="beta-badge">베타</span>
+      </button>
+    </div>
+    <nav id="thread-list"></nav>
+    <div class="sb-bottom">
+      <button class="sb-item" id="btn-workspace">
+        <span data-icon="folder"></span>
+        <span class="sb-item-text"><span>작업 폴더</span><small id="ws-name">선택 안 됨</small></span>
+      </button>
+      <button class="sb-item" id="btn-profile"><span data-icon="user"></span><span>내 정보</span></button>
+      <button class="sb-item" id="btn-memory"><span data-icon="brain"></span><span>메모리</span></button>
+      <button class="sb-item" id="btn-skills"><span data-icon="puzzle"></span><span>스킬</span></button>
+      <button class="sb-item" id="btn-mcp" title="커넥터(GitHub·Google·Zotero)·MCP 서버·메모리·동기화·사용량·진단"><span data-icon="plug"></span><span>연결·도구</span></button>
+      <button class="sb-item" id="btn-settings"><span data-icon="gear"></span><span>설정</span></button>
+    </div>
+  </aside>
+
+  <main id="main">
+    <header id="topbar">
+      <button class="icon-btn" id="btn-expand" title="사이드바 열기" data-icon="sidebar" hidden></button>
+      <button class="icon-btn" id="btn-new-top" title="새 채팅" data-icon="edit" hidden></button>
+      <div id="chat-title"></div>
+      <label class="thread-model-picker" id="thread-model-picker" hidden>
+        <span>대화 모델</span>
+        <select id="thread-model" title="현재 대화에만 저장되는 모델" aria-label="현재 대화에만 저장되는 모델"></select>
+      </label>
+      <label class="mode-toggle" id="agent-label" title="에이전트 모드: 작업 폴더의 파일을 읽고, 고치고, 명령을 실행하며 작업합니다">
+        <input type="checkbox" id="agent-toggle">
+        <span class="track"><span class="thumb"></span></span>
+        <span>에이전트</span>
+      </label>
+    </header>
+
+    <section id="scroll">
+      <div id="messages" class="column"></div>
+    </section>
+
+    <section id="po-view" hidden></section>
+
+    <section id="tool-view" hidden></section>
+
+    <footer id="composer-wrap">
+      <div class="column">
+        <div id="slash-menu" hidden></div>
+        <div id="composer">
+          <div id="attach-tray" hidden></div>
+          <textarea id="input" rows="1" placeholder="무엇이든 물어보세요"></textarea>
+          <div class="composer-bar">
+            <div class="composer-left">
+              <button id="btn-attach" class="icon-btn attach" title="파일 추가 (이미지·문서·텍스트)" data-icon="plus"></button>
+              <input type="file" id="file-input" multiple hidden>
+              <button id="ws-chip" class="chip"></button>
+            </div>
+            <button id="btn-send" class="send" title="보내기" disabled></button>
+          </div>
+        </div>
+        <div class="hint">Enter 보내기 · Shift+Enter 줄바꿈 · <b>/</b> 명령어·스킬 · 파일은 끌어다 놓거나 붙여 넣기 · AI는 실수할 수 있습니다</div>
+      </div>
+    </footer>
+  </main>
+</div>
+<div id="modal-root"></div>
+<div id="toast" hidden></div>
+
+<script src="vendor/marked.min.js"></script>
+<script src="vendor/purify.min.js"></script>
+<script src="vendor/katex/katex.min.js"></script>
+<script src="app.js"></script>
+<script src="po.js"></script>
+<script src="hub.js"></script>
+<script src="browser.js"></script>
+<script src="paper.js"></script>
+<script src="vendor/codemirror/codemirror.min.js"></script>
+<script src="code.js"></script>
+<script src="code-agent.js"></script>
+<script src="vendor/xterm/xterm.js"></script>
+<script src="vendor/xterm/addon-fit.js"></script>
+<script src="code-term.js"></script>
+<script src="code-ssh.js"></script>
+<script src="lab.js"></script>
+<script src="adaptive.js"></script>
+</body>
+</html>

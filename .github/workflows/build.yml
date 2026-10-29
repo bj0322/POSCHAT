@@ -1,0 +1,331 @@
+# SPDX-FileCopyrightText: 2026 Beomjoon Kim
+# SPDX-License-Identifier: AGPL-3.0-only
+name: Build installer
+
+# PR과 수동 실행: Windows 설치 파일과 macOS 디스크 이미지를 빌드하고 자가 진단 뒤 결과물(artifact)로 올린다.
+# 사용자 결정(2026-10-26): Android APK 빌드·에뮬레이터 시험·배포는 하지 않는다.
+# v로 시작하는 태그(예: v1.2.0)를 push하거나, 수동 실행 때 release에 태그 이름을 넣으면
+# 데스크톱 결과물을 그 태그의 GitHub Release에 첨부한다(수동 실행은 실행한 커밋에 태그를 만든다).
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Release로 올릴 태그 이름(예: v1.2.0). 비우면 빌드만 합니다."
+        required: false
+        default: ""
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  license:
+    # 라이선스 자동 점검: AGPL 원문, SPDX 머리말, 필수 문서, 배포 설정, 의존성 라이선스 목록.
+    # 결과는 사람이 검토할 재료이며 법적 호환성을 확정하지 않는다(docs/license-audit.md).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: LICENSE, SPDX headers, required documents
+        run: python tools/license_check.py repo
+
+      - name: Dependency license list
+        run: |
+          python -m pip install -r requirements.txt
+          python tools/license_check.py deps --out dependency-licenses.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dependency-licenses
+          path: dependency-licenses.md
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Speech recognition test models
+        # 음성 인식 정확도·속도 시험(tests/test_sherpa_capi.py)에 쓰는 VAD·한국어 모델(약 76MB)과 시험 음성
+        run: python tests/fetch_test_models.py "$RUNNER_TEMP/stt"
+
+      - name: Unit tests
+        env:
+          POSCHAT_TEST_MODELS: ${{ runner.temp }}/stt
+        run: python -m unittest discover -s tests -v
+
+  ui:
+    # 화면 시험: 실제 Bridge에 붙은 web/ 화면을 Chromium(Playwright)으로 열어 조작한다
+    # (연결·도구·연구·플러그인·브라우저 막대·논문 화면·1.15 코드 화면: 편집·저장·묻기·덩어리 검토·Git·실행·전환·휴대폰 폭,
+    #  1.16 사이드바·Lab·Code 에이전트·브라우저 에이전트(실제 Chromium으로 로컬 페이지 조작))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies and Chromium
+        run: |
+          python -m pip install -r requirements.txt playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Screen tests
+        env:
+          POSTECH_UI_SHOTS: ${{ runner.temp }}/ui-shots
+        run: python -m unittest discover -s tests -p "test_*ui*.py" -v
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-screenshots
+          path: ${{ runner.temp }}/ui-shots
+          if-no-files-found: ignore
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # setup-python은 python.org 빌드(tcl/tk 포함)를 쓰므로 build_installer.py 요구 사항을 만족한다.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt pyinstaller
+
+      - name: Prepare code signing certificate
+        # 저장소 Secrets에 WINDOWS_SIGN_PFX_BASE64(.pfx를 base64로)와 WINDOWS_SIGN_PASSWORD가 있으면 빌드가 exe에 서명한다.
+        # 없으면 서명 없이 빌드한다(설치할 때 SmartScreen 경고가 뜬다).
+        shell: pwsh
+        env:
+          PFX_BASE64: ${{ secrets.WINDOWS_SIGN_PFX_BASE64 }}
+          PFX_PASSWORD: ${{ secrets.WINDOWS_SIGN_PASSWORD }}
+        run: |
+          if (-not $env:PFX_BASE64) { Write-Output "코드 서명 인증서가 없어 서명하지 않습니다."; exit 0 }
+          $pfx = Join-Path $env:RUNNER_TEMP "sign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX_BASE64))
+          "WINDOWS_SIGN_PFX=$pfx" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "WINDOWS_SIGN_PASSWORD=$env:PFX_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build
+        # 러너 콘솔은 cp1252라서 빌드 스크립트의 한글 출력에서 UnicodeEncodeError가 난다.
+        # 자가 진단은 사용자 PC와 같은 조건이어야 하므로 이 단계에만 UTF-8을 켠다.
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: utf-8
+        run: python build_installer.py
+
+      - name: License files in the app
+        shell: pwsh
+        run: |
+          $payload = python -c "import os, tempfile; print(os.path.join(tempfile.gettempdir(), 'PostechChat-build', 'payload.zip'))"
+          python tools/license_check.py package --python-licenses $payload
+
+      - name: Self-test the built app
+        shell: pwsh
+        run: |
+          $app = Join-Path $env:TEMP "PostechChat-build\app\PostechChat\PostechChat.exe"
+          Start-Process -FilePath $app -ArgumentList "--selftest" -Wait
+          $report = Join-Path $env:APPDATA "PostechChat\selftest.txt"
+          Get-Content $report
+          $text = Get-Content $report -Raw
+          $version = python -c "from version import APP_VERSION; print(APP_VERSION)"
+          foreach ($want in "version: $version", "web: True", "documents: OK", "attachments: OK", "anthropic: OK", "word OK", "powerpoint OK", "excel OK", "paper OK", "notion OK", "firecrawl OK", "stt: OK", "crypto: OK", "rag: OK", "code: OK", "terminal: OK", "ssh: OK", "remote: OK", "lab-agents: OK", "github OK(19)", "research OK(12)", "memory OK(8)", "python OK(3)", "ssh OK(2)") {
+            if (-not $text.Contains($want)) { Write-Error "selftest에 '$want'이(가) 없습니다."; exit 1 }
+          }
+
+      - name: Install silently and check the registered version
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "PostechChat-install"
+          Start-Process -FilePath "release\POSCHAT-Setup.exe" -ArgumentList "--silent", "--dir=$dir", "--no-desktop" -Wait
+          Get-Content (Join-Path $env:TEMP "PostechChat-install.log")
+          if (-not (Test-Path (Join-Path $dir "PostechChat.exe"))) { Write-Error "설치 폴더에 PostechChat.exe가 없습니다."; exit 1 }
+          $version = python -c "from version import APP_VERSION; print(APP_VERSION)"
+          $registered = (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\PostechChat").DisplayVersion
+          Write-Output "version.py: $version / 설치 프로그램 등록 버전: $registered"
+          if ($registered -ne $version) { Write-Error "설치 프로그램 버전($registered)이 앱 버전($version)과 다릅니다."; exit 1 }
+          $name = (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\PostechChat").DisplayName
+          if ($name -ne "POSCHAT") { Write-Error "설치된 앱 목록의 이름($name)이 POSCHAT이 아닙니다."; exit 1 }
+          $description = (Get-Item (Join-Path $dir "PostechChat.exe")).VersionInfo.FileDescription
+          if ($description -ne "POSCHAT") { Write-Error "실행 파일 정보의 이름($description)이 POSCHAT이 아닙니다."; exit 1 }
+          # 업데이트(같은 폴더에 다시 설치): 새 파일을 먼저 풀고 바꾸므로 작업 폴더가 남지 않고 앱이 그대로 실행되어야 한다
+          Start-Process -FilePath "release\POSCHAT-Setup.exe" -ArgumentList "--silent", "--dir=$dir", "--no-desktop" -Wait
+          Get-Content (Join-Path $env:TEMP "PostechChat-install.log")
+          if (-not (Test-Path (Join-Path $dir "_internal\python312.dll"))) { Write-Error "업데이트 뒤 python312.dll이 없습니다."; exit 1 }
+          $left = Get-ChildItem $dir -Directory | Where-Object { $_.Name -like "_update*" -or $_.Name -like "_old*" }
+          if ($left) { Write-Error "작업 폴더가 남았습니다: $($left.Name)"; exit 1 }
+          $env:APPDATA = Join-Path $env:RUNNER_TEMP "selftest-after-update"
+          Start-Process -FilePath (Join-Path $dir "PostechChat.exe") -ArgumentList "--selftest" -Wait
+          $report = Get-Content (Join-Path $env:APPDATA "PostechChat\selftest.txt") -Raw
+          if (-not $report.Contains("version: $version")) { Write-Error "업데이트한 앱이 실행되지 않습니다."; exit 1 }
+
+      - name: Microsoft Store installer (silent install, exit code, Store mode)
+        # 1.18: Store(EXE 방식)는 무인 설치(--silent)와 종료 코드 0을 요구한다. Store판은 스스로 업데이트하지 않는다(distribution: store).
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "PostechChat-store"
+          $p = Start-Process -FilePath "release\POSCHAT-Store-Setup.exe" -ArgumentList "--silent", "--dir=$dir", "--no-desktop" -Wait -PassThru
+          Get-Content (Join-Path $env:TEMP "PostechChat-install.log")
+          if ($p.ExitCode -ne 0) { Write-Error "Store 설치 프로그램의 종료 코드가 $($p.ExitCode)입니다."; exit 1 }
+          if (-not (Test-Path (Join-Path $dir "_internal\distribution.txt"))) { Write-Error "Store판에 distribution.txt가 없습니다."; exit 1 }
+          $env:APPDATA = Join-Path $env:RUNNER_TEMP "selftest-store"
+          Start-Process -FilePath (Join-Path $dir "PostechChat.exe") -ArgumentList "--selftest" -Wait
+          $report = Get-Content (Join-Path $env:APPDATA "PostechChat\selftest.txt") -Raw
+          if (-not $report.Contains("distribution: store")) { Write-Error "Store판이 Store 모드로 실행되지 않습니다."; exit 1 }
+          if (Test-Path (Join-Path $env:RUNNER_TEMP "PostechChat-install\_internal\distribution.txt")) { Write-Error "GitHub판에 distribution.txt가 들어갔습니다."; exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: POSCHAT-Setup
+          path: |
+            release/POSCHAT-Setup.exe
+            release/POSCHAT-Store-Setup.exe
+
+  browser-spike:
+    # 1.13 브라우저 기술 검증 + 1.15 B1(앱 멈춤) 회귀 시험: 실제 pywebview 창에 네이티브 웹페이지 뷰(WebView2·WKWebView)를 붙여
+    # 열기·이벤트·글 읽기·선택·격리·이동·이벤트 폭주·닫기를 확인하고, 단계마다 앱 창이 응답하는지 본다(tests/browser_spike.py).
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pywebview
+        run: python -m pip install "pywebview>=5.0" requests
+
+      - name: Native browser view (queued events, B1 fixed)
+        run: python tests/browser_spike.py browser-spike.json
+
+      - name: B1 reproduction with the old synchronous push (expected to freeze)
+        # 1.13~1.14 방식(네이티브 처리기에서 바로 evaluate_js)이 앱 창을 멈추게 하는지 확인한다. 멈추면 성공(종료 코드 0).
+        # 재현은 런타임 버전에 따라 달라질 수 있어 결과를 기록만 하고 작업을 실패시키지 않는다.
+        continue-on-error: true
+        timeout-minutes: 3
+        run: python tests/browser_spike.py browser-spike-legacy.json --legacy-push
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-spike-${{ matrix.os }}
+          path: browser-spike*.json
+
+  macos:
+    # Apple Silicon(M1 이후) 맥용 앱. 서명용 Apple 개발자 인증서가 없어 임시(ad-hoc) 서명만 한다.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        # pillow: PyInstaller가 PNG 아이콘을 맥 아이콘(.icns)으로 바꿀 때 쓴다
+        run: python -m pip install -r requirements.txt pyinstaller pillow
+
+      - name: Build
+        run: python build_installer.py
+
+      - name: Self-test the built app
+        run: |
+          app="$TMPDIR/PostechChat-build/app/PostechChat.app"
+          "$app/Contents/MacOS/PostechChat" --selftest
+          report="$HOME/Library/Application Support/PostechChat/selftest.txt"
+          cat "$report"
+          version=$(python -c "from version import APP_VERSION; print(APP_VERSION)")
+          for want in "version: $version" "web: True" "documents: OK" "attachments: OK" "anthropic: OK" "word OK" "powerpoint OK" "excel OK" "paper OK" "notion OK" "firecrawl OK" "stt: OK" "crypto: OK" "rag: OK" "code: OK" "terminal: OK" "ssh: OK" "remote: OK" "lab-agents: OK" "github OK(19)" "research OK(12)" "memory OK(8)" "python OK(3)" "ssh OK(2)"; do
+            grep -qF "$want" "$report" || { echo "selftest에 '$want'이(가) 없습니다."; exit 1; }
+          done
+          codesign --verify --deep --strict "$app"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Contents/Info.plist" | grep -qx "$version"
+
+      - name: Check the disk image
+        run: |
+          hdiutil verify release/POSCHAT-mac.dmg
+          mnt=$(mktemp -d)
+          hdiutil attach release/POSCHAT-mac.dmg -nobrowse -mountpoint "$mnt"
+          test -x "$mnt/PostechChat.app/Contents/MacOS/PostechChat"
+          test -L "$mnt/Applications"
+          python tools/license_check.py package --python-licenses "$mnt"
+          hdiutil detach "$mnt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: POSCHAT-mac
+          path: release/POSCHAT-mac.dmg
+
+  publish:
+    needs: [license, tests, ui, windows, macos, browser-spike]
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release != '')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 1.18.2: 업데이트 서버는 http라서 앱이 설치 파일의 Ed25519 서명(<파일>.sig)을 확인한다. 개인키는 시크릿에만 있다.
+      # 앱에 들어 있는 공개키와 맞지 않으면 서명 단계에서 실패해 릴리스가 만들어지지 않는다.
+      - name: Sign update files
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          TAG: ${{ inputs.release || github.ref_name }}
+        run: |
+          python -m pip install requests cryptography
+          python tools/update_sign.py sign --tag "$TAG" dist/POSCHAT-Setup.exe dist/POSCHAT-mac.dmg
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release || github.ref_name }}
+        # 릴리스 본문 맨 앞에 라이선스와 이 배포본의 해당 소스(같은 태그의 소스 아카이브)를 밝힌다
+        run: |
+          {
+            echo "**License**: GNU Affero General Public License v3.0 only (AGPL-3.0-only). Copyright © 2026 Beomjoon Kim."
+            echo "Corresponding Source of these binaries: tag \`$TAG\` (commit $GITHUB_SHA), https://github.com/$GITHUB_REPOSITORY/tree/$TAG and the Source code archives below."
+            echo "Releases v1.9.2 and earlier were distributed under the MIT License; those rights are unchanged (LICENSE_HISTORY.md)."
+            echo "Third-party components keep their own licenses (THIRD_PARTY_NOTICES.md, docs/license-audit.md)."
+            echo
+          } > notes.md
+          if [ -f "docs/release-notes/$TAG.md" ]; then
+            cat "docs/release-notes/$TAG.md" >> notes.md
+          fi
+          # 1.9.1~1.10.0 앱의 자동 업데이트는 예전 파일 이름(PostechChat-*)을 찾으므로 같은 파일을 그 이름으로도 올린다
+          cp dist/POSCHAT-Setup.exe dist/PostechChat-Setup.exe
+          cp dist/POSCHAT-mac.dmg dist/PostechChat-mac.dmg
+          # 1.18: POSCHAT-Store-Setup.exe는 Microsoft Store 제출용(파트너 센터에 이 버전의 주소를 넣는다). 앱의 자동 업데이트는 받지 않는다
+          gh release create "$TAG" dist/POSCHAT-Setup.exe dist/POSCHAT-Store-Setup.exe dist/POSCHAT-mac.dmg \
+            dist/POSCHAT-Setup.exe.sig dist/POSCHAT-mac.dmg.sig \
+            dist/PostechChat-Setup.exe dist/PostechChat-mac.dmg \
+            --repo "$GITHUB_REPOSITORY" --title "POSCHAT $TAG" --target "$GITHUB_SHA" \
+            --notes-file notes.md --generate-notes

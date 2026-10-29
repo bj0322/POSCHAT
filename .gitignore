@@ -1,0 +1,53 @@
+# Secrets and local application data
+.env
+.env.*
+!.env.example
+config.json
+memory.json
+threads/
+*.pem
+*.key
+credentials*.json
+secrets*.json
+service-account*.json
+
+# Python environments and caches
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.buildenv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Build output and packaged executables
+build/
+dist/
+release/
+_internal/
+*.spec
+*.exe
+*.dll
+*.zip
+
+# Logs and machine-specific files
+*.log
+selftest.txt
+*.tmp
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Android build
+android/.gradle/
+android/local.properties
+android/**/build/
+.kotlin/
+
+# CodeMirror 묶음 빌드(tools/codemirror)
+node_modules/
+
+# 다시 만들 수 있는 큰 파일(추출 캐시·시각화). graph.json과 GRAPH_REPORT.md만 저장소에 둔다

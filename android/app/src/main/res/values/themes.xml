@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 웹 화면(web/style.css)의 밝은 배경색과 맞춘다. WebView의 prefers-color-scheme도 테마를 따른다. -->
+    <style name="Theme.PostechChat" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#ffffff</item>
+        <item name="android:statusBarColor">#f9f9f9</item>
+        <item name="android:navigationBarColor">#ffffff</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
