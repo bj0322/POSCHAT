@@ -58,12 +58,12 @@ POSCHAT은 PIDS Tech. 팀이 만들고 관리하는 비공식 프로젝트입니
 POSCHAT은 만 14세 미만 아동을 대상으로 하지 않으며, 아동의 정보를 일부러 모으지 않습니다.
 
 ## 6. 바뀔 때
-이 문서를 바꾸면 이 페이지에 새 시행일과 함께 올리고, 바뀐 내용은 [변경 기록](https://github.com/bj0322/POSCHAT/commits/main/docs/privacy-policy.md)에서 볼 수 있습니다.
+이 문서를 바꾸면 이 페이지에 새 시행일과 함께 올리고, 바뀐 내용은 [변경 기록](https://github.com/pidstech/POSCHAT/commits/main/docs/privacy-policy.md)에서 볼 수 있습니다.
 
 ## 7. 문의
 - 개발: PIDS Tech. 팀 · 서비스 대표자: 김범준
 - 메일: [beomjoon@pidstech.com](mailto:beomjoon@pidstech.com)
-- 소스 코드(AGPL-3.0-only): https://github.com/bj0322/POSCHAT
+- 소스 코드(AGPL-3.0-only): https://github.com/pidstech/POSCHAT
 
 ---
 

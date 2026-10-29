@@ -9,7 +9,7 @@ POSCHAT Windows 앱을 Microsoft Store에 **EXE 방식**으로 올리는 절차�
 |---|---|
 | 무인 설치(설치 화면 없이) | `POSCHAT-Store-Setup.exe --silent --no-desktop` (성공 0, 실패 1) |
 | 독립 설치 파일(설치 중 내려받지 않음) | 앱 전체가 설치 파일 안에 있음 |
-| 버전이 들어간 HTTPS 주소, 제출 뒤 파일이 바뀌지 않음(10.2.9) | `https://github.com/bj0322/POSCHAT/releases/download/vX.Y.Z/POSCHAT-Store-Setup.exe` — 릴리스마다 새 태그. **저장소가 비공개이면 이 주소로 받을 수 없으므로** 공개 HTTPS 주소가 필요합니다(업데이트 서버 `https://pidstech.com`에 Store용 파일도 올리도록 동기화를 넓히면 됩니다. 지금은 올리지 않습니다) |
+| 버전이 들어간 HTTPS 주소, 제출 뒤 파일이 바뀌지 않음(10.2.9) | `https://github.com/pidstech/POSCHAT/releases/download/vX.Y.Z/POSCHAT-Store-Setup.exe` — 릴리스마다 새 태그. **저장소가 비공개이면 이 주소로 받을 수 없으므로** 공개 HTTPS 주소가 필요합니다(업데이트 서버 `https://pidstech.com`에 Store용 파일도 올리도록 동기화를 넓히면 됩니다. 지금은 올리지 않습니다) |
 | 설치 파일과 모든 PE 파일 서명(10.2.9) | 인증서를 넣으면 빌드가 exe·dll·pyd 중 서명 없는 것에 모두 서명(`build_installer.sign_tree`) — **인증서는 직접 구해야 함** |
 | 심사한 파일만 설치 | Store판(`distribution.txt` = store)은 새 버전을 알리기만 하고 Microsoft Store를 엽니다. 스스로 내려받지 않습니다 |
 | 깨끗한 제거(10.2.7) | 설정 → 앱에 'POSCHAT'으로 등록, 조용한 제거(`--uninstall --quiet`) |
@@ -37,7 +37,7 @@ POSCHAT Windows 앱을 Microsoft Store에 **EXE 방식**으로 올리는 절차�
 ### 패키지
 | 항목 | 값 |
 |---|---|
-| 패키지 URL | `https://github.com/bj0322/POSCHAT/releases/download/vX.Y.Z/POSCHAT-Store-Setup.exe` (X.Y.Z는 서명된 릴리스) |
+| 패키지 URL | `https://github.com/pidstech/POSCHAT/releases/download/vX.Y.Z/POSCHAT-Store-Setup.exe` (X.Y.Z는 서명된 릴리스) |
 | 아키텍처 | x64 |
 | 설치 관리자 매개 변수(무인 설치) | `--silent --no-desktop` |
 | 언어 | 한국어 |
@@ -48,8 +48,8 @@ POSCHAT Windows 앱을 Microsoft Store에 **EXE 방식**으로 올리는 절차�
 
 ### 속성
 - 범주: 생산성(부범주 없음) — 또는 개발자 도구
-- 개인정보 처리방침 URL: `https://github.com/bj0322/POSCHAT/blob/main/docs/privacy-policy.md`
-- 웹사이트: `https://github.com/bj0322/POSCHAT` · 지원 연락처: `beomjoon@pidstech.com`
+- 개인정보 처리방침 URL: `https://github.com/pidstech/POSCHAT/blob/main/docs/privacy-policy.md`
+- 웹사이트: `https://github.com/pidstech/POSCHAT` · 지원 연락처: `beomjoon@pidstech.com`
 - 시스템 요구: Windows 10 이상 x64, 인터넷(클라우드 모델) · 마이크(PO노트, 선택)
 - **생성형 AI**: 실시간 생성형 AI 콘텐츠를 쓴다고 표시(정책 11.16)
 
@@ -73,7 +73,7 @@ POSCHAT Windows 앱을 Microsoft Store에 **EXE 방식**으로 올리는 절차�
   >
   > 이 앱은 생성형 AI를 사용합니다. AI의 답은 틀리거나 부적절할 수 있으니 중요한 내용은 확인하세요. 부적절한 답변은 답변 아래 신고 단추로 알려 주세요.
   > 대화와 파일은 개발자에게 보내지 않으며, 질문은 사용자가 고른 AI 서비스로만 전송됩니다.
-  > 자유 소프트웨어(AGPL-3.0-only): https://github.com/bj0322/POSCHAT
+  > 자유 소프트웨어(AGPL-3.0-only): https://github.com/pidstech/POSCHAT
 
 - **검색어**: AI 채팅, 코딩 에이전트, 논문, 강의 노트, 연구 (다른 회사의 제품 이름은 넣지 않습니다 — 정책 10.1.3)
 - **스크린숏**: 1장 이상(권장 4장 이상, 최대 10장). 채팅·코드(작업 탭)·논문·PO노트 화면. `POSTECH_UI_SHOTS=<폴더> python -m unittest tests.test_ui_smoke`로 만들 수 있습니다.
@@ -90,7 +90,7 @@ POSCHAT is an AI desktop app. To test without a POSTECH account:
 2. Type a question in the chat box and press Enter.
 3. Code: click "코드" in the left sidebar, choose a folder as the workspace, type a task in the bottom ">" line.
 Generative AI: answers are generated live. Users can report inappropriate answers with the flag button under each answer;
-reports open a GitHub issue form (https://github.com/bj0322/POSCHAT/issues).
+reports open a GitHub issue form (https://github.com/pidstech/POSCHAT/issues).
 The installer installs per-user (no admin) to %LOCALAPPDATA%\Programs\PostechChat. Silent install: --silent --no-desktop.
 ```
 

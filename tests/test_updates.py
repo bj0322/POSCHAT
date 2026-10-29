@@ -76,11 +76,17 @@ class UpdateTests(unittest.TestCase):
         self.assertIsNone(updates.check("1.10.0", "windows")["asset"])
 
     @patch("updates.requests.get")
-    def test_server_requests_do_not_follow_redirects(self, get):
-        get.return_value = response(status=302)
+    def test_requests_never_use_automatic_redirects(self, get):
+        get.return_value = Mock(status_code=302, headers={})
         with self.assertRaisesRegex(updates.UpdateError, "HTTP 302"):
             updates.check("1.9.1", "windows")
         self.assertIs(get.call_args.kwargs["allow_redirects"], False)
+
+    @patch("updates.requests.get")
+    def test_feed_redirect_to_other_host_is_refused(self, get):
+        get.return_value = Mock(status_code=302, headers={"Location": "https://evil.example.com/feed"})
+        with self.assertRaisesRegex(updates.UpdateError, "허용한 곳이 아닙니다"):
+            updates.check("1.9.1", "windows")
 
     @patch("updates.requests.get")
     def test_missing_release_is_reported_without_crashing(self, get):
@@ -171,12 +177,12 @@ class UpdateTests(unittest.TestCase):
     @patch("updates.requests.get")
     def test_download_refuses_files_outside_this_server(self, get):
         get.return_value = response(json_data=release(url="https://example.com/POSCHAT-Setup.exe"))
-        self.assert_refused(get, "업데이트 서버의 릴리스가 아닙니다")
+        self.assert_refused(get, "이 릴리스의 파일이 아닙니다")
 
     @patch("updates.requests.get")
     def test_download_refuses_another_versions_folder(self, get):
         get.return_value = response(json_data=release(url=f"{updates.DOWNLOAD_PREFIX}v9.9.9/POSCHAT-Setup.exe"))
-        self.assert_refused(get, "업데이트 서버의 릴리스가 아닙니다")
+        self.assert_refused(get, "이 릴리스의 파일이 아닙니다")
 
     @patch("updates.requests.get")
     def test_no_download_when_already_latest(self, get):
@@ -194,9 +200,60 @@ class ShippedKeyTests(unittest.TestCase):
     def test_update_server_uses_https(self):
         self.assertTrue(updates.UPDATE_BASE_URL.startswith("https://"))
 
-    def test_update_server_address_is_consistent(self):
-        self.assertTrue(updates.DOWNLOAD_PREFIX.startswith(updates.UPDATE_BASE_URL))
-        self.assertTrue(updates.RELEASE_URL.startswith(updates.UPDATE_BASE_URL))
+    def test_release_sources_are_consistent(self):
+        self.assertTrue(updates.RELEASE_URL.startswith("https://api.github.com/repos/" + updates.REPOSITORY))
+        self.assertTrue(updates.DOWNLOAD_PREFIX.startswith(f"https://github.com/{updates.REPOSITORY}/"))
+        self.assertTrue(updates.SERVER_DOWNLOAD_PREFIX.startswith(updates.UPDATE_BASE_URL))
+        self.assertTrue(updates.SERVER_RELEASE_URL.startswith(updates.UPDATE_BASE_URL))
+
+
+@patch.object(updates, "UPDATE_PUBLIC_KEYS", (PUBLIC,))
+class GitHubSourceTests(unittest.TestCase):
+    @patch("updates.requests.get")
+    def test_checks_github_first(self, get):
+        get.return_value = response(json_data=release())
+        updates.check("1.10.0", "windows")
+        self.assertEqual(get.call_args_list[0].args[0], updates.RELEASE_URL)
+        self.assertEqual(get.call_count, 1)
+
+    @patch("updates.requests.get")
+    def test_falls_back_to_update_server_when_github_fails(self, get):
+        server = release()
+        for a in server["assets"]:
+            a["browser_download_url"] = a["browser_download_url"].replace(updates.DOWNLOAD_PREFIX, updates.SERVER_DOWNLOAD_PREFIX)
+        get.side_effect = [response(403), response(json_data=server)]
+        result = updates.check("1.10.0", "windows")
+        self.assertEqual((result["available"], result["url"]), (True, updates.SERVER_RELEASES_PAGE))
+        self.assertEqual(get.call_args_list[1].args[0], updates.SERVER_RELEASE_URL)
+
+    @patch("updates.requests.get")
+    def test_reports_the_github_error_when_both_fail(self, get):
+        get.side_effect = [response(403), response(500)]
+        with self.assertRaisesRegex(updates.UpdateError, "HTTP 403"):
+            updates.latest_release()
+
+    @patch("updates.requests.get")
+    def test_download_follows_github_redirect_to_allowed_host(self, get):
+        redirect = Mock(status_code=302, headers={"Location": "https://release-assets.githubusercontent.com/x/y"})
+        get.side_effect = [response(json_data=release()), response(text=sign()), redirect, response()]
+        with tempfile.TemporaryDirectory() as temp:
+            path, version = updates.download("1.10.0", temp, "windows")
+            self.assertEqual(Path(path).read_bytes(), DATA)
+        self.assertEqual(get.call_args_list[-1].args[0], "https://release-assets.githubusercontent.com/x/y")
+
+    @patch("updates.requests.get")
+    def test_download_refuses_redirect_to_other_host(self, get):
+        redirect = Mock(status_code=302, headers={"Location": "https://evil.example.com/POSCHAT-Setup.exe"})
+        get.side_effect = [response(json_data=release()), response(text=sign()), redirect]
+        with tempfile.TemporaryDirectory() as temp, self.assertRaisesRegex(updates.UpdateError, "허용한 곳이 아닙니다"):
+            updates.download("1.10.0", temp, "windows")
+
+    @patch("updates.requests.get")
+    def test_download_refuses_http_redirect(self, get):
+        redirect = Mock(status_code=302, headers={"Location": "http://github.com/x"})
+        get.side_effect = [response(json_data=release()), response(text=sign()), redirect]
+        with tempfile.TemporaryDirectory() as temp, self.assertRaisesRegex(updates.UpdateError, "허용한 곳이 아닙니다"):
+            updates.download("1.10.0", temp, "windows")
 
 
 if __name__ == "__main__":

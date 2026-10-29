@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/bj0322/POSCHAT/docs/api/handoff.schema.json",
+  "$id": "https://github.com/pidstech/POSCHAT/docs/api/handoff.schema.json",
   "title": "POSCHAT Agent Handoff",
   "type": "object",
   "required": ["task_id", "idempotency_key", "goal", "status"],

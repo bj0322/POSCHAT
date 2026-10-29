@@ -102,7 +102,7 @@ CI가 `python tools/license_check.py deps`로 설치된 버전의 메타데이�
 
 **해당 소스 제공 방식**:
 - 공식 배포본은 `build.yml`이 한 커밋에서 빌드합니다. 릴리스할 때 그 커밋에 `v<버전>` 태그를 만들고, 같은 태그의 GitHub 소스 아카이브를 해당 소스로 안내합니다.
-- 앱의 **소스 코드 보기**는 저장소 첫 화면이 아니라 `https://github.com/bj0322/POSCHAT/tree/v<앱 버전>`을 엽니다. 제3자 라이선스 창은 `archive/refs/tags/v<버전>.zip`도 보여 줍니다.
+- 앱의 **소스 코드 보기**는 저장소 첫 화면이 아니라 `https://github.com/pidstech/POSCHAT/tree/v<앱 버전>`을 엽니다. 제3자 라이선스 창은 `archive/refs/tags/v<버전>.zip`도 보여 줍니다.
 - 빌드·설치 스크립트(`build_installer.py`, `installer/`, `android/`, `.github/workflows/build.yml`)도 같은 소스에 들어 있습니다.
   - 빌드 때 받는 제3자 바이너리(sherpa-onnx AAR, Chaquopy 패키지)는 버전과 SHA-256을 고정해 같은 결과를 재현할 수 있습니다.
 - 바이너리와 소스가 같은지:

@@ -12,7 +12,7 @@ POSTECH GenAI API(기본) 또는 본인의 Claude·OpenAI(GPT) API 키를 쓰는
 
 ## 설치
 
-설치 파일(`POSCHAT-Setup.exe`)은 저장소의 [Releases](https://github.com/bj0322/POSCHAT/releases)에서 받습니다. (Microsoft Store 제출 준비: [docs/microsoft-store.md](docs/microsoft-store.md), 개인정보 처리방침: [docs/privacy-policy.md](docs/privacy-policy.md)) 저장소 자체에는 exe를 넣지 않습니다. 설치 파일 하나에 Python, 화면 라이브러리(marked·DOMPurify·KaTeX), 문서 라이브러리, 내장 MCP 서버가 모두 들어 있으므로 npm·curl·Python을 따로 설치할 필요가 없습니다. 직접 빌드하려면 아래 [개발](#개발)을 보세요.
+설치 파일(`POSCHAT-Setup.exe`)은 저장소의 [Releases](https://github.com/pidstech/POSCHAT/releases)에서 받습니다. (Microsoft Store 제출 준비: [docs/microsoft-store.md](docs/microsoft-store.md), 개인정보 처리방침: [docs/privacy-policy.md](docs/privacy-policy.md)) 저장소 자체에는 exe를 넣지 않습니다. 설치 파일 하나에 Python, 화면 라이브러리(marked·DOMPurify·KaTeX), 문서 라이브러리, 내장 MCP 서버가 모두 들어 있으므로 npm·curl·Python을 따로 설치할 필요가 없습니다. 직접 빌드하려면 아래 [개발](#개발)을 보세요.
 
 1. Releases에서 받은 `POSCHAT-Setup.exe`(또는 직접 빌드한 `release\POSCHAT-Setup.exe`)를 실행합니다.
 2. 설치 프로그램에는 아직 코드 서명이 없어서 Windows가 "Windows의 PC 보호" 경고를 띄울 수 있습니다. 파일을 Releases에서 받았는지 확인한 뒤 **추가 정보 → 실행**을 누르세요. 경고를 없애려면 코드 서명 인증서가 필요합니다([배포](#배포) 참고). 보호 기능을 끄거나 예외를 추가하는 것을 설치 절차로 요구하지 않습니다.

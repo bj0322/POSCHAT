@@ -165,7 +165,7 @@ class ReportUiTests(unittest.TestCase):
                     pop.value.close()
                     url = urlparse(opened[0])
                     q = {k: v[0] for k, v in parse_qs(url.query).items()}
-                    self.assertEqual(url.netloc + url.path, "github.com/bj0322/POSCHAT/issues/new")
+                    self.assertEqual(url.netloc + url.path, "github.com/pidstech/POSCHAT/issues/new")
                     self.assertEqual(q["template"], "ai-report.yml")
                     self.assertEqual(q["reason"], "개인정보 노출")
                     self.assertEqual(q["what"], "전화번호를 지어냈습니다")

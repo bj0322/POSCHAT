@@ -1,6 +1,8 @@
 # 업데이트 서버 운영
 
-저장소가 비공개여도 앱이 자동 업데이트를 받도록 PIDS Tech. 서버(`updates.UPDATE_BASE_URL` = `https://pidstech.com`)가 새 릴리스를 나눠 줍니다. 앱 쪽은 `updates.py`, 서명은 [security.md](security.md#업데이트-신뢰-모델).
+1.18.8부터 앱은 공개 저장소 `pidstech/POSCHAT`의 GitHub 릴리스를 먼저 보고, GitHub에서 받지 못할 때만 이 서버(`updates.UPDATE_BASE_URL` = `https://pidstech.com`)를 씁니다. 1.18.7 이하 앱은 이 서버만 보므로 서버는 계속 필요합니다. 앱 쪽은 `updates.py`, 서명은 [security.md](security.md#업데이트-신뢰-모델).
+
+**저장소가 공개이므로 서버의 동기화 대상은 `pidstech/POSCHAT`이어야 합니다**(저장소를 옮기거나 다시 만들었다면 `poschat-sync.py`의 저장소 이름을 확인). 공개 저장소는 토큰 없이 가져올 수 있습니다.
 
 ## 구조
 ```
@@ -15,9 +17,9 @@ GitHub 릴리스(CI가 서명 파일 .sig까지 올림)
 - 최신 버전은 `/releases/download/latest/<파일>` 링크로도 받을 수 있습니다. 서버에는 최근 2개 버전만 둡니다.
 - 서버의 스크립트(저장소 밖): `/opt/poschat-update/poschat-sync.py`, `publish.py`, systemd 유닛 `poschat-update-sync.{service,timer}`.
 
-## 저장소를 비공개로 바꿀 때
+## 저장소를 다시 비공개로 바꿀 때(지금은 공개)
 GitHub가 비공개이면 서버가 릴리스를 가져오려면 읽기 전용 토큰이 필요합니다.
-1. GitHub → Settings → Developer settings → Fine-grained tokens: 저장소 `bj0322/POSCHAT`만, 권한은 **Contents: Read-only**(Metadata는 자동).
+1. GitHub → Settings → Developer settings → Fine-grained tokens: 저장소 `pidstech/POSCHAT`만, 권한은 **Contents: Read-only**(Metadata는 자동).
 2. 서버에서 `/etc/poschat-update.env`(소유 root:pidsdeploy, 권한 0640)에 `GITHUB_TOKEN=<토큰>` 한 줄을 넣습니다.
 3. `sudo systemctl start poschat-update-sync.service`, `journalctl -u poschat-update-sync.service`로 확인합니다.
 토큰은 GitHub로 가는 요청에만 쓰고, 저장소 밖 서명 URL로 리디렉션될 때는 보내지 않습니다.

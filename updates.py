@@ -1,10 +1,10 @@
 # SPDX-FileCopyrightText: 2026 Beomjoon Kim
 # SPDX-License-Identifier: AGPL-3.0-only
-"""업데이트 서버에서 새 버전을 확인하고 이 기기용 설치 파일을 내려받는다.
+"""GitHub 릴리스에서 새 버전을 확인하고 이 기기용 설치 파일을 내려받는다.
 
-저장소가 비공개라서 GitHub 대신 자체 업데이트 서버(UPDATE_BASE_URL)를 쓴다. 서버는 GitHub의 releases/latest와 같은 모양의 JSON
-(`/api/releases/latest`)과 파일(`/releases/download/<태그>/<이름>`)을 준다.
-서버 주소가 http여도 변조되지 않도록, 설치 파일은 릴리스를 만든 CI의 Ed25519 서명(`<이름>.sig`)을 앱에 넣은 공개키로
+저장소가 공개라서 GitHub 릴리스(`api.github.com/repos/<저장소>/releases/latest`)를 먼저 본다. GitHub가 막히거나 요청 한도에
+걸리면 자체 업데이트 서버(UPDATE_BASE_URL)로 한 번 더 시도한다. 서버는 GitHub와 같은 모양의 JSON과 파일 주소를 준다.
+어느 쪽에서 받든 설치 파일은 릴리스를 만든 CI의 Ed25519 서명(`<이름>.sig`)을 앱에 넣은 공개키로
 확인한 뒤에만 쓴다. 서명이 없거나 맞지 않으면 설치하지 않는다(건너뛰는 설정은 없다). 크기와 SHA-256(digest)도 함께 확인한다.
 """
 import base64
@@ -13,19 +13,32 @@ import os
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urljoin, urlparse
 
 import requests
 
-REPOSITORY = "bj0322/POSCHAT"  # 소스 코드 주소(설정의 라이선스 정보)에만 쓴다. 업데이트는 아래 서버에서 받는다.
-# 업데이트 서버(HTTPS). 설치 파일은 연결과 상관없이 아래 서명으로도 확인한다. 1.18.2 앱은 옛 주소 http://3.38.118.65를 쓰므로 서버는 그 주소도 계속 서비스한다.
+REPOSITORY = "pidstech/POSCHAT"  # 소스 코드 주소(설정의 라이선스 정보)와 GitHub 릴리스 확인에 쓴다.
+# 보조 업데이트 서버(HTTPS). GitHub에서 받지 못할 때만 쓴다. 1.18.7 이하 앱은 이 서버만 보므로 서버는 계속 서비스한다.
 UPDATE_BASE_URL = "https://pidstech.com"
 # 서명 공개키(Ed25519 raw 32바이트의 base64). 여러 개를 두면 하나라도 맞을 때 받아들인다(키 교체: docs/security.md).
 UPDATE_PUBLIC_KEYS = ("Et1RfxsTZ4VAy/odq+idHpUVPwcvfoHkkp8fPwY4g/A=",)
 # Microsoft Store 제품 ID(파트너 센터의 'Store ID', 9N…로 시작). 비어 있으면 Store의 '다운로드 및 업데이트' 화면을 연다.
 STORE_PRODUCT_ID = ""
-RELEASE_URL = f"{UPDATE_BASE_URL}/api/releases/latest"
-RELEASES_PAGE = f"{UPDATE_BASE_URL}/"
-DOWNLOAD_PREFIX = f"{UPDATE_BASE_URL}/releases/download/"
+RELEASE_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
+RELEASES_PAGE = f"https://github.com/{REPOSITORY}/releases"
+DOWNLOAD_PREFIX = f"https://github.com/{REPOSITORY}/releases/download/"
+SERVER_RELEASE_URL = f"{UPDATE_BASE_URL}/api/releases/latest"
+SERVER_RELEASES_PAGE = f"{UPDATE_BASE_URL}/"
+SERVER_DOWNLOAD_PREFIX = f"{UPDATE_BASE_URL}/releases/download/"
+# (피드 주소, 릴리스 페이지, 파일 주소 앞부분). 앞에서부터 시도한다.
+SOURCES = (
+    (RELEASE_URL, RELEASES_PAGE, DOWNLOAD_PREFIX),
+    (SERVER_RELEASE_URL, SERVER_RELEASES_PAGE, SERVER_DOWNLOAD_PREFIX),
+)
+# GitHub는 릴리스 파일을 이 호스트들로 넘긴다(리디렉션). 이 밖의 주소로는 따라가지 않는다.
+REDIRECT_HOSTS = ("github.com", "api.github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com",
+                  "github-releases.githubusercontent.com")
+MAX_REDIRECTS = 5
 ASSETS = {
     "windows": "POSCHAT-Setup.exe",
     "macos": "POSCHAT-mac.dmg",
@@ -83,15 +96,32 @@ def verify_signature(message, signature, keys=None):
     raise UpdateError("업데이트 서명이 맞지 않습니다. 설치하지 않습니다.")
 
 
-def latest_release(timeout=15):
-    """최신 정식 릴리스 {"version", "name", "notes", "url", "assets": {이름: asset}}."""
-    headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
+def _get(url, **kwargs):
+    """requests.get이되 리디렉션은 허용한 https 호스트로만 직접 따라간다."""
+    for _ in range(MAX_REDIRECTS + 1):
+        r = requests.get(url, allow_redirects=False, **kwargs)
+        if r.status_code not in (301, 302, 303, 307, 308):
+            return r
+        location = r.headers.get("Location") if isinstance(r.headers, dict) or hasattr(r.headers, "get") else None
+        if not isinstance(location, str) or not location:
+            return r  # 갈 곳을 알려 주지 않으면 그대로 돌려줘 호출한 쪽이 오류로 알린다
+        target = urljoin(url, location)
+        parts = urlparse(target)
+        r.close()
+        if parts.scheme != "https" or parts.hostname not in REDIRECT_HOSTS:
+            raise UpdateError("업데이트 파일 주소가 허용한 곳이 아닙니다.")
+        url = target
+    raise UpdateError("업데이트 주소가 너무 많이 넘어갑니다.")
+
+
+def _fetch_release(feed_url, page_url, download_prefix, timeout):
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": USER_AGENT}
     try:
-        response = requests.get(RELEASE_URL, headers=headers, timeout=(10, timeout), allow_redirects=False)
+        response = _get(feed_url, headers=headers, timeout=(10, timeout))
     except requests.RequestException as e:
         raise UpdateError(f"업데이트 서버에 연결하지 못했습니다: {e}") from e
     if response.status_code == 404:
-        raise UpdateError("업데이트 서버에 올라온 릴리스가 아직 없습니다.")
+        raise UpdateError("올라온 릴리스가 아직 없습니다.")
     if response.status_code != 200:
         raise UpdateError(f"업데이트 확인 실패 (HTTP {response.status_code}).")
     try:
@@ -106,9 +136,21 @@ def latest_release(timeout=15):
         "version": version,
         "name": str(release.get("name") or f"POSCHAT {version}"),
         "notes": str(release.get("body") or "").strip(),
-        "url": RELEASES_PAGE,
+        "url": page_url,
+        "download_prefix": download_prefix,
         "assets": {a.get("name"): a for a in release.get("assets") or [] if isinstance(a, dict)},
     }
+
+
+def latest_release(timeout=15):
+    """최신 정식 릴리스 {"version", "name", "notes", "url", "assets": {이름: asset}}. GitHub가 안 되면 업데이트 서버."""
+    error = None
+    for feed_url, page_url, download_prefix in SOURCES:
+        try:
+            return _fetch_release(feed_url, page_url, download_prefix, timeout)
+        except UpdateError as e:
+            error = error or e  # 첫 오류(GitHub)를 알려 준다
+    raise error
 
 
 def asset_name(release, platform=None):
@@ -128,16 +170,16 @@ def check(installed_version, platform=None):
 
 
 def _asset_url(release, asset, name):
-    """서버가 알려 준 파일 주소. 이 서버의 이 버전 폴더 안 이름이 같은 파일만 받아들인다."""
+    """릴리스가 알려 준 파일 주소. 이 저장소(또는 업데이트 서버)의 이 버전 폴더 안 이름이 같은 파일만 받아들인다."""
     url = str(asset.get("browser_download_url") or "")
-    if url != f"{DOWNLOAD_PREFIX}v{release['version']}/{name}":
-        raise UpdateError("업데이트 파일 주소가 이 업데이트 서버의 릴리스가 아닙니다.")
+    if url != f"{release['download_prefix']}v{release['version']}/{name}":
+        raise UpdateError("업데이트 파일 주소가 이 릴리스의 파일이 아닙니다.")
     return url
 
 
 def _fetch_signature(url):
     try:
-        r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=(15, 30), allow_redirects=False)
+        r = _get(url, headers={"User-Agent": USER_AGENT}, timeout=(15, 30))
     except requests.RequestException as e:
         raise UpdateError(f"업데이트 서명을 내려받지 못했습니다: {e}") from e
     if r.status_code != 200:
@@ -156,7 +198,7 @@ def download(installed_version, directory, platform=None, on_progress=None, canc
     name = asset_name(release, platform)
     asset = release["assets"].get(name) if name else None
     if not asset:
-        raise UpdateError(f"{release['version']} 릴리스에 이 기기용 설치 파일이나 서명이 없습니다. 업데이트 서버 페이지에서 받으세요.")
+        raise UpdateError(f"{release['version']} 릴리스에 이 기기용 설치 파일이나 서명이 없습니다. 릴리스 페이지에서 받으세요.")
     url, size = _asset_url(release, asset, name), asset.get("size")
     if not isinstance(size, int) or not 0 < size <= MAX_DOWNLOAD_BYTES:
         raise UpdateError("업데이트 파일 크기 정보가 올바르지 않습니다.")
@@ -170,8 +212,7 @@ def download(installed_version, directory, platform=None, on_progress=None, canc
     path, part = directory / name, directory / (name + ".part")
     sha, done = hashlib.sha256(), 0
     try:
-        with requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=(15, 120), stream=True,
-                          allow_redirects=False) as r:
+        with _get(url, headers={"User-Agent": USER_AGENT}, timeout=(15, 120), stream=True) as r:
             if r.status_code != 200:
                 raise UpdateError(f"업데이트 파일을 내려받지 못했습니다 (HTTP {r.status_code}).")
             with open(part, "wb") as out:

@@ -1,6 +1,6 @@
 # 라이선스 이력 (License History)
 
-Copyright © 2026 Beomjoon Kim (bj0322) — https://github.com/bj0322/POSCHAT
+Copyright © 2026 Beomjoon Kim (bj0322) — https://github.com/pidstech/POSCHAT
 
 ## 요약
 

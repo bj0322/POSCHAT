@@ -37,7 +37,7 @@ class GitHubTests(unittest.TestCase):
             return fn(*args, **kwargs), fake
 
     def test_repo_argument_accepts_urls_and_rejects_paths(self):
-        self.assertEqual(github_mcp._repo("https://github.com/bj0322/POSCHAT/pull/3"), "bj0322/POSCHAT")
+        self.assertEqual(github_mcp._repo("https://github.com/pidstech/POSCHAT/pull/3"), "pidstech/POSCHAT")
         self.assertEqual(github_mcp._repo("bj0322/POSCHAT.git"), "bj0322/POSCHAT")
         with self.assertRaises(ToolFailure):
             github_mcp._repo("../../etc/passwd")
