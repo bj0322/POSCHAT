@@ -150,8 +150,10 @@ class AdaptiveUiTests(unittest.TestCase):
                 self.fake.replies.append("English only answer that should fail the Korean language check for sure.")
                 self.send(page, "이 회의록을 다시 요약해 줘")
                 page.wait_for_function("() => document.querySelectorAll('.msg.assistant .route-badge').length >= 2", timeout=30000)
+                # 로컬 임시 답의 배지('Local · 요약')가 먼저 그려졌다가 승격되면 바뀐다: 마지막 글자를 기다린다
+                page.wait_for_function("() => [...document.querySelectorAll('.msg.assistant .route-badge')].pop()"
+                                       "?.innerText.includes('Cloud')", timeout=30000)
                 badge = page.locator(".msg.assistant .route-badge").last
-                badge.wait_for()
                 self.assertEqual(badge.inner_text(), "Local → Cloud · 요약")
                 badge.click()
                 self.assertIn("검증에 실패한 로컬 임시 답 보기", page.locator(".route-detail").last.inner_text())
