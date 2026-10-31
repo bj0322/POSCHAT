@@ -23,6 +23,8 @@
   --del-fg: #b42318;
   --beta-bg: #fff1c2;
   --beta-fg: #7a4b00;
+  --link: #1f5fd1;          /* 1.19 링크: 밝은 화면 */
+  --link-visited: #7442c8;  /* 다녀온 링크 */
   --shadow: 0 0 0 1px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.08);
   --font: "Pretendard", "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
   --mono: "Cascadia Code", Consolas, "D2Coding", monospace;
@@ -48,11 +50,18 @@
     --del-fg: #ff8a80;
     --beta-bg: #4a3a0c;
     --beta-fg: #ffd866;
+    --link: #8ab4ff;          /* 1.19 링크: 어두운 배경에서 눈부시지 않은 하늘색 */
+    --link-visited: #c9a8ff;  /* 다녀온 링크: 연보라 */
     --shadow: 0 0 0 1px rgba(255,255,255,.06), 0 4px 16px rgba(0,0,0,.4);
   }
 }
 
 * { box-sizing: border-box; }
+/* 1.19 링크 색: 화면 테마에 맞춘 색, 다녀온 링크는 다른 색(앱 밖 브라우저로 연 링크도 data-visited로 표시) */
+:where(a:not([class])) { color: var(--link); text-decoration: underline; text-decoration-thickness: 1px;
+  text-underline-offset: 2px; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); }
+:where(a:not([class])):hover { text-decoration-color: currentColor; }
+:where(a:not([class])):visited, :where(a:not([class])[data-visited]) { color: var(--link-visited); }
 html, body { height: 100%; margin: 0; }
 body {
   background: var(--bg);
@@ -269,7 +278,8 @@ h2 .beta-badge { vertical-align: middle; margin-left: 8px; }
 .md ul, .md ol { margin: 0 0 12px; padding-left: 1.5em; }
 .md li { margin: 4px 0; }
 .md li > p { margin: 0; }
-.md a { color: #2964d9; }
+.md a { color: var(--link); }
+.md a:visited, .md a[data-visited] { color: var(--link-visited); }
 .md strong { font-weight: 600; }
 .md .katex-display { margin: 12px 0; padding: 2px 0; overflow-x: auto; overflow-y: hidden; }
 .md blockquote { margin: 0 0 12px; padding: 2px 14px; border-left: 3px solid var(--border); color: var(--text-2); }
@@ -387,11 +397,11 @@ h2 .beta-badge { vertical-align: middle; margin-left: 8px; }
 .field { margin: 14px 0; }
 .field label { display: block; font-weight: 600; margin-bottom: 6px; }
 .field small { display: block; color: var(--text-3); margin-top: 5px; line-height: 1.5; }
-.field input, .field select {
+.field input, .field select, .plms-save-form input {
   width: 100%; border: 1px solid var(--border); background: var(--bg); color: var(--text);
   border-radius: 10px; padding: 8px 12px; font: inherit; outline: none;
 }
-.field input:focus, .field select:focus { border-color: var(--text-3); }
+.field input:focus, .field select:focus, .plms-save-form input:focus { border-color: var(--text-3); }
 .row { display: flex; gap: 8px; align-items: center; }
 .row input { flex: 1; }
 
@@ -525,10 +535,31 @@ pre.bib div { white-space: pre-wrap; }
 
 /* 사용법 가이드 */
 .guide-link { align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px; color: var(--text-2); }
-.guide details { border-bottom: 1px solid var(--border); }
+/* 1.19 사용법 가이드: 설정 맨 위의 큰 카드와 가이드 창의 큰 제목·목차 */
+.guide-card { display: flex; align-items: center; gap: 14px; width: 100%; margin-bottom: 18px; padding: 16px 18px; text-align: left;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--bubble); color: var(--text); font: inherit; cursor: pointer; }
+.guide-card:hover { border-color: var(--link); }
+.guide-card:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.guide-card-icon { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--bg); color: var(--link); }
+.guide-card-icon svg { width: 24px; height: 24px; }
+.guide-card-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.guide-card-text b { font-size: 18px; line-height: 1.3; }
+.guide-card-text span { font-size: 13px; color: var(--text-2); line-height: 1.5; }
+.guide-card-go { flex: none; font-size: 13px; font-weight: 600; color: var(--link); white-space: nowrap; }
+.guide-hero { margin: 0 0 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.guide-hero h2 { margin: 0 0 4px; font-size: 24px; line-height: 1.3; }
+.guide-hero p { margin: 0; color: var(--text-2); font-size: 14px; }
+.guide-heading { margin: 16px 0 8px; font-size: 13px; font-weight: 700; color: var(--text-3); letter-spacing: .02em; }
+.guide-toc { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px; }
+.guide-toc-item { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--text);
+  font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.guide-toc-item:hover { background: var(--hover); }
+.guide details { border-bottom: 1px solid var(--border); scroll-margin-top: 8px; }
 .guide details:last-child { border-bottom: 0; }
-.guide summary { cursor: pointer; padding: 11px 2px; font-weight: 600; font-size: 15px; }
-.guide .md { padding: 0 2px 12px; }
+.guide summary { display: flex; align-items: baseline; gap: 10px; cursor: pointer; padding: 13px 2px; font-weight: 700; font-size: 17px; }
+.guide-num { font-size: 12px; font-weight: 600; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.guide .md { padding: 0 2px 14px; }
+@media (max-width: 520px) { .guide-card-go { display: none; } }
 
 /* ---------- PO노트 ---------- */
 .new-chat.po-entry { margin-top: 2px; }
@@ -806,3 +837,27 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .plms-row-title { overflow-wrap: anywhere; }
 .plms-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 45vh; overflow: auto; font: inherit; line-height: 1.6;
   background: var(--bubble); border-radius: 10px; padding: 12px 14px; margin: 8px 0; }
+
+/* 1.19 사용량 그래프 */
+.usage-chart { margin: 4px 0 10px; }
+.usage-chart figcaption { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; font-size: 13px; margin-bottom: 4px; }
+.uc-legend { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 12px; }
+.uc-key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.uc-in-key, .uc-in { fill: var(--link); background: var(--link); }
+.uc-out-key, .uc-out { fill: var(--ok); background: var(--ok); }
+.usage-chart-svg { display: block; width: 100%; height: auto; max-height: 180px; }
+.uc-grid { stroke: var(--border); stroke-width: 1; }
+.uc-axis { fill: var(--text-3); font-size: 10px; font-family: var(--font); }
+.uc-hit { fill: transparent; }
+.uc-day:hover .uc-hit { fill: var(--hover); }
+
+/* 1.19 플러그인: 한국어 설명 아래 접어 둔 영문 원문 */
+.plugin-orig { margin: 2px 0 6px; font-size: 12.5px; color: var(--text-3); }
+.plugin-orig > summary { cursor: pointer; width: fit-content; }
+.plugin-orig p { margin: 4px 0 0; }
+
+/* 1.19 PLMS 창: 계정을 설정에 저장 */
+.plms-save { margin: 10px 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bubble); font-size: 13.5px; }
+.plms-save-form { display: grid; gap: 8px; margin-top: 10px; }
+.plms-save-form[hidden] { display: none; }
+.plms-save-form .row { align-items: center; gap: 10px; }

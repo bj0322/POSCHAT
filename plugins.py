@@ -283,15 +283,36 @@ def download(timeout=60):
     return catalog
 
 
+def localize(data):
+    """1.19: 목록에 한국어 설명을 붙인다(plugins_ko). 받아 둔 목록 파일은 그대로 두고 돌려줄 때마다 붙인다.
+
+    플러그인: summary(한 줄 소개)가 없으면 번역으로 채운다. 스킬·명령: description_ko. 번역이 없으면 원문만 둔다.
+    """
+    from plugins_ko import KO
+
+    for p in data.get("plugins", []):
+        if not isinstance(p, dict):
+            continue
+        name = p.get("name", "")
+        if not p.get("summary") and KO.get(name):
+            p["summary"] = KO[name]
+        for kind, prefix in (("skills", ""), ("commands", "cmd:")):
+            for item in p.get(kind) or []:
+                ko = KO.get(f"{name}/{prefix}{item.get('name', '')}")
+                if ko:
+                    item["description_ko"] = ko
+    return data
+
+
 def catalog(refresh=False):
-    """목록(받아 둔 것이 있으면 그것). refresh면 새로 받는다."""
+    """목록(받아 둔 것이 있으면 그것). refresh면 새로 받는다. 한국어 설명을 붙여 돌려준다."""
     with _lock:
         if refresh or not _catalog_file().is_file() or not _archive().is_file():
-            return download()
+            return localize(download())
         data = _read_json(_catalog_file(), None)
         if not isinstance(data, dict) or "plugins" not in data:
-            return download()
-        return data
+            return localize(download())
+        return localize(data)
 
 
 def find(name):

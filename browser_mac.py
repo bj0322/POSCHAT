@@ -8,7 +8,7 @@ http·https 밖의 주소, 새 창(같은 뷰에서 연다), 다운로드는 내
 import threading
 
 import AppKit
-import Foundation  # noqa: F401
+import Foundation
 import WebKit
 from objc import super  # noqa: A004
 from PyObjCTools import AppHelper
@@ -58,6 +58,13 @@ class _Delegate(AppKit.NSObject):
     def webView_didFailProvisionalNavigation_withError_(self, webview, nav, error):
         self.owner.report(webview, loading=False)
 
+    # 1.19 웹페이지 위 막대의 버튼(메인 스레드). hide는 메인 스레드를 기다리므로 작업 스레드로 넘긴다(B1)
+    def closeBrowser_(self, sender):
+        threading.Thread(target=self.owner.browser.hide, daemon=True).start()
+
+    def openExternal_(self, sender):
+        threading.Thread(target=self.owner.browser.open_external, daemon=True).start()
+
     def webView_createWebViewWithConfiguration_forNavigationAction_windowFeatures_(self, webview, config, action,
                                                                                   features):
         url = str(action.request().URL().absoluteString() or "")
@@ -76,6 +83,9 @@ class WKWebViewBackend:
         self.browser = browser
         self.split = None
         self.view = None
+        self.pane = None  # 1.19: 웹페이지 위 막대 + 웹페이지
+        self.title_label = None
+        self.toolbar = False
         self.main_view = None
         self.delegate = None
         self._run(self._create)
@@ -117,13 +127,60 @@ class WKWebViewBackend:
         split.setDividerStyle_(AppKit.NSSplitViewDividerStyleThin)
         split.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewHeightSizable)
         split.addSubview_(main)  # 앱 화면(pywebview WKWebView)을 왼쪽으로 옮긴다
-        split.addSubview_(view)
+        pane = view
+        try:
+            pane = self._make_pane(frame, view)
+            self.toolbar = True
+        except Exception:
+            self.toolbar = False  # 막대를 못 만들면 앱 화면의 주소 표시줄에 버튼을 그대로 둔다
+        split.addSubview_(pane)
         self.ns_window.setContentView_(split)
-        view.setHidden_(True)
-        self.split, self.view, self.main_view = split, view, main
+        pane.setHidden_(True)
+        self.split, self.view, self.pane, self.main_view = split, view, pane, main
+
+    def _make_pane(self, frame, view):
+        """웹페이지와 그 위 막대(제목·기본 브라우저로 열기·닫기)를 담은 보기. 좌표는 왼쪽 아래가 원점이다."""
+        bar_h = 34
+        w, h = frame.size.width, frame.size.height
+        pane = AppKit.NSView.alloc().initWithFrame_(frame)
+        pane.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewHeightSizable)
+        view.setFrame_(Foundation.NSMakeRect(0, 0, w, h - bar_h))
+        view.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewHeightSizable)
+        pane.addSubview_(view)
+        bar = AppKit.NSView.alloc().initWithFrame_(Foundation.NSMakeRect(0, h - bar_h, w, bar_h))
+        bar.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewMinYMargin)
+        close = AppKit.NSButton.buttonWithTitle_target_action_("닫기", self.delegate, "closeBrowser:")
+        close.setToolTip_("브라우저 닫기")
+        external = AppKit.NSButton.buttonWithTitle_target_action_("기본 브라우저로 열기", self.delegate, "openExternal:")
+        external.setToolTip_("지금 페이지를 기본 브라우저로 엽니다")
+        x = w - 8
+        for b in (close, external):
+            b.sizeToFit()
+            bw, bh = b.frame().size.width, b.frame().size.height
+            x -= bw
+            b.setFrame_(Foundation.NSMakeRect(x, (bar_h - bh) / 2, bw, bh))
+            b.setAutoresizingMask_(AppKit.NSViewMinXMargin)
+            bar.addSubview_(b)
+            x -= 4
+        label = AppKit.NSTextField.labelWithString_("브라우저")
+        label.setLineBreakMode_(AppKit.NSLineBreakByTruncatingTail)
+        label.setTextColor_(AppKit.NSColor.secondaryLabelColor())
+        label.sizeToFit()
+        lh = label.frame().size.height
+        label.setFrame_(Foundation.NSMakeRect(10, (bar_h - lh) / 2, max(40, x - 14), lh))
+        label.setAutoresizingMask_(AppKit.NSViewWidthSizable)
+        bar.addSubview_(label)
+        line = AppKit.NSBox.alloc().initWithFrame_(Foundation.NSMakeRect(0, 0, w, 1))
+        line.setBoxType_(AppKit.NSBoxSeparator)
+        line.setAutoresizingMask_(AppKit.NSViewWidthSizable)
+        bar.addSubview_(line)
+        pane.addSubview_(bar)
+        self.title_label = label
+        return pane
 
     def report(self, webview, loading=None):
         url = webview.URL()
+        self._set_title(str(webview.title() or "") or (str(url.absoluteString()) if url is not None else ""))
         self.browser.navigated(url=str(url.absoluteString()) if url is not None else "", title=str(webview.title() or ""),
                                loading=loading, can_back=bool(webview.canGoBack()),
                                can_forward=bool(webview.canGoForward()))
@@ -131,8 +188,16 @@ class WKWebViewBackend:
     def title_handler(self, webview):
         def done(result, error):
             if error is None and result:
+                self._set_title(str(result))
                 self.browser.navigated(title=str(result))
         return done
+
+    def _set_title(self, text):
+        if self.title_label is not None and text:
+            try:
+                self.title_label.setStringValue_(text)
+            except Exception:
+                pass
 
     def _layout(self, ratio):
         width = self.split.frame().size.width
@@ -140,14 +205,14 @@ class WKWebViewBackend:
 
     def show(self, ratio):
         def go():
-            self.view.setHidden_(False)
+            self.pane.setHidden_(False)
             self.split.adjustSubviews()
             self._layout(ratio)
         self._run(go)
 
     def hide(self):
         def go():
-            self.view.setHidden_(True)
+            self.pane.setHidden_(True)
             self.split.adjustSubviews()
         self._run(go)
 
@@ -235,7 +300,7 @@ class WKWebViewBackend:
         def go():
             if self.split is not None and self.main_view is not None:
                 self.ns_window.setContentView_(self.main_view)  # 앱 화면을 원래대로
-            if self.view is not None:
-                self.view.removeFromSuperview()
+            if self.pane is not None:
+                self.pane.removeFromSuperview()
         self._run(go)
-        self.split = self.view = None
+        self.split = self.view = self.pane = None

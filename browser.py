@@ -167,12 +167,15 @@ class Browser:
         self.state = {"url": "", "title": "", "loading": False, "can_back": False, "can_forward": False}
         self.mode = ""  # native | docked | android
         self.watch = None  # (url) -> None: 에이전트가 조작 중일 때 주소 변경을 알린다
+        self.opener = None  # (url) -> None: 1.19 웹페이지 위 막대의 '기본 브라우저로 열기'(Bridge._open_url)
 
     def _emit(self, **changes):
         self.state.update(changes)
         if self.on_event:
             try:
-                self.on_event(dict(self.state, visible=self.visible, mode=self.mode))
+                # toolbar: 1.19 웹페이지 위에 네이티브 막대(기본 브라우저로 열기·닫기)를 붙였는지. 화면은 그 버튼을 빼고 그린다
+                self.on_event(dict(self.state, visible=self.visible, mode=self.mode,
+                                   toolbar=bool(getattr(self._backend, "toolbar", False))))
             except Exception:
                 pass
 
@@ -241,6 +244,12 @@ class Browser:
                 self._backend.hide()
             self.visible = False
         self._emit()
+
+    def open_external(self):
+        """1.19 웹페이지 위 막대의 '기본 브라우저로 열기'. 네이티브 버튼 처리기가 작업 스레드에서 부른다."""
+        url = self.state.get("url", "")
+        if url and allowed(url) and self.opener:
+            self.opener(url)
 
     def nav(self, action):
         if action not in ("back", "forward", "reload", "stop"):

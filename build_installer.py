@@ -54,6 +54,13 @@ APP_DATA = [
 ]
 
 
+# 1.19 설치 파일 줄이기: 앱이 쓰지 않는데 다른 패키지를 따라 들어오던 모듈을 뺀다(1.18.9 Windows 설치 파일 기준 압축 전 약 10MB).
+# - Pillow의 AVIF 코덱(_avif, 7.5MB): python-pptx가 Pillow를 쓰지만 AVIF 그림은 다루지 않는다. Pillow는 없으면 건너뛴다.
+# - setuptools·pkg_resources: 패키지를 만들 때만 쓰는 도구. 앱 코드는 불러오지 않는다.
+APP_EXCLUDES = [x for name in ("PIL.AvifImagePlugin", "PIL._avif", "setuptools", "pkg_resources", "_distutils_hack")
+                for x in ("--exclude-module", name)]
+
+
 def dependency_licenses():
     """번들에 들어가는 Python 패키지의 라이선스 원문을 모아 licenses/python/으로 넣는 PyInstaller 인자."""
     sys.path.insert(0, str(ROOT / "tools"))
@@ -100,7 +107,7 @@ def build_mac():
     print("[1/2] 앱 빌드")
     pyinstaller(
         "--windowed", "--onedir", "--name", "PostechChat", "--icon", str(ICON_PNG),
-        "--osx-bundle-identifier", BUNDLE_ID, *APP_DATA, *dependency_licenses(),
+        "--osx-bundle-identifier", BUNDLE_ID, *APP_DATA, *APP_EXCLUDES, *dependency_licenses(),
         "--distpath", str(WORK / "app"),
         str(ROOT / "main.py"),
     )
@@ -154,7 +161,7 @@ def main():
 
     print("[1/3] 앱 빌드")
     pyinstaller(
-        "--windowed", "--onedir", "--name", "PostechChat", "--icon", str(ICON), *APP_DATA, *dependency_licenses(),
+        "--windowed", "--onedir", "--name", "PostechChat", "--icon", str(ICON), *APP_DATA, *APP_EXCLUDES, *dependency_licenses(),
         "--collect-all", "winpty",  # 1.18 터미널: ConPTY 확장 모듈·conpty.dll·OpenConsole.exe(terminal.py가 필요할 때 가져온다)
         "--version-file", version_file("PostechChat.exe", APP_NAME),
         "--distpath", str(WORK / "app"),

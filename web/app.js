@@ -88,6 +88,31 @@ function h(tag, attrs = {}, ...children) {
   return node;
 }
 
+/* 1.19 다녀온 링크: 링크는 앱 밖 기본 브라우저로 열려 :visited가 생기지 않으므로, 누른 주소를 이 기기에 기억해 표시한다 */
+const VISITED_KEY = "poschat.visitedLinks";
+const VISITED = (() => {
+  try { return new Set(JSON.parse(localStorage.getItem(VISITED_KEY) || "[]")); } catch { return new Set(); }
+})();
+function markVisited(root) {
+  if (!VISITED.size || !root.querySelectorAll) return;
+  const links = root.matches?.("a[href]") ? [root] : root.querySelectorAll("a[href]");
+  for (const a of links) if (VISITED.has(a.href)) a.setAttribute("data-visited", "");
+}
+function rememberVisited(e) {
+  const a = e.target.closest?.("a[href]");
+  if (!a || !/^https?:/i.test(a.href)) return;
+  VISITED.delete(a.href);
+  VISITED.add(a.href);
+  while (VISITED.size > 1000) VISITED.delete(VISITED.values().next().value);
+  try { localStorage.setItem(VISITED_KEY, JSON.stringify([...VISITED])); } catch { /* 저장소가 가득 참 */ }
+  document.querySelectorAll("a[href]").forEach((x) => { if (x.href === a.href) x.setAttribute("data-visited", ""); });
+}
+document.addEventListener("click", rememberVisited, true);
+document.addEventListener("auxclick", rememberVisited, true);
+new MutationObserver((records) => {
+  for (const r of records) for (const n of r.addedNodes) if (n.nodeType === 1) markVisited(n);
+}).observe(document.documentElement, { childList: true, subtree: true });
+
 /* 데이터(플러그인 정보·서버 응답)에서 온 주소를 링크로 쓸 때: 절대 http(s) 주소만, 아니면 null(h()가 href를 빼 준다). */
 function safeHref(url) {
   const text = String(url || "").trim();
@@ -984,10 +1009,65 @@ function usageRows(u) {
 function usageView() {
   const box = h("div", {}, h("small", {}, "불러오는 중..."));
   api().get_usage().then((u) => {
-    box.replaceChildren(...usageRows(u).map(([label, v]) => h("div", { class: "row", style: "justify-content:space-between;font-size:13px;margin:2px 0" },
-      h("span", {}, label), h("span", {}, usageText(v)))));
+    box.replaceChildren(usageChart(u.daily),
+      ...usageRows(u).map(([label, v]) => h("div", { class: "row", style: "justify-content:space-between;font-size:13px;margin:2px 0" },
+        h("span", {}, label), h("span", {}, usageText(v)))));
   }).catch(() => box.replaceChildren(h("small", {}, "사용량을 불러오지 못했습니다.")));
   return box;
+}
+
+/* 1.19 최근 30일 토큰 그래프: 날짜별 막대(아래 입력, 위 출력). 막대에 마우스를 올리면 그날의 수치가 보인다. */
+const SVG_NS = "http://www.w3.org/2000/svg";
+function svg(tag, attrs = {}, ...children) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) if (v != null) node.setAttribute(k, v);
+  for (const c of children.flat()) if (c != null) node.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  return node;
+}
+function compactNum(n) {
+  if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}K`;
+  return String(n);
+}
+function usageChart(daily) {
+  daily = Array.isArray(daily) ? daily : [];
+  if (!daily.length) return null;
+  const totals = daily.map((d) => (d.input_tokens || 0) + (d.output_tokens || 0));
+  const max = Math.max(...totals);
+  const sum = totals.reduce((a, b) => a + b, 0);
+  const W = 600, H = 150, left = 40, bottom = 20, top = 8, plotH = H - top - bottom, plotW = W - left - 4;
+  const step = plotW / daily.length, bar = Math.max(3, step * 0.62);
+  // 눈금: 0, 절반, 최댓값을 보기 좋은 수로 올린 값
+  const nice = (() => {
+    if (!max) return 1;
+    const p = 10 ** Math.floor(Math.log10(max));
+    return [1, 2, 2.5, 5, 10].map((m) => m * p).find((v) => v >= max);
+  })();
+  const y = (v) => top + plotH - (v / nice) * plotH;
+  const grid = [0, nice / 2, nice].map((v) => [
+    svg("line", { x1: left, x2: W - 4, y1: y(v), y2: y(v), class: "uc-grid" }),
+    svg("text", { x: left - 6, y: y(v) + 4, class: "uc-axis", "text-anchor": "end" }, compactNum(v))]);
+  const bars = daily.map((d, i) => {
+    const x = left + i * step + (step - bar) / 2;
+    const inH = (d.input_tokens / nice) * plotH, outH = (d.output_tokens / nice) * plotH;
+    const label = `${d.day} · 호출 ${num(d.calls)}회 · 입력 ${num(d.input_tokens)} · 출력 ${num(d.output_tokens)} 토큰`;
+    return svg("g", { class: "uc-day" },
+      svg("title", {}, label),
+      svg("rect", { x: left + i * step, y: top, width: step, height: plotH, class: "uc-hit" }),
+      inH ? svg("rect", { x, y: top + plotH - inH, width: bar, height: inH, rx: 1.5, class: "uc-in" }) : null,
+      outH ? svg("rect", { x, y: top + plotH - inH - outH, width: bar, height: outH, rx: 1.5, class: "uc-out" }) : null);
+  });
+  const ticks = daily.map((d, i) => (i % 7 === 0 || i === daily.length - 1)
+    ? svg("text", { x: left + i * step + step / 2, y: H - 5, class: "uc-axis", "text-anchor": "middle" }, d.day.slice(5).replace("-", "/")) : null);
+  const chart = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "usage-chart-svg", role: "img",
+    "aria-label": `최근 30일 토큰 사용량 그래프. 합계 ${num(sum)} 토큰, 가장 많은 날 ${num(max)} 토큰` }, grid, bars, ticks);
+  return h("figure", { class: "usage-chart" },
+    h("figcaption", {},
+      h("b", {}, "최근 30일 토큰"), h("span", { class: "muted" }, ` 합계 ${num(sum)}`),
+      h("span", { class: "uc-legend" },
+        h("span", { class: "uc-key uc-in-key" }), "입력", h("span", { class: "uc-key uc-out-key" }), "출력")),
+    chart,
+    sum ? null : h("small", { class: "muted" }, "아직 기록된 토큰이 없습니다. 서버가 사용량을 알려 준 요청만 셉니다."));
 }
 
 /* /usage: 사용량 창(1.18.1) */
@@ -1051,7 +1131,8 @@ function modal({ title, body, buttons = [], wide = false, onClose }) {
   document.addEventListener("keydown", onKey);
   root.append(backdrop);
   // 창 안의 첫 입력 칸(없으면 창 자체)에 초점을 둔다. 따로 초점을 옮기는 창(설정 등)은 그 뒤에 옮긴다.
-  const first = box.querySelector(".modal-body input:not([type=hidden]):not([disabled]), .modal-body select, .modal-body textarea");
+  const first = [...box.querySelectorAll(".modal-body input:not([type=hidden]):not([disabled]), .modal-body select, .modal-body textarea")]
+    .find((el) => el.getClientRects().length);  // 접어 둔 칸(예: PLMS 계정 저장)은 건너뛴다
   box.tabIndex = -1;
   ((!isNarrow() && first) || box).focus({ preventScroll: true });  // 휴대폰에서는 키보드가 뜨지 않게 창에만
   return { close, box };
@@ -1271,6 +1352,12 @@ function showSettings() {
   autoUpdate.checked = c.update_check !== false;
   const devMode = h("input", { type: "checkbox", style: "width:auto;margin:0 8px 0 0" });
   devMode.checked = !!c.developer_mode;
+  // 1.19: 앱을 열 때의 창 크기. 다음 실행부터 적용된다(지금 창은 F11로 전체 화면을 켜고 끌 수 있다).
+  const windowMode = h("select", { id: "window-mode" },
+    h("option", { value: "normal" }, "기본 창"),
+    h("option", { value: "maximized" }, "최대화"),
+    h("option", { value: "fullscreen" }, "전체 화면"));
+  windowMode.value = c.window_mode || "normal";
   const responsesBox = h("div", {},
     h("div", { class: "field" }, h("label", {}, "Responses API 주소 (필수)"), url,
       h("small", {}, "필수 입력. POSTECH GenAI 콘솔에서 openai/responses로 끝나는 전체 HTTPS 주소를 복사하세요.")),
@@ -1304,9 +1391,13 @@ function showSettings() {
   mode.addEventListener("change", syncMode);
   syncMode();  // 칸 보이기·숨기기. 칸 순서는 body를 만든 뒤 한 번 더 부를 때 맞춘다
   const body = h("div", {},
-    h("div", { class: "row guide-link" },
-      h("span", { style: "flex:1" }, "처음 쓰거나 기능이 궁금하면 사용법 가이드를 보세요."),
-      h("button", { class: "btn", onclick: showGuide }, "사용법 가이드")),
+    // 1.19: 사용법 가이드를 설정 맨 위의 큰 카드로(제목만 보고도 찾을 수 있게)
+    h("button", { class: "guide-card", type: "button", onclick: showGuide, "aria-label": "사용법 가이드 열기" },
+      h("span", { class: "guide-card-icon", "aria-hidden": "true", html: ICONS.book }),
+      h("span", { class: "guide-card-text" },
+        h("b", {}, "사용법 가이드"),
+        h("span", {}, "처음 쓰거나 기능이 궁금하면 여기서 시작하세요. 채팅·에이전트·PO노트·브라우저·코드·Lab 사용법을 정리해 두었습니다.")),
+      h("span", { class: "guide-card-go", "aria-hidden": "true" }, "열기 →")),
     h("div", { class: "field" }, h("label", {}, "API 방식"), mode),
     postechField,
     responsesBox,
@@ -1335,6 +1426,8 @@ function showSettings() {
       c.plms_username
         ? h("label", { style: "display:flex;align-items:center;font-size:13px;margin-top:4px;cursor:pointer" }, clearPlms, "저장된 계정 지우기")
         : null),
+    h("div", { class: "field" }, h("label", { for: "window-mode" }, "시작할 때 창 크기"), windowMode,
+      h("small", {}, "다음에 앱을 열 때부터 이 크기로 엽니다. 지금 창은 F11로 전체 화면을 켜고 끌 수 있습니다.")),
     h("div", { class: "field" }, h("label", {}, "업데이트"),
       h("label", { style: "display:flex;align-items:center;font-weight:400;cursor:pointer" }, autoUpdate, "시작할 때 새 버전 확인"),
       h("div", { class: "row", style: "margin-top:6px" },
@@ -1409,7 +1502,7 @@ function showSettings() {
             clear_anthropic_key: clearAnthropic.checked && !anthropicKey.value.trim(),
             openai_api_key: openaiKey.value.trim(), openai_server_models: openaiModels,
             clear_openai_key: clearOpenai.checked && !openaiKey.value.trim(),
-            update_check: autoUpdate.checked, developer_mode: devMode.checked,
+            update_check: autoUpdate.checked, developer_mode: devMode.checked, window_mode: windowMode.value,
             notion_token: notion.value.trim(), clear_notion: clearNotion.checked && !notion.value.trim(),
             firecrawl_key: firecrawl.value.trim(), clear_firecrawl: clearFirecrawl.checked && !firecrawl.value.trim(),
             plms_username: plmsUser.value.trim(), plms_password: plmsPass.value, clear_plms: clearPlms.checked,
@@ -1642,7 +1735,9 @@ const GUIDE = [
 2. 입력창에 질문을 쓰고 **Enter**로 보냅니다(줄바꿈은 Shift+Enter).
 3. 파일을 다루게 하려면 왼쪽 아래 **작업 폴더**를 고르고 오른쪽 위 **에이전트** 스위치를 켭니다.
 
-새 대화는 왼쪽 위 **새 채팅**(Ctrl+Shift+O, 맥은 ⌘+Shift+O)으로 만들고, 대화 목록에 마우스를 올리면 이름 바꾸기·삭제 아이콘이 나옵니다.`],
+새 대화는 왼쪽 위 **새 채팅**(Ctrl+Shift+O, 맥은 ⌘+Shift+O)으로 만들고, 대화 목록에 마우스를 올리면 이름 바꾸기·삭제 아이콘이 나옵니다.
+
+앱을 열 때 창 크기는 **설정 → 시작할 때 창 크기**(기본 창·최대화·전체 화면)에서 정합니다. 지금 창은 **F11**로 전체 화면을 켜고 끕니다.`],
   ["모델과 API 방식", `
 **설정 → API 방식**에서 고릅니다.
 
@@ -1751,7 +1846,8 @@ PDF 안의 스크립트·링크·양식은 실행하지 않고, 논문 글은 '�
   ["브라우저: 채팅 옆 웹페이지 (1.13)", `
 왼쪽 위 **브라우저**를 누르면 앱 창이 나뉘어 오른쪽에 웹페이지가 열립니다. 가운데 막대를 끌어 너비를 바꿉니다.
 
-- 채팅 위 막대에서 주소나 검색어를 넣고 Enter. 뒤로·앞으로·새로 고침, 기본 브라우저로 열기(다운로드·로그인이 필요한 사이트), 닫기.
+- 채팅 위 막대에서 주소나 검색어를 넣고 Enter. 뒤로·앞으로·새로 고침.
+- 웹페이지 바로 위 막대에 페이지 제목과 **기본 브라우저로 열기**(다운로드·로그인이 필요한 사이트), **닫기**가 있습니다.
 - **이 페이지에 대해 묻기**: 페이지 글을 채팅에 첨부합니다. **선택한 부분 묻기**: 드래그한 글만 첨부합니다. 질문을 고쳐 보내세요.
 - **연구 라이브러리에 저장**: arXiv·DOI 논문 페이지를 라이브러리에 더합니다(연구 라이브러리를 켜 두어야 합니다).
 - 에이전트 모드에서는 에이전트가 열린 페이지를 읽고, 주소를 열기 전에는 승인을 받습니다.
@@ -1888,9 +1984,22 @@ async function showLicense(kind) {
 }
 
 function showGuide() {
+  // 1.19: 큰 제목 + 목차. 목차를 누르면 그 항목을 펼치고 그 자리로 옮겨 간다
+  const sections = GUIDE.map(([title, text], i) => h("details", { class: "guide-section", id: `guide-${i}`, open: i === 0 },
+    h("summary", {}, h("span", { class: "guide-num", "aria-hidden": "true" }, String(i + 1).padStart(2, "0")), h("span", {}, title)),
+    renderMarkdown(text.trim())));
+  const toc = h("nav", { class: "guide-toc", "aria-label": "가이드 목차" }, GUIDE.map(([title], i) =>
+    h("button", { type: "button", class: "guide-toc-item", onclick: () => {
+      sections[i].open = true;
+      sections[i].scrollIntoView({ behavior: "smooth", block: "start" });
+      sections[i].querySelector("summary")?.focus({ preventScroll: true });
+    } }, title)));
   const body = h("div", { class: "guide" },
-    GUIDE.map(([title, text], i) => h("details", { open: i === 0 },
-      h("summary", {}, title), renderMarkdown(text.trim()))));
+    h("header", { class: "guide-hero" },
+      h("h2", {}, "사용법 가이드"),
+      h("p", {}, "POSCHAT의 기능을 주제별로 모았습니다. 아래 목차에서 궁금한 항목을 누르세요.")),
+    h("h3", { class: "guide-heading" }, "목차"), toc,
+    h("h3", { class: "guide-heading" }, "자세히 보기"), sections);
   modal({ title: "사용법 가이드", body, wide: true, buttons: [{ label: "닫기", class: "primary" }] });
 }
 
@@ -2074,6 +2183,7 @@ function bindUI() {
   });
   document.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "o") { e.preventDefault(); newThread(); }
+    if (e.key === "F11" && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); api().toggle_fullscreen?.(); }
   });
 }
 

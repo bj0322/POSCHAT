@@ -153,7 +153,7 @@ class SidebarUiTests(unittest.TestCase):
             finally:
                 browser.close()
 
-    def test_opening_views_collapses_sidebar_and_can_reopen_it(self):
+    def test_opening_views_collapses_sidebar_only_where_needed(self):
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as p:
@@ -167,9 +167,11 @@ class SidebarUiTests(unittest.TestCase):
                 self.assertTrue(page.is_visible("#btn-expand"))
                 page.click("#btn-expand")
                 self.assertFalse(page.evaluate("document.querySelector('#app').classList.contains('collapsed')"))
-                page.click("#btn-research")
-                self.assertTrue(page.evaluate("document.querySelector('#app').classList.contains('collapsed')"))
-                page.click("#btn-expand")
+                # 1.19: Lab·라이브러리·자동화·플러그인은 사이드바를 그대로 둔다(다른 기능으로 바로 옮겨 가도록)
+                for button in ("#btn-research", "#btn-auto", "#btn-plugins", "#btn-lab"):
+                    page.click(button)
+                    page.wait_for_selector("#tool-view", state="visible")
+                    self.assertFalse(page.evaluate("document.querySelector('#app').classList.contains('collapsed')"), button)
                 page.click("#btn-code")
                 page.wait_for_selector("#code-sidebar-open", state="visible")
                 page.click("#code-sidebar-open")

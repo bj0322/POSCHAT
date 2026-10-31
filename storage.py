@@ -432,8 +432,14 @@ def usage_summary():
                     out[k] += int(entry.get(k) or 0)
         return out
 
+    # 1.19 그래프: 최근 30일의 날짜별 값(기록이 없는 날은 0)
+    daily = []
+    for i in range(29, -1, -1):
+        day = time.strftime("%Y-%m-%d", time.localtime(time.time() - i * 86400))
+        entry = data.get(day) if isinstance(data.get(day), dict) else {}
+        daily.append({"day": day, **{k: int(entry.get(k) or 0) for k in ("calls", "input_tokens", "output_tokens")}})
     return {"today": total(lambda d: d == today), "month": total(lambda d: d.startswith(month)),
-            "last30": total(lambda d: d >= since30), "month_name": month}
+            "last30": total(lambda d: d >= since30), "month_name": month, "daily": daily}
 
 
 # ---- 다른 대화 검색 ----

@@ -7,7 +7,7 @@
    웹페이지 쪽에는 POSCHAT API가 없다. 이 화면이 browser_* 를 불러 페이지를 읽고 채팅 첨부로 만든다. */
 
 const BR = { open: false, available: true, url: "", title: "", loading: false, can_back: false, can_forward: false,
-  mode: "", busy: "", agent: null };  // agent: 1.16 브라우저 에이전트 진행 {action, status, count, limit, elapsed, summary, paused}
+  mode: "", busy: "", agent: null, toolbar: false };  // agent: 1.16 브라우저 에이전트 진행 {action, status, count, limit, elapsed, summary, paused}
 const BR_ACTION = { snapshot: "페이지 살펴보기", click: "누르기", type: "입력", select: "고르기", scroll: "스크롤", wait: "기다리기",
   extract: "글 읽기", screenshot: "화면 캡처", open: "주소 열기", back: "뒤로", forward: "앞으로", refresh: "새로 고침" };
 const BR_STATUS = { running: "하는 중", done: "완료", denied: "거부됨", error: "실패", paused: "일시정지" };
@@ -30,8 +30,9 @@ function browserBar() {
       btn("forward", "앞으로", () => browserNav("forward"), { id: "browser-forward" }),
       btn("retry", "새로 고침", () => browserNav(BR.loading ? "stop" : "reload"), { id: "browser-reload" }),
       form,
-      btn("external", "기본 브라우저로 열기", () => browserCall(api().browser_external())),
-      btn("close", "브라우저 닫기", () => browserClose())),
+      // 1.19: 네이티브 웹페이지 위에 막대(기본 브라우저로 열기·닫기)가 있으면 이 두 버튼은 숨긴다(renderBrowserBar)
+      btn("external", "기본 브라우저로 열기", () => browserCall(api().browser_external()), { id: "browser-external" }),
+      btn("close", "브라우저 닫기", () => browserClose(), { id: "browser-close" })),
     h("div", { class: "browser-row browser-actions" },
       action("browser-ask-page", "이 페이지에 대해 묻기", "지금 보는 페이지의 글을 채팅에 첨부합니다", () => browserAttach("page")),
       action("browser-ask-selection", "선택한 부분 묻기", "페이지에서 드래그한 글만 첨부합니다", () => browserAttach("selection")),
@@ -56,6 +57,8 @@ function renderBrowserBar() {
   $("#btn-browser")?.setAttribute("aria-pressed", String(BR.open));
   const address = $("#browser-address");
   if (address && document.activeElement !== address) address.value = BR.url || "";
+  $("#browser-external").hidden = !!BR.toolbar;
+  $("#browser-close").hidden = !!BR.toolbar;
   $("#browser-back").disabled = !BR.can_back;
   $("#browser-forward").disabled = !BR.can_forward;
   const reload = $("#browser-reload");
@@ -188,7 +191,7 @@ function browserEvent(ev) {
     if (ev.url) BR.url = ev.url;
     return renderBrowserBar();
   }
-  for (const k of ["url", "title", "loading", "can_back", "can_forward", "mode"]) if (k in ev) BR[k] = ev[k];
+  for (const k of ["url", "title", "loading", "can_back", "can_forward", "mode", "toolbar"]) if (k in ev) BR[k] = ev[k];
   if ("visible" in ev) BR.open = ev.visible;
   renderBrowserBar();
 }
@@ -217,12 +220,48 @@ const PLMS_FILTERS = [
   ["file", "자료", ["file", "folder", "syllabus"]], ["assign", "과제", ["assign"]], ["etc", "기타", ["page", "link", "other"]],
 ];
 
+/* 1.19: PLMS 창에서 바로 계정을 저장한다(설정 창의 'PLMS 계정'과 같은 저장소). 저장하면 창을 다시 열어 자동 로그인 안내로 바꾼다. */
+function plmsSaveCard(onSaved) {
+  const user = h("input", { type: "text", placeholder: "POSTECH 아이디", autocomplete: "off", spellcheck: "false", "aria-label": "POSTECH 아이디" });
+  const pass = h("input", { type: "password", placeholder: "비밀번호", autocomplete: "new-password", "aria-label": "비밀번호" });
+  const status = h("small", { class: "plms-note", role: "status", "aria-live": "polite" });
+  const form = h("form", { class: "plms-save-form", hidden: true, onsubmit: async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector("button[type=submit]");
+    btn.disabled = true;
+    status.textContent = "저장하는 중…";
+    try {
+      const res = await api().plms_save_account(user.value, pass.value);
+      if (!res || res.ok === false) { status.textContent = res?.error || "저장하지 못했습니다."; return; }
+      S.config.plms_username = res.plms_username || user.value.trim();
+      toast("PLMS 계정을 설정에 저장했습니다. 이제 '로그인'만 누르면 자동으로 로그인합니다.");
+      onSaved();
+    } finally {
+      btn.disabled = false;
+      pass.value = "";
+    }
+  } }, user, pass,
+    h("div", { class: "row wrap" }, h("button", { class: "btn primary", type: "submit" }, "설정에 저장"), status),
+    h("small", { class: "plms-note" }, "비밀번호는 이 PC의 보안 저장소(Windows 자격 증명 관리자·macOS 키체인)에만 저장하며, AI·대화 기록·동기화로 보내지 않습니다. 설정 → PLMS 계정에서 바꾸거나 지울 수 있습니다."));
+  const open = h("button", { class: "btn", type: "button", "aria-expanded": "false", onclick: () => {
+    form.hidden = !form.hidden;
+    open.setAttribute("aria-expanded", String(!form.hidden));
+    if (!form.hidden) user.focus();
+  } }, "계정을 설정에 저장해 두기");
+  return h("div", { class: "plms-save" },
+    h("div", { class: "row wrap", style: "align-items:center;gap:10px" },
+      h("span", { style: "flex:1;min-width:200px" }, h("b", {}, "다음부터 자동 로그인"), " — 아이디·비밀번호를 저장해 두면 브라우저를 열지 않고 로그인합니다."),
+      open),
+    form);
+}
+
 function plmsPanel() {
   const saved = S.config && S.config.plms_username;
   const content = h("div", { id: "plms-content", role: "status", "aria-live": "polite" },
     h("p", {}, saved
       ? `저장된 계정(${saved})으로 브라우저를 열지 않고 알아서 로그인합니다. ‘내 수업 불러오기’만 누르세요. StonePASS 같은 추가 인증이 필요할 때만 오른쪽에 브라우저가 열립니다. 채팅의 에이전트도 같은 방식으로 PLMS를 조회합니다.`
       : "내장 브라우저에서 POSTECH SSO·StonePASS 인증을 직접 마친 뒤 ‘내 수업 불러오기’를 누르세요. 설정에 계정을 저장해 두면 브라우저를 열지 않고 자동으로 로그인합니다."),
+    saved ? null : plmsSaveCard(() => { close(); plmsPanel(); }),
     h("p", { class: "plms-note" }, "요청한 공지·자료는 선택한 AI 서비스로 전송될 수 있습니다. 비밀번호·인증 코드·쿠키는 AI에 보내지 않습니다."));
   let generation = 0, closed = false, courses = null, previewCleanup = null;
   // replaceChildren은 null을 "null" 글자로 넣는다: 빈 칸은 걸러서 넣는다
