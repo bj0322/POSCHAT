@@ -29,6 +29,7 @@ class BrowserApi:
                 factory = browser.desktop_factory(window)
             ratio = float(self._config.get("browser_ratio") or browser.DEFAULT_RATIO)
             self._browser_obj = browser.Browser(factory, on_event=self._browser_event, ratio=ratio)
+            self._browser_obj.opener = self._open_url
         return self._browser_obj
 
     def _browser_event(self, event):
@@ -45,7 +46,9 @@ class BrowserApi:
     def browser_state(self):
         b = self._browser(create=False)
         available = android_factory is not None or sys.platform in ("win32", "darwin") or b is not None
-        state = dict(b.state, visible=b.visible, mode=b.mode) if b else {"visible": False, "url": "", "title": ""}
+        state = {"visible": False, "url": "", "title": ""}
+        if b:
+            state = dict(b.state, visible=b.visible, mode=b.mode, toolbar=bool(getattr(b._backend, "toolbar", False)))
         return {"ok": True, "available": available, "ratio": b.ratio if b else
                 float(self._config.get("browser_ratio") or browser.DEFAULT_RATIO), **state}
 

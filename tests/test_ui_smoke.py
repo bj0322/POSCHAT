@@ -190,7 +190,7 @@ class UiSmokeTests(unittest.TestCase):
                 page.click("#tool-view .po-tab:has-text('논문')")
                 page.wait_for_selector("text=논문 더하기")
                 # 새 채팅을 누르면 채팅 화면으로 돌아온다
-                page.click("#btn-expand")
+                page.evaluate("document.querySelector('#btn-expand').hidden || document.querySelector('#btn-expand').click()")  # 1.19: 도구 화면은 사이드바를 접지 않는다
                 page.click("#btn-new")
                 page.wait_for_selector("#tool-view", state="hidden")
                 self.assertTrue(page.is_visible("#composer-wrap"))
@@ -259,7 +259,7 @@ class UiSmokeTests(unittest.TestCase):
                 self.assertTrue(python["enabled"])
                 self.shot(page, "page-automation")
                 # 연결·도구 창에서는 더 이상 탭으로 보이지 않는다(예전 이름으로 부르면 화면을 연다)
-                page.click("#btn-expand")
+                page.evaluate("document.querySelector('#btn-expand').hidden || document.querySelector('#btn-expand').click()")  # 1.19: 도구 화면은 사이드바를 접지 않는다
                 page.click("#btn-mcp")
                 page.wait_for_selector(".hub-tab.active")
                 tabs = page.locator(".hub-tab").all_inner_texts()
@@ -394,7 +394,7 @@ class UiSmokeTests(unittest.TestCase):
                         page.wait_for_selector("#tool-view", state="hidden")
                         self.assertEqual(page.input_value("#input"), "/productivity:start ")
                         # 다른 저장소 탭은 홈페이지만 보인다
-                        page.click("#btn-expand")
+                        page.evaluate("document.querySelector('#btn-expand').hidden || document.querySelector('#btn-expand').click()")  # 1.19: 도구 화면은 사이드바를 접지 않는다
                         page.click("#btn-plugins")
                         page.click(".po-tab:has-text('다른 저장소')")
                         self.assertIn("홈페이지", page.locator(".plugin-card").first.inner_text())
@@ -448,10 +448,10 @@ class UiSmokeTests(unittest.TestCase):
                 page.wait_for_function("!document.querySelector('#toast').hidden && "
                                        "document.querySelector('#toast').textContent.includes('http·https')")
                 # 도구 화면으로 가면 막대를 숨기고, 돌아오면 다시 보인다
-                page.click("#btn-expand")
+                page.evaluate("document.querySelector('#btn-expand').hidden || document.querySelector('#btn-expand').click()")  # 1.19: 도구 화면은 사이드바를 접지 않는다
                 page.click("#btn-research")
                 page.wait_for_selector("#browser-bar", state="hidden")
-                page.click("#btn-expand")
+                page.evaluate("document.querySelector('#btn-expand').hidden || document.querySelector('#btn-expand').click()")  # 1.19: 도구 화면은 사이드바를 접지 않는다
                 page.click("#btn-new")
                 page.wait_for_selector("#browser-bar:not([hidden])")
                 page.click("button[aria-label='브라우저 닫기']")

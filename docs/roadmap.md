@@ -1,6 +1,6 @@
 # POSCHAT 로드맵과 다음 작업 (v1.16부터)
 
-마지막 갱신: 2026-10-31, v1.18.9 개발 시점.
+마지막 갱신: 2026-10-31, v1.19.0 개발 시점.
 
 **플랫폼 정책(2026-10-26, 사용자 결정)**: 앞으로 데스크톱(Windows·macOS)만 개발·빌드한다. Android APK 빌드·에뮬레이터 CI·업로드·릴리스는 중단한다. 기존 Android 소스는 보관하지만 새 기능을 맞추거나 공유 모듈 목록을 동기화하지 않는다. 사용자가 다시 요청하기 전에는 Android 빌드를 재개하지 않는다.
 
@@ -16,6 +16,7 @@
 | 1.17.1 | Code 에이전트 2(Claude Code·Codex처럼): 권한 모드 4가지·다시 묻지 않기 규칙·작업 중 지시·슬래시 명령·지시별 되돌리기·AGENTS.md·격리 작업 공간(git worktree)·새 도구, 손익분기 실험 도구 | 릴리스 |
 | 1.17.2 | Code 에이전트 3(터미널처럼, 사용자 요청 '완벽히 CLI처럼'): 작업 탭 전체를 Claude Code 같은 터미널로 — `● Read(…) ⎿` 기록·줄 번호 diff·접힌 출력(Ctrl+O), 기록 안의 승인 선택지(1·2·3·Esc, 거부하며 다르게 하라고 알리기), Shift+Tab 모드(작업 중에도), Esc 멈춤·Esc 두 번 되돌리기, ↑↓ 지난 입력, `/`·`@` 자동 완성, `!명령`·`#메모`·`@파일`, 프로젝트 명령(.poschat/.claude commands), /clear /resume /status /diff /revert /todos /permissions /memory /worktree /apply /keep /discard /delete. 코드는 채팅과 나누지 않는 하나의 전체 화면 | 릴리스 |
 | 1.18.1 | 에이전트 인터넷 도구(web_search·web_fetch·paper_search 저자별·web_download, `web_research.py`, 에이전트가 만든 주소는 승인·내부망 차단), `/usage`(채팅·작업 탭), 작업 탭 아래 회색 띠 없앰 | 릴리스 |
+| 1.19.0 | 공개 전 사용자 피드백 9가지: 시작 창 크기 설정·F11, 브라우저 '기본 브라우저로 열기'·닫기를 웹페이지 위 네이티브 막대로, Lab·라이브러리·자동화·플러그인에서 사이드바 유지, PLMS 창에서 계정 저장, 플러그인·스킬 설명 한국어(341개), 테마 맞춤 링크 색·다녀온 링크, 30일 토큰 그래프, 사용법 가이드 카드·목차, 설치 파일 줄이기(AVIF·setuptools 제외, 설치 중 이중 CRC 확인 제거) | 릴리스(네이티브 막대는 Windows·macOS 실기기 손 확인 남음) |
 | 1.18.9 | 공개 배포 전 보안 보강: 명령 승인 우회(`&`) 차단, 채팅 답변의 외부 이미지·위험 링크 차단, 텍스트 첨부 앱 안에서 보기, 채팅 명령 비밀 환경 변수 제거·위험 명령 매번 확인, API 키 OS 보안 저장소, 업데이트 내려받기 대체 경로, 릴리스 태그 점검 | 릴리스 |
 | 1.18.8 | PLMS를 베타로 표시(사이드바 맨 아래·베타 배지), 토큰 효율(프롬프트 줄이기·프롬프트 캐싱 기본 켜짐), 대화 검색 색인(`thread_index.py`), 공용 `net.py` 분리 | 실제 앱에서 토큰 절감폭·PLMS 손 확인 남음 |
 | 1.18.7 | PLMS 수업 중복 제거·PDF 미리보기·PowerPoint 열기·AI 확인 범위 표시, 작업 화면에서 사이드바 자동 접기, Context7·RTK·ECC 안내 | 실제 학교 계정·Windows·macOS 앱 손 확인 남음 |
@@ -27,6 +28,15 @@
 | 1.18.0 | 일반 AI 모델(GPT, 본인 OpenAI API 키·Responses API), 코드 화면 아래 패널을 진짜 터미널로(ConPTY·pty, xterm.js, Git·변경 검토는 왼쪽 탭), SSH 원격 작업 폴더(paramiko + 원격 도우미, 파일·Git·터미널·에이전트가 서버에서), 부적절한 응답 신고, Store 제출 준비 | 릴리스 |
 
 ## 지금 할 일
+
+### Future Work: 다운로드 경고(Chrome·Windows SmartScreen) 줄이기 — 2026-10-31 메모, 다음에 진행
+공개 다운로드 때 Chrome·SmartScreen이 설치 파일에 경고를 띄우는 문제. 1.19.0에는 넣지 않았다(사용자 결정: 메모만 남기고 다음 날 진행).
+- **코드 서명(가장 중요)**: 공인 CA 코드 서명 인증서로 설치 파일과 안의 exe·dll·pyd까지 서명. 일반(OV) 인증서는 다운로드 평판이 쌓일 때까지 경고가 남을 수 있고, EV는 처음부터 SmartScreen 평판을 받는다. 빌드 쪽은 이미 준비돼 있다: `build_installer.sign`·`sign_tree`가 `WINDOWS_SIGN_PFX`·`WINDOWS_SIGN_PASSWORD`가 있으면 모든 PE 파일에 서명한다(CI의 *Prepare code signing certificate* 단계). 인증서가 하드웨어 토큰·클라우드 HSM 방식이면(최근 CA 정책상 대부분) CI 서명 단계를 그 방식(예: Azure Trusted Signing·signtool + KSP)으로 바꾼다. macOS는 Apple Developer ID 서명·공증(notarization)이 따로 필요하다.
+- **HTTPS·헤더 확인**: 다운로드 페이지(pidstech.com)와 실제 파일 주소(GitHub Releases·업데이트 서버)가 모두 https인지, 혼합 콘텐츠가 없는지, 응답이 `Content-Type: application/octet-stream`·`Content-Disposition: attachment`인지 확인.
+- **오탐 신고**: Google Search Console에 도메인 등록 → 보안 문제 확인·검토 요청, Safe Browsing 오탐 신고(https://safebrowsing.google.com/safebrowsing/report_error/).
+- **VirusTotal 사전 검사**: 새 빌드마다 올려 오탐 엔진(AhnLab·Avast·Defender 등)이 있으면 그 회사에 먼저 신고. PyInstaller 설치 파일은 오탐이 잦다.
+- **배포 형식**: 지금처럼 단일 설치 파일(.exe·.dmg)로 배포하고 ZIP·이중 압축·스크립트 동봉은 하지 않는다.
+
 
 ### 0. Microsoft Store 제출 (EXE 방식, 개인 계정 — 사용자 결정 2026-10-25)
 - 앱 쪽 준비는 했다(1.18.0에 들어감): Store 설치 파일 `POSCHAT-Store-Setup.exe`(Store판은 스스로 업데이트하지 않고 Store를 엶),

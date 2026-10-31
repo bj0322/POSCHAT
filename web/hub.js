@@ -84,7 +84,9 @@ function pageOpen(id) {
   $("#chat-title").textContent = PAGES[id].title;
   $(PAGES[id].button)?.classList.add("active");
   document.querySelectorAll(".thread.active").forEach((t) => t.classList.remove("active"));
-  setCollapsed(true);
+  // 1.19: Lab·라이브러리·자동화·플러그인을 열어도 사이드바를 접지 않는다(다른 기능으로 바로 옮겨 갈 수 있게).
+  // 휴대폰처럼 좁은 화면에서는 사이드바가 화면을 덮는 서랍이라 그대로 닫는다.
+  if (isNarrow()) setCollapsed(true);
   if (window.renderBrowserBar) renderBrowserBar();
   renderPage();
 }
@@ -914,6 +916,7 @@ async function renderDiagnostics(panel) {
         lf.enabled ? h("button", { class: "btn", onclick: async () => { const r = await hubCall(api().telemetry_export_now()); if (r) toast(`${r.sent}건 보냈습니다${r.export.last_error ? " · " + r.export.last_error : ""}`); } }, "지금 보내기") : null),
       lf.enabled ? h("small", { class: "muted block" }, `보낸 이벤트 ${sm.export.sent}건 · 대기 ${sm.export.pending}건${sm.export.last_error ? ` · 마지막 오류: ${sm.export.last_error}` : ""}`) : null),
     h("section", { class: "hub-group" }, h("h3", {}, "이 앱의 API 사용량(1.9부터)"),
+      usageChart(st.usage.daily),
       diagTable(["기간", "호출", "토큰 입력", "토큰 출력"], [["오늘", st.usage.today], [`이번 달 (${st.usage.month_name})`, st.usage.month], ["최근 30일", st.usage.last30]]
         .map(([label, u]) => [label, num(u.calls), num(u.input_tokens), num(u.output_tokens)]))));
 }
@@ -1005,7 +1008,8 @@ const PLUG = { tab: "browse", query: "", data: null, busy: "", status: "" };
 
 function pluginMatches(p, q) {
   if (!q) return true;
-  const hay = [p.name, p.display_name, p.summary, p.description, ...[...(p.skills || []), ...(p.commands || [])].map((s) => s.name + " " + s.description)]
+  const hay = [p.name, p.display_name, p.summary, p.description,
+    ...[...(p.skills || []), ...(p.commands || [])].map((s) => `${s.name} ${s.description} ${s.description_ko || ""}`)]
     .join(" ").toLowerCase();
   return q.toLowerCase().split(/\s+/).every((w) => hay.includes(w));
 }
@@ -1085,7 +1089,9 @@ function pluginCard(p) {
       h("span", { class: "badge" }, p.external ? "다른 저장소" : p.partner ? "파트너" : "Anthropic"),
       inst ? h("span", { class: "badge st-ok" }, "설치됨") : null),
     p.summary ? h("p", { class: "plugin-summary" }, p.summary) : null,
-    h("p", { class: "plugin-desc", lang: "en" }, p.description),
+    // 1.19: 한국어 소개가 있으면 영문 원문은 접어 둔다
+    p.summary ? (p.description ? h("details", { class: "plugin-orig" }, h("summary", {}, "영문 원문"), h("p", { class: "plugin-desc", lang: "en" }, p.description)) : null)
+      : h("p", { class: "plugin-desc", lang: "en" }, p.description),
     p.installable ? h("p", { class: "plugin-meta" }, `스킬 ${count}개` + (p.version ? ` · v${p.version}` : "")
       + ((p.connectors || []).length ? ` · 외부 도구 ${p.connectors.length}개 연동 안내` : "")) : null,
     h("div", { class: "row wrap plugin-actions" }, actions));
@@ -1164,12 +1170,14 @@ async function showPluginDetail(name) {
         h("code", {}, cmd), h("span", { class: "badge" }, it.kind),
         inst && inst.enabled !== false ? h("button", { class: "link-btn", "aria-label": `${cmd} 대화에서 쓰기`,
           onclick: () => { dlg.close(); usePluginSkill(cmd); } }, "대화에서 쓰기") : null),
-      h("p", { lang: "en" }, it.description || "(설명 없음)"),
+      it.description_ko ? h("p", {}, it.description_ko) : h("p", { lang: "en" }, it.description || "(설명 없음)"),
+      it.description_ko && it.description ? h("details", { class: "plugin-orig" }, h("summary", {}, "영문 원문"), h("p", { lang: "en" }, it.description)) : null,
       it.argument ? h("small", { class: "muted" }, `인자: ${it.argument}`) : null);
   }));
   const body = h("div", { class: "plugin-detail" },
     p.summary ? h("p", {}, p.summary) : null,
-    h("p", { class: "muted", lang: "en" }, p.description),
+    p.summary && p.description ? h("details", { class: "plugin-orig" }, h("summary", {}, "영문 원문"), h("p", { class: "muted", lang: "en" }, p.description))
+      : h("p", { class: "muted", lang: "en" }, p.description),
     h("p", { class: "small muted" }, [p.partner ? `파트너 제작${p.author ? ` (${p.author})` : ""}` : "Anthropic 제작", p.version ? `v${p.version}` : ""].filter(Boolean).join(" · "),
       " · ", h("a", { href: safeHref(p.homepage), target: "_blank", rel: "noopener" }, "원본 보기")),
     h("h3", {}, `스킬과 명령 ${items.length}개`),

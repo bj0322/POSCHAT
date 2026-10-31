@@ -44,6 +44,7 @@ from version import APP_VERSION
 
 APP_TITLE = "POSCHAT"
 UPDATE_INTERVAL = 6 * 3600  # 시작할 때 새 버전을 확인하는 최소 간격(초)
+WINDOW_MODES = ("normal", "maximized", "fullscreen")  # 1.19 설정: 앱을 열 때의 창 크기
 UPDATE_EXIT_TIMEOUT = 15  # 업데이트하려고 창을 닫은 뒤 정리가 끝나지 않아도 이 시간(초)이 지나면 프로세스를 끝낸다
 PO_RESERVES = (0, 10, 20, 30, 50)  # PO노트 크레딧 예산 보호: 이번 주 한도의 몇 %를 남겨 둘지(0은 끄기)
 
@@ -291,6 +292,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
                 "stream": self._config.get("stream", True),
                 "update_check": self._config.get("update_check", True),
                 "developer_mode": bool(self._config.get("developer_mode")),
+                "window_mode": self._window_mode(),
                 "adaptive": self._adaptive_public(),
                 "notion_source": "settings" if self._config.get("notion_token") else (
                     "env" if os.environ.get("NOTION_TOKEN") or os.environ.get("NOTION_API_KEY") else None),
@@ -416,6 +418,19 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
             return str(e)
         return None
 
+    def plms_save_account(self, username, password):
+        """1.19 PLMS 창의 '설정에 계정 저장': 설정 창의 PLMS 계정 칸과 같은 곳(OS 보안 저장소)에 저장하고 연결을 켠다."""
+        username, password = str(username or "").strip(), str(password or "")
+        if not username or not password:
+            return {"ok": False, "error": "POSTECH 아이디와 비밀번호를 모두 입력하세요."}
+        error = self._save_plms_account({"plms_username": username, "plms_password": password})
+        if error:
+            return {"ok": False, "error": error}
+        with self._lock:
+            self._config["plms_enabled"] = True
+            storage.save_config(self._config)
+        return {"ok": True, "plms_username": self._plms_saved_username()}
+
     def save_settings(self, settings):
         mode = settings.get("api_mode", self._mode())
         url = api.endpoint_url(settings.get("responses_url", self._config.get("responses_url", "")),
@@ -490,6 +505,8 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
                 self._config["update_check"] = bool(settings["update_check"])
             if "developer_mode" in settings:  # 1.17: 라우팅·토큰·손익분기의 원자료를 화면에 보인다
                 self._config["developer_mode"] = bool(settings["developer_mode"])
+            if settings.get("window_mode") in WINDOW_MODES:  # 1.19: 다음에 앱을 열 때의 창 크기
+                self._config["window_mode"] = settings["window_mode"]
             self._stamp_settings(before)
             storage.save_config(self._config)
         return self.get_state()
@@ -568,6 +585,17 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
                 self._config["workspace"] = os.path.normpath(path)
                 storage.save_config(self._config)
         return {"workspace": self._workspace_info(), "skills": self._skills()}
+
+    def _window_mode(self):
+        mode = self._config.get("window_mode")
+        return mode if mode in WINDOW_MODES else "normal"
+
+    def toggle_fullscreen(self):
+        """F11: 전체 화면을 켜고 끈다(1.19). 설정의 '시작할 때 창 크기'는 바꾸지 않는다."""
+        window = getattr(self, "_window", None)
+        if window is not None:
+            window.toggle_fullscreen()
+        return {"ok": True}
 
     def open_folder(self, which):
         targets = {
@@ -1627,9 +1655,11 @@ def run_app():
     bridge = Bridge()
     index = resource_dir() / "web" / "index.html"
     width, height = _window_size()
+    mode = bridge._window_mode()  # 1.19 설정 → 시작할 때 창 크기(기본 창·최대화·전체 화면)
     window = webview.create_window(
         APP_TITLE, url=str(index), js_api=bridge,
         width=width, height=height, min_size=(760, 520), text_select=True,
+        maximized=mode == "maximized", fullscreen=mode == "fullscreen",
     )
     bridge._window = window
     try:

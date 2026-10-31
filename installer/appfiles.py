@@ -20,6 +20,8 @@
 import os
 import shutil
 import time
+import zipfile
+import zlib
 from pathlib import Path
 
 STAGE = "_update"   # 새 파일을 먼저 푸는 곳
@@ -103,10 +105,12 @@ def cleanup(dest, exe):
 
 
 def extract(zf, dest, progress=None, share=90):
-    """zip을 dest 안의 임시 폴더에 풀고 그 폴더를 돌려준다. 진행은 progress(0~share, 글)로 알린다."""
-    bad = zf.testzip()  # 받은 설치 파일이 깨졌으면 아무것도 바꾸기 전에 멈춘다
-    if bad:
-        raise InstallError(f"설치 파일이 손상되었습니다({bad}). 설치 파일을 다시 받으세요.")
+    """zip을 dest 안의 임시 폴더에 풀고 그 폴더를 돌려준다. 진행은 progress(0~share, 글)로 알린다.
+
+    1.19: 예전에는 풀기 전에 testzip()으로 zip 전체를 한 번 더 읽어 CRC를 확인했다(설치 시간이 그만큼 늘었다).
+    zipfile은 파일을 끝까지 읽을 때 CRC를 확인하므로, 푸는 동안 손상을 찾으면 임시 폴더를 지우고 멈춘다.
+    이전 버전은 임시 폴더 밖에 있으므로 어느 쪽이든 건드리지 않는다.
+    """
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
     stage = _free_dir(dest, STAGE, wipe=True)
@@ -114,11 +118,18 @@ def extract(zf, dest, progress=None, share=90):
     members = zf.infolist()
     total = sum(m.file_size for m in members) or 1
     done = 0
-    for m in members:
-        zf.extract(m, stage)
-        done += m.file_size
-        if progress:
-            progress(done / total * share, "파일 복사 중...")
+    try:
+        for m in members:
+            zf.extract(m, stage)
+            done += m.file_size
+            if progress:
+                progress(done / total * share, "파일 복사 중...")
+    except (zipfile.BadZipFile, zlib.error, EOFError) as e:
+        remove(stage, attempts=3)
+        raise InstallError(f"설치 파일이 손상되었습니다({e}). 설치 파일을 다시 받으세요.") from e
+    except BaseException:
+        remove(stage, attempts=3)  # 디스크 부족 등: 반쯤 푼 임시 폴더를 남기지 않는다(다음 설치 때도 지운다)
+        raise
     return stage
 
 

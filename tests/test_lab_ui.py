@@ -194,7 +194,7 @@ class LabUiTests(unittest.TestCase):
                 self.assertIn("Run ID", question)
                 self.shot(page, "lab-ask")
                 # 기록 지우기: 파일은 남는다
-                page.click("#btn-expand")
+                page.evaluate("document.querySelector('#btn-expand').hidden || document.querySelector('#btn-expand').click()")  # 1.19: 도구 화면은 사이드바를 접지 않는다
                 page.click("#btn-lab")
                 page.wait_for_selector(".lab-head")
                 page.click(".lab-head button:has-text('지우기')")

@@ -20,6 +20,11 @@ from Microsoft.Web.WebView2.WinForms import CoreWebView2CreationProperties, WebV
 READ_TIMEOUT_MS = 15000
 
 
+def _color(hex_text):
+    from System.Drawing import ColorTranslator
+    return ColorTranslator.FromHtml(hex_text)
+
+
 class WebView2Backend:
     mode = "native"
 
@@ -29,6 +34,9 @@ class WebView2Backend:
             raise browser_mod.BrowserError("앱 창을 찾지 못했습니다.")
         self.browser = browser
         self.view = None
+        self.pane = None  # 1.19: 웹페이지 위 막대(제목·기본 브라우저로 열기·닫기) + 웹페이지
+        self.title_label = None
+        self.toolbar = False
         self.splitter = None
         self.ready = threading.Event()
         self.error = None
@@ -61,8 +69,17 @@ class WebView2Backend:
         props = CoreWebView2CreationProperties()
         props.UserDataFolder = str(browser_mod.profile_dir())
         view.CreationProperties = props
-        view.Dock = WinForms.DockStyle.Right
-        view.Visible = False
+        view.Dock = WinForms.DockStyle.Fill
+        # 1.19: 웹페이지와 그 위 막대를 한 패널에 담는다. 막대 버튼이 웹페이지 바로 위에 있어 무엇을 닫는지 분명하다
+        pane = WinForms.Panel()
+        pane.Dock = WinForms.DockStyle.Right
+        pane.Visible = False
+        pane.Controls.Add(view)  # Fill은 먼저 넣어야 막대(Top)를 뺀 나머지를 채운다
+        try:
+            pane.Controls.Add(self._make_toolbar())
+            self.toolbar = True
+        except Exception:
+            self.toolbar = False  # 막대를 못 만들면 앱 화면의 주소 표시줄에 버튼을 그대로 둔다
         splitter = WinForms.Splitter()
         splitter.Dock = WinForms.DockStyle.Right
         splitter.Width = 6
@@ -72,16 +89,76 @@ class WebView2Backend:
         splitter.SplitterMoved += self._on_split
         # 도킹은 컨트롤 순서의 뒤쪽부터: 웹페이지(맨 바깥) → 막대 → 앱 화면(Fill, 맨 앞)
         self.form.Controls.Add(splitter)
-        self.form.Controls.Add(view)
+        self.form.Controls.Add(pane)
         main = getattr(getattr(self.form, "browser", None), "webview", None)
         if main is not None:
             main.BringToFront()
         # 1.18.6 PLMS 숨은 로그인: 화면에 붙이기(show) 전에도 웹 뷰가 초기화되도록 창 핸들을 먼저 만든다
+        pane.CreateControl()
+        _ = pane.Handle
         view.CreateControl()
         _ = view.Handle
         view.CoreWebView2InitializationCompleted += self._on_ready
         view.EnsureCoreWebView2Async(None)
-        self.view, self.splitter = view, splitter
+        self.view, self.pane, self.splitter = view, pane, splitter
+
+    def _make_toolbar(self):
+        """웹페이지 위 막대: 왼쪽은 페이지 제목, 오른쪽은 '기본 브라우저로 열기'와 '닫기'. 앱 테마(밝음·어두움)를 따른다."""
+        import winreg
+        from System.Drawing import ContentAlignment, Font, FontStyle
+
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as k:
+                dark = winreg.QueryValueEx(k, "AppsUseLightTheme")[0] == 0
+        except OSError:
+            dark = False
+        bg, fg, hover = (("#212121", "#ececec", "#2f2f2f") if dark else ("#f9f9f9", "#0d0d0d", "#ececec"))
+        try:
+            scale = self.form.DeviceDpi / 96
+        except Exception:
+            scale = 1.0
+        px = lambda v: int(round(v * scale))  # noqa: E731
+        bar = WinForms.Panel()
+        bar.Dock = WinForms.DockStyle.Top
+        bar.Height = px(36)
+        bar.Padding = WinForms.Padding(px(10), px(4), px(6), px(4))
+        bar.BackColor = _color(bg)
+        font = Font("Malgun Gothic", 9.0, FontStyle.Regular)
+
+        title = WinForms.Label()
+        title.Dock = WinForms.DockStyle.Fill
+        title.AutoEllipsis = True
+        title.TextAlign = ContentAlignment.MiddleLeft
+        title.ForeColor = _color(fg)
+        title.Font = font
+        title.Text = "브라우저"
+
+        def button(text, tip, handler):
+            b = WinForms.Button()
+            b.Text = text
+            b.Dock = WinForms.DockStyle.Right
+            b.AutoSize = True
+            b.FlatStyle = WinForms.FlatStyle.Flat
+            b.FlatAppearance.BorderSize = 0
+            b.FlatAppearance.MouseOverBackColor = _color(hover)
+            b.ForeColor = _color(fg)
+            b.BackColor = _color(bg)
+            b.Font = font
+            b.Cursor = WinForms.Cursors.Hand
+            b.TabStop = True
+            b.AccessibleName = tip
+            WinForms.ToolTip().SetToolTip(b, tip)
+            # 처리기는 UI 스레드에서 돈다: UI 스레드를 기다리는 일(hide → _invoke)은 작업 스레드로 넘긴다(B1)
+            b.Click += lambda s, e: threading.Thread(target=handler, daemon=True).start()
+            return b
+
+        # Dock은 나중에 넣은 것부터 자리를 잡는다: 닫기(맨 오른쪽) → 기본 브라우저로 열기 → 제목(나머지)
+        bar.Controls.Add(title)
+        bar.Controls.Add(button("↗ 기본 브라우저로 열기", "지금 페이지를 기본 브라우저로 엽니다", self.browser.open_external))
+        bar.Controls.Add(button("✕ 닫기", "브라우저 닫기", self.browser.hide))
+        self.title_label = title
+        return bar
 
     def _on_ready(self, sender, args):
         if not args.IsSuccess:
@@ -118,6 +195,11 @@ class WebView2Backend:
         core = self.view.CoreWebView2 if self.view is not None else None
         if core is None:
             return
+        if self.title_label is not None:
+            try:
+                self.title_label.Text = str(core.DocumentTitle or core.Source or "브라우저")
+            except Exception:
+                pass
         self.browser.navigated(url=str(core.Source or ""), title=str(core.DocumentTitle or ""), loading=loading,
                                can_back=bool(core.CanGoBack), can_forward=bool(core.CanGoForward))
 
@@ -147,25 +229,25 @@ class WebView2Backend:
 
     def _on_split(self, sender, e):
         width = self.form.ClientSize.Width
-        if width > 0 and self.view is not None:
-            self.ratio = self.view.Width / width
+        if width > 0 and self.pane is not None:
+            self.ratio = self.pane.Width / width
             self.browser.ratio = round(self.ratio, 3)
 
     # ---- browser.Browser가 부른다 ----
 
     def _layout(self, ratio):
-        self.view.Width = max(320, int(self.form.ClientSize.Width * ratio))
+        self.pane.Width = max(320, int(self.form.ClientSize.Width * ratio))
 
     def show(self, ratio):
         def go():
             self._layout(ratio)
             self.splitter.Visible = True
-            self.view.Visible = True
+            self.pane.Visible = True
         self._invoke(go)
 
     def hide(self):
         def go():
-            self.view.Visible = False
+            self.pane.Visible = False
             self.splitter.Visible = False
         self._invoke(go)
 
@@ -243,13 +325,13 @@ class WebView2Backend:
 
     def close(self):
         if self.form.IsDisposed or self.form.Disposing:
-            self.view = self.splitter = None  # 앱 창이 이미 닫혔다(앱 종료): 컨트롤도 함께 정리됐다
+            self.view = self.pane = self.splitter = None  # 앱 창이 이미 닫혔다(앱 종료): 컨트롤도 함께 정리됐다
             return
 
         def go():
-            for control in (self.view, self.splitter):
+            for control in (self.pane, self.splitter):  # 패널을 지우면 안의 웹페이지·막대도 함께 정리된다
                 if control is not None:
                     self.form.Controls.Remove(control)
                     control.Dispose()
         self._invoke(go)
-        self.view = self.splitter = None
+        self.view = self.pane = self.splitter = None
