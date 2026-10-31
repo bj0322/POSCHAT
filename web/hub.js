@@ -1078,7 +1078,7 @@ function pluginCard(p) {
     : [h("button", { class: "btn primary", disabled: !!PLUG.busy, onclick: () => installPlugin(p), "aria-describedby": titleId },
       PLUG.busy === p.name ? "설치 중..." : "설치"),
       h("button", { class: "btn", onclick: () => showPluginDetail(p.name), "aria-describedby": titleId }, "자세히")])
-    : [p.homepage ? h("a", { class: "btn", href: p.homepage, target: "_blank", rel: "noopener" }, "홈페이지") : null];
+    : [safeHref(p.homepage) ? h("a", { class: "btn", href: safeHref(p.homepage), target: "_blank", rel: "noopener" }, "홈페이지") : null];
   return h("li", { class: "plugin-card" + (inst && inst.enabled !== false ? " installed" : "") },
     h("div", { class: "plugin-head" },
       h("h3", { id: titleId }, p.display_name),
@@ -1171,7 +1171,7 @@ async function showPluginDetail(name) {
     p.summary ? h("p", {}, p.summary) : null,
     h("p", { class: "muted", lang: "en" }, p.description),
     h("p", { class: "small muted" }, [p.partner ? `파트너 제작${p.author ? ` (${p.author})` : ""}` : "Anthropic 제작", p.version ? `v${p.version}` : ""].filter(Boolean).join(" · "),
-      " · ", h("a", { href: p.homepage, target: "_blank", rel: "noopener" }, "원본 보기")),
+      " · ", h("a", { href: safeHref(p.homepage), target: "_blank", rel: "noopener" }, "원본 보기")),
     h("h3", {}, `스킬과 명령 ${items.length}개`),
     inst ? null : h("p", { class: "small muted" }, "설치하면 에이전트가 요청에 맞는 스킬을 알아서 쓰고, 입력창에 아래 이름으로 직접 부를 수도 있습니다."),
     skillList,
@@ -1203,7 +1203,7 @@ function hubEvent(ev) {
       body: h("div", {},
         h("p", {}, "브라우저에서 열린 GitHub 페이지에 아래 코드를 입력하세요."),
         h("div", { class: "device-code" }, ev.user_code),
-        h("p", {}, h("a", { href: ev.url, target: "_blank" }, ev.url))),
+        h("p", {}, h("a", { href: safeHref(ev.url), target: "_blank", rel: "noopener" }, ev.url))),
       buttons: [{ label: "코드 복사", action: () => copyText(ev.user_code) },
         { label: "취소", action: (close) => { api().connector_cancel_login(ev.id); close(); } },
         { label: "닫기", class: "primary" }],

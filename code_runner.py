@@ -59,6 +59,17 @@ DANGER_PATTERNS = [
     (re.compile(r"(?i)(curl|wget|iwr|Invoke-WebRequest)[^|]*\|\s*(ba|z|)sh\b|\|\s*iex\b"), "내려받은 스크립트를 바로 실행합니다"),
     (re.compile(r"(^|[^>2&])>\s*[^\s&|>]"), "출력으로 파일을 덮어씁니다(>)"),
     (re.compile(r"(?i)\b(reg\s+(add|delete)|setx)\b"), "Windows 설정(레지스트리·환경 변수)을 바꿉니다"),
+    (re.compile(r"(?i)\bfind\b.*\s(-delete\b|-exec\s+rm\b)|\bRemove-Item\b.*\s-(Recurse|Force)\b"), "파일·폴더를 지웁니다"),
+    # 명령 줄에 넣은 코드는 무엇이든 할 수 있다(지우기·네트워크 판정을 피해 감): 위험한 동작으로 보고 묻는다
+    (re.compile(r"(?i)(?:^|[\s/\\\"'(])(python[\d.]*|py|pypy[\d.]*)(\.exe)?[\"']?(\s+-[XW]\s*\S+|\s+-[A-Za-z0-9.]{1,4})*"
+                r"\s+(-[A-Za-z]*c\b|-(\s|$))"
+                r"|\b(node|deno|bun)(\.exe)?(\s+-[-\w]+)*\s+(-\w*[ep]\b|--eval|--print)"
+                r"|\b(perl|ruby)(\.exe)?(\s+-\w+)*\s+-\w*e\b|\bphp(\.exe)?\s+-r\b"
+                r"|\b(powershell|pwsh)(\.exe)?(\s+-\w+(\s+[^-\s]\S*)?)*?\s+-(e|ec|enc|encodedcommand|c|command)\b"
+                r"|\bcmd(\.exe)?(\s+/\w+)*\s+/[ck]\b|(?:^|[\s/\\\"'(])(ba|z|da|k)?sh(\s+-\w+)*\s+-\w*c\b"
+                # 파이프·리디렉션으로 인터프리터에 코드를 먹이기(echo … | python, sh < x)
+                r"|\|\s*(\S*[/\\])?(python[\d.]*|py|pypy[\d.]*|node|perl|ruby|php|(ba|z|da|k)?sh|pwsh|powershell|cmd)(\.exe)?\b"
+                r"|(?:^|[\s/\\\"'(])(python[\d.]*|node|perl|ruby|php|(ba|z|da|k)?sh|pwsh|powershell|cmd)(\.exe)?\s*(-\s*)?<"), "명령 줄에 넣은 코드를 실행합니다(python -c 등)"),
 ]
 # 출력에서 소스 위치 찾기: gcc/clang·verilator·iverilog·Python traceback·일반 file:line
 LOCATION_PATTERNS = [
@@ -108,8 +119,13 @@ def analyze(command):
     return {"network": bool(NETWORK_RE.search(command)), "dangers": dangers, "shell": shell_name()}
 
 
+# 이름에 auth·session이 들어가지만 비밀 값이 아닌 소켓·버스 주소(ssh-agent를 쓰는 git, 데스크톱 세션)는 넘긴다
+SAFE_ENV = re.compile(r"(?i)^(SSH_AUTH_SOCK|\w*_SESSION_BUS_ADDRESS|XDG_SESSION_\w+|DESKTOP_SESSION|SESSIONNAME)$")
+
+
 def clean_env(extra_secret_names=()):
-    env = {k: v for k, v in os.environ.items() if not SECRET_ENV.search(k) and k not in extra_secret_names}
+    env = {k: v for k, v in os.environ.items()
+           if (SAFE_ENV.match(k) or not SECRET_ENV.search(k)) and k not in extra_secret_names}
     env.update(PYTHONIOENCODING="utf-8", PYTHONUTF8="1", PYTHONUNBUFFERED="1")
     return env
 

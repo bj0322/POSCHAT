@@ -15,7 +15,7 @@ if not defined PY (
   for /f "delims=" %%I in ('where python 2^>nul ^| findstr /v /i "WindowsApps"') do if not defined PY set "PY=%%I"
 )
 if not defined PY (
-  echo Python not found. Install Python 3.9+ from python.org and check "Add python.exe to PATH".
+  echo Python not found. Install Python 3.11+ from python.org and check "Add python.exe to PATH".
   pause
   exit /b 1
 )

@@ -1174,7 +1174,15 @@ class Agent:
 
     def _tool_run(self, command):
         command = str(command)
-        if not self.confirm("run", "명령 실행", f"{self.workspace}>\n{command}"):
+        import code_runner
+
+        # 지우기·덮어쓰기·네트워크 같은 위험한 명령은 'exec'로 묻는다: '모두 자동 허용'이나 '이번 실행 동안 명령 모두 허용'을
+        # 골랐어도 매번 확인한다(웹 페이지·문서에 심은 지시로 rm -rf·curl | sh가 묻지 않고 실행되지 않게).
+        info = code_runner.analyze(command)
+        warn = list(info.get("dangers") or []) + (["네트워크 사용"] if info.get("network") else [])
+        kind = "exec" if warn else "run"
+        detail = f"{self.workspace}>\n{command}" + (f"\n\n⚠ {', '.join(warn)}" if warn else "")
+        if not self.confirm(kind, "명령 실행", detail):
             self.denied.append(f"명령 실행: {command[:200]}")
             self.on_tool(f"⛔ run 거부됨: {command}", "")
             return "사용자가 명령 실행을 거부했습니다."
@@ -1182,7 +1190,10 @@ class Agent:
         self._did_work = True
         self.tools_run.append(f"run: {command[:200]}")
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+        env = code_runner.clean_env()   # 비밀 이름의 환경 변수(API 키·토큰)는 넘기지 않고, 출력의 비밀은 가린다(privacy-policy.md)
+        secrets = [v for k, v in os.environ.items() if code_runner.SECRET_ENV.search(k)]
+        secrets.append(self.api_key)
+        mask = code_runner.Masker(secrets)
         try:
             r = subprocess.run(command, shell=True, executable=SHELL, cwd=self.workspace, capture_output=True,
                                stdin=subprocess.DEVNULL, timeout=COMMAND_TIMEOUT, creationflags=flags, env=env)
@@ -1193,6 +1204,7 @@ class Agent:
             return obs
         self.commands.append({"command": command, "code": r.returncode})
         out = _decode(r.stdout)[0] + (("\n[stderr]\n" + _decode(r.stderr)[0]) if r.stderr else "")
+        out = mask.feed(out, final=True)
         obs = f"종료 코드 {r.returncode}\n{_truncate(out.strip(), MAX_OBS_CHARS) or '(출력 없음)'}"
         self.on_tool(f"▶ run {command} (종료 코드 {r.returncode})", _truncate(out.strip(), 4000))
         return obs

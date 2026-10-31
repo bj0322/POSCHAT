@@ -36,8 +36,10 @@ SOURCES = (
     (SERVER_RELEASE_URL, SERVER_RELEASES_PAGE, SERVER_DOWNLOAD_PREFIX),
 )
 # GitHub는 릴리스 파일을 이 호스트들로 넘긴다(리디렉션). 이 밖의 주소로는 따라가지 않는다.
+# 업데이트 서버가 www 주소로 넘기는 경우도 받아들인다(같은 운영자의 호스트).
+_SERVER_HOST = urlparse(UPDATE_BASE_URL).hostname or ""
 REDIRECT_HOSTS = ("github.com", "api.github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com",
-                  "github-releases.githubusercontent.com")
+                  "github-releases.githubusercontent.com", _SERVER_HOST, "www." + _SERVER_HOST.removeprefix("www."))
 MAX_REDIRECTS = 5
 ASSETS = {
     "windows": "POSCHAT-Setup.exe",
@@ -190,9 +192,23 @@ def _fetch_signature(url):
     return text
 
 
-def download(installed_version, directory, platform=None, on_progress=None, cancelled=None):
-    """새 버전의 이 기기용 설치 파일을 받아 서명·크기·SHA-256을 확인한 뒤 directory에 두고 경로를 돌려준다."""
-    release = latest_release()
+def download(installed_version, directory, platform=None, on_progress=None, cancelled=None, timeout=15):
+    """새 버전의 이 기기용 설치 파일을 받아 서명·크기·SHA-256을 확인한 뒤 directory에 두고 경로를 돌려준다.
+    출처(GitHub → 업데이트 서버)마다 피드·서명·파일 받기까지 한 번에 시도하고, 어느 단계든 실패하면 다음 출처로 넘어간다
+    (GitHub 파일 서버만 막힌 학교·회사 망). 둘 다 실패하면 첫 오류를 알린다. 사용자가 취소하면 바로 멈춘다."""
+    error = None
+    for feed_url, page_url, download_prefix in SOURCES:
+        try:
+            release = _fetch_release(feed_url, page_url, download_prefix, timeout)
+            return _download_release(release, installed_version, directory, platform, on_progress, cancelled)
+        except UpdateError as e:
+            if cancelled and cancelled():
+                raise
+            error = error or e
+    raise error
+
+
+def _download_release(release, installed_version, directory, platform, on_progress, cancelled):
     if version_tuple(release["version"]) <= version_tuple(installed_version):
         raise UpdateError("이미 최신 버전입니다.")
     name = asset_name(release, platform)

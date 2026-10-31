@@ -56,7 +56,7 @@ def response(status=200, json_data=None, chunks=None, text=""):
 def serve(feed, signature=None, body=None):
     """latest_release → 서명 → 파일 순서로 받는 요청에 답한다."""
     return [response(json_data=feed), response(text=sign() if signature is None else signature),
-            body or response()]
+            body or response(), response(503)]   # GitHub에서 실패하면 업데이트 서버 피드로 넘어간다(여기서는 서버도 실패)
 
 
 @patch.object(updates, "UPDATE_PUBLIC_KEYS", (PUBLIC,))
@@ -155,7 +155,7 @@ class UpdateTests(unittest.TestCase):
     def test_download_refuses_garbage_or_missing_signature(self, get):
         get.side_effect = serve(release(), signature="not base64!!")
         self.assert_refused(get, "형식")
-        get.side_effect = [response(json_data=release()), response(status=404)]
+        get.side_effect = [response(json_data=release()), response(status=404), response(503)]
         self.assert_refused(get, "서명을 내려받지 못했습니다", "y")
         get.side_effect = serve(release(signatures=False))
         self.assert_refused(get, "서명이 없습니다", "z")
@@ -233,6 +233,34 @@ class GitHubSourceTests(unittest.TestCase):
             updates.latest_release()
 
     @patch("updates.requests.get")
+    def test_download_falls_back_to_update_server_when_github_files_fail(self, get):
+        """GitHub 피드는 되지만 파일 서버(release-assets)만 막힌 망: 업데이트 서버에서 피드·서명·파일을 받는다."""
+        server = release()
+        for a in server["assets"]:
+            a["browser_download_url"] = a["browser_download_url"].replace(updates.DOWNLOAD_PREFIX, updates.SERVER_DOWNLOAD_PREFIX)
+        get.side_effect = [response(json_data=release()), response(text=sign()), response(403),
+                           response(json_data=server), response(text=sign()), response()]
+        with tempfile.TemporaryDirectory() as temp:
+            path, version = updates.download("1.10.0", temp, "windows")
+            self.assertEqual((Path(path).read_bytes(), version), (DATA, "1.11.0"))
+        self.assertEqual(get.call_args_list[3].args[0], updates.SERVER_RELEASE_URL)
+        self.assertTrue(get.call_args_list[-1].args[0].startswith(updates.SERVER_DOWNLOAD_PREFIX))
+
+    @patch("updates.requests.get")
+    def test_cancel_does_not_retry_on_the_update_server(self, get):
+        get.side_effect = serve(release())
+        with tempfile.TemporaryDirectory() as temp, self.assertRaisesRegex(updates.UpdateError, "취소"):
+            updates.download("1.10.0", temp, "windows", cancelled=lambda: True)
+        self.assertEqual(get.call_count, 3)
+
+    @patch("updates.requests.get")
+    def test_update_server_redirect_to_its_www_host_is_allowed(self, get):
+        host = updates.urlparse(updates.UPDATE_BASE_URL).hostname
+        redirect = Mock(status_code=301, headers={"Location": f"https://www.{host}/api/releases/latest"})
+        get.side_effect = [response(403), redirect, response(json_data=release())]
+        self.assertEqual(updates.latest_release()["version"], "1.11.0")
+
+    @patch("updates.requests.get")
     def test_download_follows_github_redirect_to_allowed_host(self, get):
         redirect = Mock(status_code=302, headers={"Location": "https://release-assets.githubusercontent.com/x/y"})
         get.side_effect = [response(json_data=release()), response(text=sign()), redirect, response()]
@@ -244,14 +272,14 @@ class GitHubSourceTests(unittest.TestCase):
     @patch("updates.requests.get")
     def test_download_refuses_redirect_to_other_host(self, get):
         redirect = Mock(status_code=302, headers={"Location": "https://evil.example.com/POSCHAT-Setup.exe"})
-        get.side_effect = [response(json_data=release()), response(text=sign()), redirect]
+        get.side_effect = [response(json_data=release()), response(text=sign()), redirect, response(503)]
         with tempfile.TemporaryDirectory() as temp, self.assertRaisesRegex(updates.UpdateError, "허용한 곳이 아닙니다"):
             updates.download("1.10.0", temp, "windows")
 
     @patch("updates.requests.get")
     def test_download_refuses_http_redirect(self, get):
         redirect = Mock(status_code=302, headers={"Location": "http://github.com/x"})
-        get.side_effect = [response(json_data=release()), response(text=sign()), redirect]
+        get.side_effect = [response(json_data=release()), response(text=sign()), redirect, response(503)]
         with tempfile.TemporaryDirectory() as temp, self.assertRaisesRegex(updates.UpdateError, "허용한 곳이 아닙니다"):
             updates.download("1.10.0", temp, "windows")
 

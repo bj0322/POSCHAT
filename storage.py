@@ -55,17 +55,62 @@ def _write_json(path, data):
     os.replace(tmp, path)
 
 
+# 1.18.9: API 키·토큰은 config.json(평문, 백업에 복사됨)이 아니라 비밀 저장소(secret_store: OS 키체인, 안 되면 0600 파일)에 둔다.
+# 앱 코드는 그대로 config["api_key"]처럼 쓴다: load_config가 채워 주고 save_config가 빼서 비밀 저장소에 넣는다.
+# 예전 config.json에 평문으로 남은 값은 처음 save_config할 때 옮겨지고 파일에서 지워진다(migrate_config_secrets).
+CONFIG_SECRET_KEYS = ("api_key", "anthropic_api_key", "openai_api_key", "notion_token", "firecrawl_key")
+# 키들은 비밀 저장소 항목 하나(JSON)로 묶는다: 키체인을 읽는 횟수(macOS에서 업데이트 뒤 접근 허용을 묻는 창)를 한 번으로.
+CONFIG_SECRETS_NAME = "config:secrets"
+
+
+def _load_config_secrets():
+    import secret_store
+
+    data = secret_store.get_json(CONFIG_SECRETS_NAME)
+    return {k: str(v) for k, v in data.items() if k in CONFIG_SECRET_KEYS and v} if isinstance(data, dict) else {}
+
+
 def load_config():
     cfg = dict(DEFAULT_CONFIG)
     try:
         cfg.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
     except (FileNotFoundError, json.JSONDecodeError):
         pass
+    for key, value in _load_config_secrets().items():
+        if not cfg.get(key):   # 파일에 평문 값이 남아 있으면(옮기기 전) 그 값을 쓴다
+            cfg[key] = value
     return cfg
 
 
 def save_config(cfg):
-    _write_json(CONFIG_PATH, cfg)
+    import secret_store
+
+    data = dict(cfg)
+    secrets = {}
+    for key in CONFIG_SECRET_KEYS:
+        value = str(data.pop(key, "") or "")
+        if value:
+            secrets[key] = value
+    if _load_config_secrets() != secrets:   # 바뀌었을 때만 쓴다(모두 비면 지운다)
+        if secrets:
+            secret_store.set_json(CONFIG_SECRETS_NAME, secrets)
+        else:
+            secret_store.delete(CONFIG_SECRETS_NAME)
+    _write_json(CONFIG_PATH, data)
+    try:
+        os.chmod(CONFIG_PATH, 0o600)
+    except OSError:
+        pass
+
+
+def migrate_config_secrets(cfg):
+    """config.json에 평문 키가 남아 있으면 비밀 저장소로 옮긴다(앱 시작 때 한 번)."""
+    try:
+        raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if isinstance(raw, dict) and any(k in raw for k in CONFIG_SECRET_KEYS):
+        save_config(cfg)
 
 
 def make_message(role, content, **extra):

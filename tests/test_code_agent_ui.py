@@ -390,6 +390,9 @@ class CodeAgentUiTests(unittest.TestCase):
                 page.dispatch_event("#ca-input", "input")
                 self.assertIn("bash", page.get_attribute("#ca-box", "class"))
                 page.press("#ca-input", "Enter")
+                # 1.18.9: python -c(명령 줄 코드)는 위험할 수 있는 동작이라 사용자가 친 명령도 한 번 묻는다
+                page.locator("#ca-select:has-text('명령 줄에 넣은 코드')").wait_for(timeout=20000)
+                page.press("#ca-input", "1")                       # 1. 예, 실행
                 page.wait_for_selector(".ca-tool.shell:not(.live):has-text('hello-shell')", timeout=20000)
                 page.wait_for_selector(".ca-tool.shell.live", state="detached")
                 self.assertIn("종료 코드 0", page.inner_text(".ca-tool.shell"))

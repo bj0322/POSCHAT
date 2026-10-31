@@ -1,6 +1,6 @@
 # POSCHAT
 
-버전 1.18.8 — **PLMS 베타 표시**와 토큰·검색 효율 개선(프롬프트 줄이기, 캐싱 기본 켜짐, 대화 검색 색인). [릴리스 노트](docs/release-notes/v1.18.8.md)
+버전 1.18.9 — **공개 배포 전 보안 보강**(명령 승인 우회 차단, 외부 이미지·위험 링크 차단, 텍스트 첨부 앱 안에서 보기, API 키를 OS 보안 저장소로). [릴리스 노트](docs/release-notes/v1.18.9.md)
 
 POSTECH GenAI API(기본) 또는 본인의 Claude·OpenAI(GPT) API 키를 쓰는 Windows·macOS 데스크톱 챗봇 POSCHAT입니다(1.10까지의 이름은 POSTECH GenAI Chat). PIDS Tech. 팀이 개발·관리하는 비공식 프로젝트이며, POSTECH의 공식 제품이나 지원 서비스가 아닙니다. POSTECH 명칭은 연동 대상 서비스를 설명하기 위해 사용합니다. 사용하려면 본인에게 발급된 유효한 API 키와 해당 서비스 이용 권한이 필요하며, 서비스 제공자의 이용 조건을 따라야 합니다. 저장소 공개나 소프트웨어 라이선스(AGPL-3.0-only, 과거 버전은 MIT)는 API 접근 권한을 제공하지 않습니다. 화면은 ChatGPT처럼 생겼고, 작업 폴더를 지정하면 Claude Code·Codex처럼 파일을 읽고, 고치고, 명령을 실행하는 에이전트로 일합니다.
 
@@ -372,13 +372,13 @@ POSTECH GenAI 서버의 모델은 자체 시스템 프롬프트 때문에 "사�
 - 소스로 실행: `run.bat`
 - 진단: `PostechChat.exe --selftest`를 실행하면 API 연결, 문서 라이브러리, 내장 MCP 서버 연결 결과가 `%APPDATA%\PostechChat\selftest.txt`에 기록됩니다. 제거 명령은 `PostechChat.exe --uninstall`입니다.
 - 설치 파일 빌드: `build.bat`, 또는 `python build_installer.py`. 결과는 `release\POSCHAT-Setup.exe`입니다.
-  - **python.org 공식 Python(3.10 이상, tcl/tk 포함)으로 빌드하세요.** Anaconda Python으로 빌드한 exe는 HTTPS 요청 때 `OPENSSL_Uplink: no OPENSSL_Applink` 오류로 꺼집니다. 빌드 스크립트가 이 경우를 미리 막습니다.
+  - **python.org 공식 Python(3.11 이상, tcl/tk 포함)으로 빌드하세요.** Anaconda Python으로 빌드한 exe는 HTTPS 요청 때 `OPENSSL_Uplink: no OPENSSL_Applink` 오류로 꺼집니다. 빌드 스크립트가 이 경우를 미리 막습니다.
 - 앱의 HTTPS 요청은 `truststore`를 통해 운영체제 인증서 저장소를 사용합니다. 인증서 오류가 발생하면 Windows 인증서와 네트워크 설정을 확인하세요. TLS 검증을 비활성화하지 마세요.
 
 
 ## 소스 설치와 개발 환경
 
-Windows와 Python 3.10 이상을 기준으로 합니다. 데스크톱 화면에는 Microsoft Edge WebView2 런타임이 필요합니다. 프로젝트 폴더에서 다음 명령을 실행하세요.
+Windows와 Python 3.11 이상(ai_memory.py가 표준 라이브러리 tomllib을 씀)을 기준으로 합니다. 데스크톱 화면에는 Microsoft Edge WebView2 런타임이 필요합니다. 프로젝트 폴더에서 다음 명령을 실행하세요.
 
 ```powershell
 py -3 -m venv .venv
@@ -444,6 +444,7 @@ py -3 -m venv .venv
 
 ## 버전 기록
 
+- 1.18.9 — **공개 배포 전 보안 보강**: '다시 묻지 않기' 규칙의 `&` 우회 차단, 채팅 답변의 외부 이미지·위험 링크 차단, 텍스트 첨부는 앱 안에서 보기, 채팅 명령의 비밀 환경 변수 제거·위험 명령 매번 확인, API 키를 OS 보안 저장소로, 업데이트 내려받기 대체 경로, 릴리스 태그 점검. [릴리스 노트](docs/release-notes/v1.18.9.md)
 - 1.18.8 — **PLMS 베타 표시·토큰 효율**: PLMS를 베타로 표시하고 사이드바 맨 아래로 옮김. 에이전트 프롬프트 줄이기, 프롬프트 캐싱 기본 켜짐, 대화 검색 색인. [릴리스 노트](docs/release-notes/v1.18.8.md)
 
 ## 라이선스 (License)

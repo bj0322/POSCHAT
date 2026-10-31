@@ -142,7 +142,7 @@ def main():
     if (Path(sys.base_prefix) / "conda-meta").is_dir():
         # conda의 OpenSSL은 실행 파일에 OPENSSL_Applink가 있어야 해서, PyInstaller exe에서는
         # HTTPS 요청 때 "OPENSSL_Uplink: no OPENSSL_Applink"로 프로세스가 꺼진다.
-        sys.exit("Anaconda/conda Python으로는 빌드할 수 없습니다. python.org 공식 Python 3.10 이상으로 실행하세요.\n"
+        sys.exit("Anaconda/conda Python으로는 빌드할 수 없습니다. python.org 공식 Python 3.11 이상으로 실행하세요.\n"
                  "  예) py -3.12 -m venv .buildenv && .buildenv\\Scripts\\python -m pip install -r requirements.txt pyinstaller\n"
                  "      .buildenv\\Scripts\\python build_installer.py")
     try:
