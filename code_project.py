@@ -21,7 +21,9 @@ from remote_fs import remote_ok
 INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md")
 MAX_INSTRUCTION_CHARS = 12000   # 단계마다 되풀이해 보내므로 파일 하나당 이만큼만(넘으면 잘랐다고 알린다)
 MAX_RULES = 50
-CHAIN_RE = re.compile(r"&&|\|\||[;|<>`]|\$\(|\n")
+# 셸 연결·치환·리디렉션: sh의 ; & | ` $( < >와 cmd.exe의 & ^(이스케이프) %변수%까지 막는다.
+# 단일 &도 sh(백그라운드 뒤 다음 명령)와 cmd(명령 연결) 모두에서 두 번째 명령을 실행한다.
+CHAIN_RE = re.compile(r"[;&|`<>^\n\r]|\$\(" + (r"|%[^%\s]+%" if os.name == "nt" else ""))   # %변수%는 cmd에서만 펼쳐진다
 _FLAGS = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 
 

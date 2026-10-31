@@ -43,15 +43,21 @@ class MigrationTests(unittest.TestCase):
                 backup = backups[0]
                 for name in ("config.json", "memory.md", "USER.md", "mcp.json", "README.txt"):
                     self.assertTrue((backup / name).is_file(), name)
-                self.assertEqual(json.loads((backup / "config.json").read_text())["notion_token"], "ntn_old")
+                # 1.18.9: 키·토큰은 비밀 저장소로 옮겨져 백업·config.json에 평문으로 남지 않는다
+                self.assertNotIn("notion_token", json.loads((backup / "config.json").read_text()))
                 self.assertTrue((backup / "threads" / f"{thread['id']}.json").is_file())
                 # 기존 파일·설정은 그대로
                 for name, data in before.items():
                     self.assertEqual((root / name).read_bytes(), data, name)
                 self.assertEqual((root / "threads" / f"{thread['id']}.json").read_bytes(), thread_before)
-                config = json.loads((root / "config.json").read_text())
+                raw = json.loads((root / "config.json").read_text())
+                for key in storage.CONFIG_SECRET_KEYS:
+                    self.assertNotIn(key, raw)
+                self.assertEqual(oct(os.stat(root / "config.json").st_mode & 0o777), "0o600") if os.name != "nt" else None
+                config = storage.load_config()   # 앱이 읽는 값은 그대로
                 for key, value in OLD_CONFIG.items():
                     self.assertEqual(config[key], value, key)
+                self.assertEqual(bridge._config["notion_token"], "ntn_old")
                 self.assertTrue(config["migrated_1_10"])
                 # 새 기능은 모두 꺼져 있고, 기존 MCP 서버 구성은 같다
                 state = bridge.get_connectors()

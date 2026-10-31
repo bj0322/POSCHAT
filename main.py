@@ -21,6 +21,7 @@ import adaptive_engine
 import api
 import attachments
 import connectors
+import documents
 import mcp_client
 import po_note
 import storage
@@ -60,6 +61,9 @@ description: 이 스킬을 언제 쓰는지 한 줄로 설명하세요.
 ## 출력 형식
 - ...
 """
+
+
+MACRO_EXTS = {".xlsm"}   # 첨부를 눌러도 기본 앱으로 열지 않는다(인터넷 표시가 없어 Office 보호 보기가 걸리지 않는다)
 
 
 def open_path(path):
@@ -108,6 +112,7 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
     def __init__(self):
         storage.ensure_dirs()
         self._config = storage.load_config()
+        storage.migrate_config_secrets(self._config)   # 1.18.9: 평문 키를 비밀 저장소로
         if "github_update_token" in self._config:  # 1.8.0의 업데이트 확인용 GitHub 토큰은 더 쓰지 않는다
             self._config.pop("github_update_token", None)
             storage.save_config(self._config)
@@ -191,7 +196,14 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
             window.evaluate_js(f"window.onBackendEvent({json.dumps(event, ensure_ascii=False)})")
 
     def _open_url(self, url):
-        open_path(url)  # Windows os.startfile·macOS open·안드로이드 host.openPath 모두 https 주소를 브라우저로 연다
+        """http(s) 주소나 있는 로컬 폴더만 연다. Windows os.startfile·macOS open·안드로이드 host.openPath 모두 https 주소를
+        브라우저로 연다. 그 밖의 scheme(file:·ms-*: 등)이나 네트워크 공유(\\\\host)는 프로그램을 실행할 수 있어 열지 않는다."""
+        text = str(url or "").strip()
+        parts = urlparse(text)
+        if parts.scheme in ("http", "https") and parts.netloc:
+            open_path(text)
+        elif not text.startswith(("\\\\", "//")) and os.path.isdir(text):
+            open_path(text)
 
     def _workspace(self):
         ws = self._config.get("workspace", "")
@@ -647,9 +659,26 @@ class Bridge(WorkspaceApi, BrowserApi, PaperApi, CodeApi, CodeAgentApi, SshApi, 
             return None
 
     def open_attachment(self, attach_id):
+        """이미지·문서만 운영체제의 기본 앱으로 연다. 텍스트로 받은 파일(.bat·.vbs·.js·.hta·.html 등)은
+        기본 앱으로 열면 실행될 수 있으므로 열지 않고 내용을 돌려준다(화면이 앱 안에서 보여 준다)."""
         path = storage.attachment_file(attach_id)
-        if path:
+        if not path:
+            return None
+        suffix = path.suffix.lower()
+        if suffix in attachments.IMAGE_TYPES or (suffix in documents.DOCUMENT_EXTS and suffix not in MACRO_EXTS):
             open_path(path)
+            return None
+        if suffix in documents.DOCUMENT_EXTS:   # 매크로가 든 문서: 실행하지 않고 읽은 글만 보여 준다
+            try:
+                text = documents.extract_text(path)
+            except Exception:
+                text = "(내용을 읽지 못했습니다)"
+            return {"name": path.name, "text": "매크로가 들 수 있는 파일이라 앱에서 열지 않고 내용만 보여 줍니다.\n\n"
+                    + text[:512 * 1024], "truncated": len(text) > 512 * 1024}
+        limit = 512 * 1024
+        with open(path, "rb") as f:
+            data = f.read(limit + 1)
+        return {"name": path.name, "text": data[:limit].decode("utf-8", "replace"), "truncated": len(data) > limit}
 
     # ---- MCP ----
 

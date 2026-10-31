@@ -59,11 +59,60 @@ ASK_PRESETS = {
 STATUS_MAP = {"done": "completed", "failed": "failed", "stopped": "cancelled", "timeout": "failed", "error": "failed"}
 
 
-def _quote(arg):
+def _quote(arg, path=False):
     arg = str(arg)
     if os.name == "nt":
-        return subprocess.list2cmdline([arg])
+        return _quote_cmd(arg, path)
     return shlex.quote(arg)
+
+
+def _quote_cmd(arg, path=False):
+    """Windows cmd.exe용: 늘 큰따옴표로 감싸 & | < > ^ 를 글자로 둔다(list2cmdline은 빈칸이 없으면 감싸지 않아
+    'a&calc'가 명령 두 개가 된다). 따옴표 안에서도 펼쳐지는 %·!와 따옴표 자체는 파라미터 값에 받지 않는다.
+    path=True(이 PC의 Python·스크립트 경로): 사용자가 고른 경로라 %·!는 그대로 두고 따옴표만 막는다."""
+    if any(c in arg for c in ('"' if path else '"%!')):
+        raise lab_store.LabError("Windows에서는 파라미터·경로에 \" % ! 를 쓸 수 없습니다.")
+    return '"' + re.sub(r"(\\+)$", r"\1\1", arg) + '"'   # 닫는 따옴표 앞의 \는 두 배로(프로그램이 \"로 읽지 않게)
+
+
+_PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_.-]*)\}")
+
+
+def _fill_template(template, params):
+    """명령 틀의 {이름}에 값을 넣는다. 틀의 따옴표 상태를 따라가며 자리마다 그 문맥에 맞게 넣는다:
+    따옴표 밖이면 _quote로 감싸고, "…" 안이면 감싸지 않고 그 안에서 특별한 글자만 막거나 이스케이프한다
+    (따옴표 안에 따옴표를 또 넣으면 따옴표가 닫혀 &·$( )가 다시 명령 연결·치환이 된다)."""
+    nt = os.name == "nt"
+    out, quote, i = [], None, 0
+    while i < len(template):
+        m = _PLACEHOLDER.match(template, i)
+        if m:
+            value = _param_text(params[m.group(1)])
+            nxt = template[m.end():m.end() + 1]
+            if quote is None:
+                out.append(_quote(value))
+            elif nt:   # cmd "…" 안: & | < > ^는 글자. %·!·"만 막고, 닫는 따옴표 앞의 \는 두 배로
+                if any(c in value for c in '"%!'):
+                    raise lab_store.LabError("Windows에서는 파라미터 값에 \" % ! 를 쓸 수 없습니다.")
+                out.append(re.sub(r"(\\+)$", r"\1\1", value) if nxt == '"' else value)
+            elif quote == '"':   # sh "…" 안: \ " $ `만 이스케이프
+                out.append(re.sub(r'([\\"$`])', r"\\\1", value))
+            else:   # sh '…' 안: '만 '\''로
+                out.append(value.replace("'", "'\\''"))
+            i = m.end()
+            continue
+        c = template[i]
+        if quote is None and (c == '"' or (c == "'" and not nt)):
+            quote = c
+        elif c == quote:
+            quote = None
+        elif c == "\\" and not nt and quote != "'" and i + 1 < len(template):
+            out.append(c)   # sh의 \x는 다음 글자를 글자로 둔다(따옴표 상태를 바꾸지 않음)
+            i += 1
+            c = template[i]
+        out.append(c)
+        i += 1
+    return "".join(out)
 
 
 def _clean_params(params):
@@ -103,7 +152,7 @@ def build_command(spec, python=""):
         missing = [m for m in re.findall(r"\{([A-Za-z_][A-Za-z0-9_.-]*)\}", template) if m not in params]
         if missing:
             raise lab_store.LabError(f"명령의 {{{missing[0]}}}에 넣을 파라미터가 없습니다.")
-        command = re.sub(r"\{([A-Za-z_][A-Za-z0-9_.-]*)\}", lambda m: _quote(_param_text(params[m.group(1)])), template)
+        command = _fill_template(template, params)
         return command, template
     script = cw.clean_rel(str(spec.get("script") or ""))
     if not script:
@@ -115,13 +164,13 @@ def build_command(spec, python=""):
             raise lab_store.LabError("Python 스크립트(.py)를 고르세요.")
         args = " ".join(f"--{k} {_quote(_param_text(v))}" for k, v in params.items())
         template_args = " ".join(f"--{k} {{{k}}}" for k in params)
-        base = f"{_quote(python)} {_quote(script)}"
+        base = f"{_quote(python, True)} {_quote(script, True)}"
         return (base + (" " + args if args else "")), (base + (" " + template_args if template_args else ""))
     if not script.endswith(".ipynb"):
         raise lab_store.LabError("Jupyter 노트북(.ipynb)을 고르세요.")
     out_dir = str(spec.get("_out_dir") or "")
-    base = (f"{_quote(python)} -m nbconvert --to notebook --execute --output executed.ipynb "
-            + (f"--output-dir {_quote(out_dir)} " if out_dir else "") + _quote(script))
+    base = (f"{_quote(python, True)} -m nbconvert --to notebook --execute --output executed.ipynb "
+            + (f"--output-dir {_quote(out_dir, True)} " if out_dir else "") + _quote(script, True))
     return base, base
 
 

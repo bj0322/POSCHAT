@@ -274,7 +274,7 @@ async function showAdaptive() {
       } }, "받기");
       pullBox.replaceChildren(
         h("div", {}, `크기 약 ${p.size_label} · 출처 ${p.source}`),
-        h("div", {}, `라이선스: ${p.license_name}`, " · ", h("a", { href: p.page, target: "_blank" }, "모델 페이지")),
+        h("div", {}, `라이선스: ${p.license_name}`, " · ", h("a", { href: safeHref(p.page), target: "_blank", rel: "noopener" }, "모델 페이지")),
         p.license ? h("details", {}, h("summary", {}, "라이선스 전문(앞부분)"), h("pre", { class: "adaptive-license" }, p.license)) : null,
         h("small", { class: p.disk_ok ? "muted block" : "warn block" }, p.disk_free == null ? "남은 디스크 공간을 알 수 없습니다."
           : `남은 디스크 ${fmtBytes(p.disk_free)}` + (p.disk_ok ? "" : " — 공간이 모자랍니다. 정리한 뒤 다시 시도하세요.")),

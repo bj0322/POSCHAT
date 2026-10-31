@@ -8,7 +8,7 @@ OS 보안 저장소(keyring: Windows 자격 증명 관리자, macOS 키체인)�
 
 여기 저장한 값은 config.json·동기화·로그·관측 데이터·화면 상태(get_state)에 들어가지 않는다.
 내장 MCP 서버는 하위 프로세스(같은 실행 파일, 같은 사용자)에서도 이 모듈로 값을 읽는다.
-1.9의 api_key·notion_token·firecrawl_key는 하위 호환을 위해 config.json에 그대로 둔다.
+1.18.9부터 설정 창의 API 키·토큰(storage.CONFIG_SECRET_KEYS)도 여기(config:secrets, JSON 하나)에 두고 config.json에서는 뺀다.
 """
 import json
 import os
